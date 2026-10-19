@@ -31,18 +31,19 @@
   font-weight: 500;
 }
 
-/* Hover zone at the top edge that reveals the floating toolbar. */
+/* Holder for the floating toolbar; never intercepts the pointer itself (the toolbar is
+   revealed by resting on the top edge, see SessionToolbar). */
 .session-toolbar-zone {
   position: absolute;
   top: 0;
   left: 50%;
   transform: translateX(-50%);
   width: min(560px, 70%);
-  height: 56px;
   display: flex;
   justify-content: center;
   padding-top: 10px;
   z-index: 5;
+  pointer-events: none;
 }
 .session-toolbar {
   display: flex;
@@ -61,8 +62,7 @@
   transition-delay: 180ms;
   pointer-events: none;
 }
-.session-toolbar-zone:hover .session-toolbar,
-.session-toolbar-zone.is-open .session-toolbar {
+.session-toolbar.is-visible {
   opacity: 1;
   transform: none;
   pointer-events: auto;
@@ -103,6 +103,11 @@
   background: rgba(255, 255, 255, 0.08);
   color: #fff;
 }
+.session-toolbar__btn--close {
+  min-width: 24px;
+  padding: 0 4px;
+  color: #8a8a94;
+}
 .session-toolbar__btn--danger:hover {
   background: rgba(242, 85, 90, 0.18);
   color: #ff8a8e;
@@ -119,6 +124,7 @@
   align-items: center;
 }
 .session-keys {
+  pointer-events: auto;
   margin-top: 6px;
   min-width: 232px;
   padding: 4px;

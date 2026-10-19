@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Keyboard, Maximize2, Minimize2, RotateCw } from "lucide-react";
+import { Keyboard, Maximize2, Minimize2, RotateCw, X } from "lucide-react";
 import { DisconnectIcon } from "../common/SessionIcons";
 import { engine } from "../../engine";
 import { disconnect, reconnect, setFullscreen } from "../../state/actions";
@@ -9,6 +9,15 @@ const WIN = 0xe05b;
 const CTRL = 0x1d;
 const SHIFT = 0x2a;
 const ALT = 0x38;
+
+/** How long the pointer must rest at the top edge before the toolbar appears. */
+const DWELL_MS = 550;
+/** Grace period before hiding once the pointer has left. */
+const HIDE_MS = 250;
+/** Height of the trigger strip along the top edge of the session. */
+const TRIGGER_PX = 8;
+/** Height of the area the toolbar lives in; a dismissal lasts while the pointer stays inside it. */
+const AREA_PX = 64;
 
 /** Combinations the local OS would otherwise intercept. */
 const COMBOS: { label: string; keys: string; codes: number[] }[] = [
@@ -27,7 +36,90 @@ export function SessionToolbar({ id }: { id: string }) {
   const { codec, width, height } = useSession(id);
   const fullscreen = useStore((s) => s.fullscreen);
   const [keysOpen, setKeysOpen] = useState(false);
+  const [visible, setVisible] = useState(false);
   const zoneRef = useRef<HTMLDivElement>(null);
+  const barRef = useRef<HTMLDivElement>(null);
+  const visibleRef = useRef(false);
+  const keysOpenRef = useRef(false);
+  const dismissedRef = useRef(false);
+  keysOpenRef.current = keysOpen;
+
+  const show = (on: boolean) => {
+    visibleRef.current = on;
+    setVisible(on);
+  };
+  const dismiss = () => {
+    dismissedRef.current = true;
+    setKeysOpen(false);
+    show(false);
+  };
+
+  // Revealed by resting the pointer on the top edge, not by any hover over the area, and
+  // without an invisible element in front of the remote screen that would swallow clicks.
+  useEffect(() => {
+    let showTimer: number | undefined;
+    let hideTimer: number | undefined;
+    const clear = (t: number | undefined) => t !== undefined && window.clearTimeout(t);
+
+    const onMove = (e: PointerEvent) => {
+      const session = zoneRef.current?.parentElement;
+      if (!session) return;
+      const r = session.getBoundingClientRect();
+      const band = Math.min(560, r.width * 0.7);
+      const x = e.clientX - r.left;
+      const y = e.clientY - r.top;
+      const centered = Math.abs(x - r.width / 2) <= band / 2;
+      const inArea = centered && y >= 0 && y < AREA_PX;
+      const onTrigger = inArea && y < TRIGGER_PX && e.buttons === 0;
+      const bar = barRef.current?.getBoundingClientRect();
+      const overBar =
+        !!bar && e.clientX >= bar.left - 12 && e.clientX <= bar.right + 12 && e.clientY <= bar.bottom + 12;
+
+      if (dismissedRef.current) {
+        if (!inArea && !overBar) dismissedRef.current = false;
+        clear(showTimer);
+        showTimer = undefined;
+        return;
+      }
+      if (visibleRef.current) {
+        if (overBar || onTrigger || keysOpenRef.current) {
+          clear(hideTimer);
+          hideTimer = undefined;
+        } else if (hideTimer === undefined) {
+          hideTimer = window.setTimeout(() => {
+            hideTimer = undefined;
+            if (!keysOpenRef.current) show(false);
+          }, HIDE_MS);
+        }
+        return;
+      }
+      if (onTrigger) {
+        if (showTimer === undefined) {
+          showTimer = window.setTimeout(() => {
+            showTimer = undefined;
+            show(true);
+          }, DWELL_MS);
+        }
+      } else {
+        clear(showTimer);
+        showTimer = undefined;
+      }
+    };
+    const onLeaveWindow = (e: PointerEvent) => {
+      if (e.relatedTarget === null) {
+        clear(showTimer);
+        showTimer = undefined;
+      }
+    };
+    window.addEventListener("pointermove", onMove, { capture: true, passive: true });
+    document.addEventListener("pointerout", onLeaveWindow, true);
+    return () => {
+      window.removeEventListener("pointermove", onMove, { capture: true });
+      document.removeEventListener("pointerout", onLeaveWindow, true);
+      clear(showTimer);
+      clear(hideTimer);
+    };
+  }, []);
 
   useEffect(() => {
     if (!keysOpen) return;
@@ -45,7 +137,11 @@ export function SessionToolbar({ id }: { id: string }) {
 
   return (
     <div ref={zoneRef} className={`session-toolbar-zone ${keysOpen ? "is-open" : ""}`}>
-      <div className="session-toolbar" onMouseDown={(e) => e.preventDefault()}>
+      <div
+        ref={barRef}
+        className={`session-toolbar ${visible || keysOpen ? "is-visible" : ""}`}
+        onMouseDown={(e) => e.preventDefault()}
+      >
         {(codec || width) && (
           <span className="session-toolbar__info mono">
             {width && height ? `${width}×${height}` : ""}
@@ -98,6 +194,16 @@ export function SessionToolbar({ id }: { id: string }) {
           onClick={() => disconnect([id])}
         >
           <DisconnectIcon size={14} />
+        </button>
+        <span className="session-toolbar__sep" />
+        <button
+          className="session-toolbar__btn session-toolbar__btn--close"
+          aria-label="Hide toolbar"
+          data-tip="Hide until you move away"
+          data-tip-side="bottom"
+          onClick={dismiss}
+        >
+          <X size={13} />
         </button>
       </div>
 
