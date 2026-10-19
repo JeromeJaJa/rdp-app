@@ -1,0 +1,118 @@
+/* Shared tab item styles (sidebar rows + top tabs). */
+.tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  color: var(--text-2);
+  transition: background-color var(--t-fast) ease, color var(--t-fast) ease, box-shadow var(--t-fast) ease;
+  touch-action: none;
+}
+
+.tab__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Sidebar row */
+.tab--side {
+  height: 30px;
+  padding: 0 6px 0 11px;
+  border-radius: var(--r-sm);
+}
+.tab--side:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.tab--side.is-selected {
+  background: var(--active);
+  color: var(--text);
+}
+.tab--side.is-selected::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+/* The host gives up all its space before the name starts truncating. */
+.tab__host {
+  flex: 0 1000 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  /* The mono font's line box puts its digits high; a tight line box centers them. */
+  line-height: 1;
+  color: var(--text-3);
+}
+.tab__actions {
+  display: none;
+  align-items: center;
+}
+.tab--side:hover .tab__actions {
+  display: flex;
+}
+.tab--side:hover .tab__host {
+  display: none;
+}
+.tab__action {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  color: var(--text-3);
+  transition: background-color var(--t-fast) ease, color var(--t-fast) ease;
+}
+.tab__action:hover {
+  background: var(--active);
+  color: var(--text);
+}
+
+/* Top tab */
+.tab--top {
+  flex: none;
+  height: 28px;
+  max-width: 200px;
+  padding: 0 12px 0 10px;
+  gap: 8px;
+  border-radius: 7px;
+  font-size: 12.5px;
+}
+.tab--top:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.tab--top.is-selected {
+  background: var(--elevated-2);
+  color: var(--text);
+  box-shadow: 0 0 0 1px var(--border), var(--shadow-sm);
+}
+
+.tab.is-dragging {
+  opacity: 0.35;
+}
+.tab.is-overlay {
+  background: var(--elevated);
+  color: var(--text);
+  box-shadow: var(--shadow-md);
+  cursor: grabbing;
+}
+.tab--side.is-overlay {
+  width: 100%;
+}
+
+/* Tabs are pointer-driven (keyboard uses Ctrl+Tab / Ctrl+1..9); no focus ring. */
+.tab:focus,
+.tab:focus-visible {
+  outline: none;
+}

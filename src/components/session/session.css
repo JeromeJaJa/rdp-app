@@ -1,0 +1,387 @@
+/* ---------- Live session ---------- */
+.live-session {
+  position: absolute;
+  inset: 0;
+  background: var(--session-bg);
+}
+.live-session__surface {
+  position: absolute;
+  inset: 0;
+}
+
+.live-session__overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(2px) saturate(0.8);
+  animation: fade-in var(--t-med) ease;
+}
+.live-session__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  padding: 0 16px;
+  border-radius: 99px;
+  color: #ededef;
+  background: rgba(20, 20, 24, 0.85);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 12px 32px rgba(0, 0, 0, 0.5);
+  font-weight: 500;
+}
+
+/* Hover zone at the top edge that reveals the floating toolbar. */
+.session-toolbar-zone {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(560px, 70%);
+  height: 56px;
+  display: flex;
+  justify-content: center;
+  padding-top: 10px;
+  z-index: 5;
+}
+.session-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 34px;
+  padding: 0 4px 0 6px;
+  border-radius: 10px;
+  color: #d4d4d8;
+  background: rgba(18, 18, 22, 0.78);
+  backdrop-filter: blur(16px) saturate(1.4);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 10px 30px -6px rgba(0, 0, 0, 0.6);
+  opacity: 0;
+  transform: translateY(-14px) scale(0.98);
+  transition: opacity var(--t-med) ease, transform var(--t-med) var(--ease-out);
+  transition-delay: 180ms;
+  pointer-events: none;
+}
+.session-toolbar-zone:hover .session-toolbar,
+.session-toolbar-zone.is-open .session-toolbar {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+  transition-delay: 0ms;
+}
+.session-toolbar__info {
+  padding: 0 8px 0 6px;
+  font-size: 11px;
+  color: #8a8a94;
+  white-space: nowrap;
+}
+.session-toolbar__sep {
+  width: 1px;
+  height: 14px;
+  margin: 0 4px;
+  background: rgba(255, 255, 255, 0.12);
+}
+.session-toolbar__info:empty + .session-toolbar__sep {
+  display: none;
+}
+.session-toolbar__btn {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  height: 26px;
+  min-width: 28px;
+  padding: 0 6px;
+  border-radius: 6px;
+  color: #c4c4cc;
+  transition: background-color var(--t-fast) ease, color var(--t-fast) ease;
+}
+.session-toolbar__btn--text {
+  padding: 0 9px;
+  font-size: 11.5px;
+  font-weight: 500;
+}
+.session-toolbar__btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+.session-toolbar__btn--danger:hover {
+  background: rgba(242, 85, 90, 0.18);
+  color: #ff8a8e;
+}
+.session-toolbar__btn.is-active {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+/* Send-keys menu, hanging under the toolbar. */
+.session-toolbar-zone.is-open {
+  height: auto;
+  flex-direction: column;
+  align-items: center;
+}
+.session-keys {
+  margin-top: 6px;
+  min-width: 232px;
+  padding: 4px;
+  border-radius: 10px;
+  background: rgba(18, 18, 22, 0.92);
+  backdrop-filter: blur(16px) saturate(1.4);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 14px 36px -8px rgba(0, 0, 0, 0.65);
+  animation: session-keys-in var(--t-med) var(--ease-out);
+}
+@keyframes session-keys-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+.session-keys__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  height: 30px;
+  padding: 0 8px 0 10px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  color: #d4d4d8;
+  text-align: left;
+  transition: background-color var(--t-fast) ease;
+}
+.session-keys__item:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: #fff;
+}
+.session-keys__kbd {
+  font-size: 10.5px;
+  color: #8a8a94;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+@media (prefers-reduced-motion: reduce) {
+  .session-keys {
+    animation: none;
+  }
+}
+
+.session-toolbar [data-tip]::after {
+  color: #ededef;
+  background: #1a1a1f;
+}
+
+/* ---------- Idle card ---------- */
+.idle {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(ellipse 60% 50% at 50% 42%, color-mix(in srgb, var(--accent) 5%, transparent), transparent 70%),
+    var(--bg);
+}
+.idle__card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: min(420px, 100%);
+  text-align: center;
+  animation: rise-in 260ms var(--ease-out);
+}
+.idle__glyph {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  margin-bottom: 18px;
+  border-radius: 14px;
+  color: var(--text-2);
+  background: var(--elevated);
+  box-shadow: var(--shadow-md);
+}
+.idle__glyph--error {
+  color: var(--danger);
+}
+.idle__glyph--connecting,
+.idle__glyph--queued {
+  color: var(--warn);
+}
+.idle__name {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--text);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.idle__meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+.idle__meta .mono {
+  color: var(--text-2);
+}
+.idle__dot {
+  opacity: 0.6;
+}
+.idle__nopass {
+  color: var(--warn);
+}
+.idle__error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 100%;
+  margin-top: 18px;
+  padding: 9px 12px;
+  border-radius: var(--r-md);
+  text-align: left;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--danger);
+  background: var(--danger-soft);
+  border: 1px solid color-mix(in srgb, var(--danger) 22%, transparent);
+  user-select: text;
+}
+.idle__error svg {
+  flex: none;
+  margin-top: 2px;
+}
+.idle__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 24px;
+  min-height: 38px;
+}
+.idle__connect {
+  min-width: 140px;
+}
+.idle__connect .kbd {
+  margin-left: 4px;
+  padding: 0;
+  min-width: 0;
+  font-size: 12px;
+  color: color-mix(in srgb, var(--bg) 45%, transparent);
+  background: none;
+  border: 0;
+}
+.idle__progress {
+  color: var(--text-2);
+  font-size: 12.5px;
+  padding: 0 6px;
+}
+
+/* ---------- Empty / hints ---------- */
+.session-hint {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--text-3);
+}
+
+.empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  background:
+    radial-gradient(ellipse 50% 40% at 50% 40%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 70%),
+    var(--bg);
+}
+.empty__inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 440px;
+  text-align: center;
+  animation: rise-in 320ms var(--ease-out);
+}
+.empty__mark {
+  display: grid;
+  place-items: center;
+  width: 60px;
+  height: 60px;
+  margin-bottom: 22px;
+  border-radius: 16px;
+  color: var(--accent);
+  background: var(--elevated);
+  box-shadow: var(--shadow-md);
+}
+.empty__title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.empty__text {
+  margin: 10px 0 0;
+  text-wrap: balance;
+  color: var(--text-2);
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+.empty__text .mono {
+  color: var(--text);
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--hover);
+}
+.empty__actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 28px;
+}
+.empty__keys {
+  display: flex;
+  gap: 18px;
+  margin-top: 28px;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.empty__keys span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.empty__keys .kbd {
+  margin-right: 1px;
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Gradients band visibly on light backgrounds; keep light mode flat. */
+:root[data-theme="light"] .idle,
+:root[data-theme="light"] .empty {
+  background: var(--bg);
+}

@@ -1,0 +1,54 @@
+.status-dot {
+  position: relative;
+  flex: none;
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  transition: background-color var(--t-med) ease, box-shadow var(--t-med) ease;
+}
+
+.status-dot--idle {
+  box-shadow: inset 0 0 0 1.5px var(--text-3);
+  opacity: 0.8;
+}
+
+.status-dot--queued {
+  background: var(--text-3);
+}
+
+.status-dot--connecting,
+.status-dot--reconnecting {
+  background: var(--warn);
+}
+.status-dot--connecting::after,
+.status-dot--reconnecting::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 1.5px solid var(--warn);
+  opacity: 0;
+  animation: status-pulse 1.4s var(--ease-out) infinite;
+}
+
+.status-dot--connected {
+  background: var(--success);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 16%, transparent);
+}
+
+.status-dot--error {
+  background: var(--danger);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 16%, transparent);
+}
+
+@keyframes status-pulse {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}

@@ -1,0 +1,76 @@
+.top-tabs {
+  position: relative;
+  flex: 0 1 auto;
+  min-width: 0;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  --fade-l: 0px;
+  --fade-r: 0px;
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 var(--fade-l),
+    #000 calc(100% - var(--fade-r)),
+    transparent 100%
+  );
+}
+.top-tabs::-webkit-scrollbar {
+  display: none;
+}
+.top-tabs.fade-left {
+  --fade-l: 28px;
+}
+.top-tabs.fade-right {
+  --fade-r: 28px;
+}
+
+.top-tabs__track {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  gap: 2px;
+  padding: 0 6px;
+  width: max-content;
+}
+
+.top-seg {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 32px;
+  padding: 0 2px;
+  border-radius: 9px;
+  transition: background-color var(--t-fast) ease;
+}
+.top-seg + .top-seg {
+  margin-left: 6px;
+  padding-left: 10px;
+  position: relative;
+}
+.top-seg + .top-seg::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 9px;
+  bottom: 9px;
+  width: 1px;
+  background: var(--border-strong);
+}
+.top-seg.is-empty {
+  min-width: 60px;
+  border: 1px dashed var(--border-strong);
+}
+.top-seg.is-over {
+  background: var(--accent-soft);
+}
+.top-seg__label {
+  flex: none;
+  padding: 0 6px 0 2px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}

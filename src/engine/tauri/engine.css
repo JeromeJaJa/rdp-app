@@ -1,0 +1,37 @@
+.rs-surface {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  outline: none;
+  background: var(--session-bg, #000);
+  touch-action: none;
+  user-select: none;
+}
+
+.rs-surface__canvas {
+  position: absolute;
+  display: block;
+  image-rendering: auto;
+}
+
+.rs-surface__waiting {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, rgba(255, 255, 255, 0.03), transparent 60%);
+}
+
+.rs-thumb {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--thumb-bg, #000);
+}
+
+.rs-thumb__canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}

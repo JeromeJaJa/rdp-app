@@ -1,0 +1,23 @@
+.mock-remote,
+.mock-thumb {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.mock-remote {
+  background: var(--session-bg);
+  cursor: default;
+}
+
+.mock-remote__canvas,
+.mock-thumb__canvas {
+  display: block;
+}
+
+.mock-thumb {
+  background: var(--thumb-bg);
+}

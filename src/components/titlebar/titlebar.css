@@ -1,0 +1,205 @@
+.titlebar {
+  position: relative;
+  z-index: 20;
+  flex: none;
+  display: flex;
+  align-items: center;
+  height: var(--titlebar-h);
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.titlebar__brand {
+  flex: none;
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 14px;
+  color: var(--accent);
+  border-right: 1px solid transparent;
+}
+.titlebar--left .titlebar__brand {
+  min-width: 180px;
+  max-width: 420px;
+  border-right-color: var(--border);
+}
+.titlebar--top .titlebar__brand {
+  padding-right: 6px;
+}
+.titlebar__wordmark {
+  margin-left: 9px;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.brand-mark {
+  display: block;
+  flex: none;
+}
+
+.titlebar__spacer {
+  flex: 1 1 24px;
+  min-width: 24px;
+  height: 100%;
+}
+
+.titlebar__actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 8px;
+}
+.titlebar__divider {
+  width: 1px;
+  height: 16px;
+  margin: 0 6px;
+  background: var(--border-strong);
+}
+
+/* Current connection title (left mode) */
+.tb-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 100%;
+  padding-left: 16px;
+  white-space: nowrap;
+}
+.tb-title__crumb {
+  color: var(--text-3);
+}
+.tb-title__slash {
+  color: var(--text-3);
+  opacity: 0.6;
+}
+.tb-title__name {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-weight: 550;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tb-title__meta {
+  flex: 0 1000 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-3);
+  font-size: 11.5px;
+  /* The mono font's line box puts its digits high; a tight line box centers them. */
+  line-height: 1;
+}
+.tb-title__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 20px;
+  padding: 0 8px 0 7px;
+  margin-left: 2px;
+  border-radius: 99px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-3);
+  background: var(--hover);
+}
+.tb-title__status--connected {
+  color: var(--success);
+  background: var(--success-soft);
+}
+.tb-title__status--error {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+.tb-title__status--connecting,
+.tb-title__status--reconnecting {
+  color: var(--warn);
+  background: var(--warn-soft);
+}
+
+/* Window controls */
+.win-controls {
+  flex: none;
+  display: flex;
+  height: 100%;
+}
+.win-btn {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 100%;
+  color: var(--text-2);
+  transition: background-color var(--t-fast) ease, color var(--t-fast) ease;
+}
+.win-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.win-btn--close:hover {
+  background: #e81123;
+  color: #fff;
+}
+
+/* ---------- Labeled actions ---------- */
+.titlebar {
+  container-type: inline-size;
+  container-name: titlebar;
+}
+.tb-btn {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 9px 0 8px;
+  border-radius: var(--r-sm);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-2);
+  white-space: nowrap;
+  transition: background-color var(--t-fast) ease, color var(--t-fast) ease, border-color var(--t-fast) ease;
+}
+.tb-btn svg {
+  flex: none;
+}
+.tb-btn:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+.tb-btn:disabled {
+  opacity: 0.38;
+}
+.tb-btn--accent {
+  margin: 0 2px;
+  color: var(--text);
+  background: var(--elevated-2);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.tb-btn--accent:hover:not(:disabled) {
+  background: var(--active);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+/* Tooltips only when the label is hidden. */
+.tb-btn::after {
+  display: none;
+}
+.tb-view .segmented__item {
+  padding: 0 8px;
+}
+
+/* Top tabs share the row: "+ New" drops its label when space gets tight. */
+@container titlebar (max-width: 1000px) {
+  .titlebar--top .tb-btn__label {
+    display: none;
+  }
+  .titlebar--top .tb-btn {
+    padding: 0 6px;
+  }
+  .titlebar--top .tb-btn::after {
+    display: block;
+  }
+}
