@@ -1,11 +1,12 @@
 import { memo } from "react";
 import { Moon, PanelLeft, PanelTop, Settings, Sun } from "lucide-react";
 import { cycleTheme, openDialog, updateSettings } from "../../state/actions";
-import { displayName, useStore } from "../../state/store";
+import { useStore } from "../../state/store";
 import { IconButton } from "../ui/ui";
 import { TopTabs } from "../tabs/TopTabs";
 import { StatusDot, statusLabel } from "../common/StatusDot";
 import { BulkSessionButtons, NewConnectionButton, TransferButtons, ViewToggle } from "../common/GlobalActions";
+import { ConnectionSwitcher } from "./ConnectionSwitcher";
 import { WindowControls } from "./WindowControls";
 import "./titlebar.css";
 
@@ -46,13 +47,7 @@ function CurrentTitle() {
           </span>
         </>
       )}
-      <span className="tb-title__name" data-tauri-drag-region>
-        {displayName(sel)}
-      </span>
-      <span className="tb-title__meta mono" data-tauri-drag-region>
-        {sel.host}
-        {sel.port !== 3389 ? `:${sel.port}` : ""}
-      </span>
+      <ConnectionSwitcher sel={sel} />
       <span className={`tb-title__status tb-title__status--${status}`} data-tauri-drag-region>
         <StatusDot status={status} />
         {statusLabel(status)}

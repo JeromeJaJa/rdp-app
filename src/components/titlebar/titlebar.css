@@ -93,6 +93,122 @@
   /* The mono font's line box puts its digits high; a tight line box centers them. */
   line-height: 1;
 }
+/* Name + host of the current connection; opens the switcher. */
+.tb-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 26px;
+  margin: 0 -6px;
+  padding: 0 6px;
+  border-radius: 7px;
+  transition: background-color var(--t-fast) ease;
+}
+.tb-switch:not(:disabled):hover,
+.tb-switch.is-open {
+  background: var(--hover);
+}
+.tb-switch:disabled {
+  cursor: default;
+}
+.tb-switch__chevron {
+  flex: none;
+  margin-left: -3px;
+  color: var(--text-3);
+  transition: transform var(--t-fast) ease;
+}
+.tb-switch.is-open .tb-switch__chevron {
+  transform: rotate(180deg);
+}
+
+.switcher {
+  position: fixed;
+  z-index: 210;
+  display: flex;
+  flex-direction: column;
+  width: 340px;
+  max-width: calc(100vw - 16px);
+  max-height: min(420px, calc(100vh - 80px));
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--elevated);
+  box-shadow: var(--shadow-lg);
+  outline: none;
+  animation: menu-in 140ms var(--ease-out);
+  transform-origin: top left;
+}
+.switcher__search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  margin-bottom: 4px;
+  padding: 0 9px;
+  border-radius: 7px;
+  color: var(--text-3);
+  background: var(--hover);
+}
+.switcher__search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+}
+.switcher__list {
+  overflow-y: auto;
+}
+.switcher__item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  height: 32px;
+  padding: 0 8px 0 10px;
+  border-radius: 6px;
+  color: var(--text);
+  text-align: left;
+}
+.switcher__item.is-active {
+  background: var(--hover);
+}
+.switcher__name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.switcher__item.is-current .switcher__name {
+  font-weight: 550;
+}
+.switcher__host {
+  flex: 0 1000 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-3);
+  font-size: 11.5px;
+  line-height: 1;
+}
+.switcher__check {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  margin-left: auto;
+  color: var(--accent);
+}
+.switcher__empty {
+  padding: 10px;
+  color: var(--text-3);
+  text-align: center;
+}
+
 .tb-title__status {
   display: inline-flex;
   align-items: center;
