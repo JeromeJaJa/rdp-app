@@ -60,7 +60,7 @@ fn encode(p: &DecodedPointer) -> Option<String> {
     for y in 0..usize::from(h) {
         rgba.extend_from_slice(&p.bitmap_data[y * src_stride..y * src_stride + usize::from(w) * 4]);
     }
-    if rgba.chunks_exact(4).all(|px| px[3] == 0) {
+    if rgba.as_chunks::<4>().0.iter().all(|px| px[3] == 0) {
         return Some("none".to_owned());
     }
 

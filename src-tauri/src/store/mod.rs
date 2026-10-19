@@ -429,11 +429,11 @@ impl Store {
                 changed = true;
             }
         }
-        if self.data.api_token.is_empty() {
-            if let Ok(sealed) = dpapi::protect(&random_token()) {
-                self.data.api_token = sealed;
-                changed = true;
-            }
+        if self.data.api_token.is_empty()
+            && let Ok(sealed) = dpapi::protect(&random_token())
+        {
+            self.data.api_token = sealed;
+            changed = true;
         }
         changed
     }

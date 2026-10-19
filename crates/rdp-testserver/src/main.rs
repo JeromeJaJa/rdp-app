@@ -134,6 +134,8 @@ struct Animator {
 const BAR_W: u16 = 64;
 const MARK: u16 = 24;
 
+/// x, y, width, height.
+type Rect = (u16, u16, u16, u16);
 impl Animator {
     fn new(port: u16, size: DesktopSize, shared: Arc<Mutex<Shared>>) -> Self {
         let mut a = Self {
@@ -205,6 +207,7 @@ impl Animator {
         self.fb[i..i + 4].copy_from_slice(&[b, g, r, 255]);
     }
 
+    #[allow(clippy::too_many_arguments)] // a rectangle and a colour
     fn fill(&mut self, x: u16, y: u16, w: u16, h: u16, r: u8, g: u8, b: u8) {
         for yy in y..(y.saturating_add(h)).min(self.h) {
             for xx in x..(x.saturating_add(w)).min(self.w) {
@@ -233,7 +236,7 @@ impl Animator {
 
     /// Advances the whole animation one frame (graphics pipeline mode) and returns
     /// the changed bar and marker rectangles (x, y, w, h).
-    fn step(&mut self, t: f32) -> ((u16, u16, u16, u16), (u16, u16, u16, u16)) {
+    fn step(&mut self, t: f32) -> (Rect, Rect) {
         (self.move_bar(t), self.move_marker())
     }
 
@@ -255,7 +258,12 @@ impl Animator {
 
     /// The framebuffer as tightly packed RGBA.
     fn rgba(&self) -> Vec<u8> {
-        self.fb.chunks_exact(4).flat_map(|p| [p[2], p[1], p[0], 255]).collect()
+        self.fb
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .flat_map(|p| [p[2], p[1], p[0], 255])
+            .collect()
     }
 
     fn move_bar(&mut self, t: f32) -> (u16, u16, u16, u16) {
@@ -358,7 +366,7 @@ impl RdpServerDisplayUpdates for Animator {
 
         // Alternate between the sweeping bar and the mouse marker.
         let t = self.started.elapsed().as_secs_f32();
-        let (x, y, w, h) = if self.frame % 2 == 0 {
+        let (x, y, w, h) = if self.frame.is_multiple_of(2) {
             self.move_bar(t)
         } else {
             self.move_marker()

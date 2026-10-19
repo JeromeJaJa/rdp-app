@@ -22,9 +22,12 @@ use rdp_engine::{
     SurfaceProvider, Viewport,
 };
 
+/// A surface with its width and height.
+type SurfaceEntry = (Arc<HeapSurface>, u32, u32);
+
 #[derive(Default)]
 struct ProbeProvider {
-    surfaces: Mutex<HashMap<(String, SurfaceKind), (Arc<HeapSurface>, u32, u32)>>,
+    surfaces: Mutex<HashMap<(String, SurfaceKind), SurfaceEntry>>,
 }
 
 impl SurfaceProvider for ProbeProvider {
@@ -236,7 +239,12 @@ fn main() -> anyhow::Result<()> {
         let mut enc = png::Encoder::new(std::io::BufWriter::new(file), w, h);
         enc.set_color(png::ColorType::Rgba);
         let mut wr = enc.write_header()?;
-        let opaque: Vec<u8> = pixels.chunks_exact(4).flat_map(|p| [p[0], p[1], p[2], 255]).collect();
+        let opaque: Vec<u8> = pixels
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .flat_map(|p| [p[0], p[1], p[2], 255])
+            .collect();
         wr.write_image_data(&opaque)?;
         println!("wrote {} ({w}x{h})", args.out);
     }

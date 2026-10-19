@@ -163,7 +163,7 @@ fn engine_set_visibility(state: State<'_, AppState>, active: Option<String>, thu
 fn engine_set_thumbnail_width(state: State<'_, AppState>, width: u32) {
     let current = state.core.engine.settings();
     // Bucket to 64px steps so slider drags don't reallocate every surface on each pixel.
-    let width = (width.clamp(160, 1920) + 63) / 64 * 64;
+    let width = width.clamp(160, 1920).div_ceil(64) * 64;
     if current.thumbnail_width != width {
         state.core.engine.update_settings(EngineSettings {
             thumbnail_width: width,
@@ -339,10 +339,10 @@ pub fn run() {
             let handle = app.handle().clone();
             std::thread::spawn(move || {
                 std::thread::sleep(Duration::from_secs(4));
-                if let Some(w) = handle.get_webview_window("main") {
-                    if !w.is_visible().unwrap_or(true) {
-                        let _ = w.show();
-                    }
+                if let Some(w) = handle.get_webview_window("main")
+                    && !w.is_visible().unwrap_or(true)
+                {
+                    let _ = w.show();
                 }
             });
             Ok(())
@@ -385,12 +385,12 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
-            if let tauri::RunEvent::ExitRequested { .. } = event {
-                if let Some(state) = app.try_state::<AppState>() {
-                    state.core.engine.disconnect_all();
-                    // Let sessions close their sockets cleanly.
-                    std::thread::sleep(Duration::from_millis(250));
-                }
+            if let tauri::RunEvent::ExitRequested { .. } = event
+                && let Some(state) = app.try_state::<AppState>()
+            {
+                state.core.engine.disconnect_all();
+                // Let sessions close their sockets cleanly.
+                std::thread::sleep(Duration::from_millis(250));
             }
         });
 }
@@ -407,13 +407,13 @@ fn configure_webview(app: &tauri::App) {
     }
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.with_webview(|pw| unsafe {
-            if let Ok(core) = pw.controller().CoreWebView2() {
-                if let Ok(settings) = core.Settings() {
-                    if let Ok(s3) = settings.cast::<ICoreWebView2Settings3>() {
-                        let _ = s3.SetAreBrowserAcceleratorKeysEnabled(false.into());
-                    }
-                    let _ = settings.SetAreDefaultContextMenusEnabled(false.into());
+            if let Ok(core) = pw.controller().CoreWebView2()
+                && let Ok(settings) = core.Settings()
+            {
+                if let Ok(s3) = settings.cast::<ICoreWebView2Settings3>() {
+                    let _ = s3.SetAreBrowserAcceleratorKeysEnabled(false);
                 }
+                let _ = settings.SetAreDefaultContextMenusEnabled(false);
             }
         });
     }

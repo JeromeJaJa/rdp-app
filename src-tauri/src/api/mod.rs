@@ -751,10 +751,10 @@ async fn keys(
         batches.push(crate::keys::combo(combo).map_err(|e| bad(e.to_string()))?);
     }
     for (i, events) in batches.into_iter().enumerate() {
-        if i > 0 {
-            if let Some(ms) = body.delay_ms.filter(|ms| *ms > 0) {
-                tokio::time::sleep(Duration::from_millis(ms.min(10_000))).await;
-            }
+        if i > 0
+            && let Some(ms) = body.delay_ms.filter(|ms| *ms > 0)
+        {
+            tokio::time::sleep(Duration::from_millis(ms.min(10_000))).await;
         }
         core.engine.input(&id, events);
     }

@@ -80,7 +80,7 @@ impl GfxOutput {
             self.data.fill(0);
         }
         // Opaque black.
-        for px in self.data.chunks_exact_mut(BPP) {
+        for px in self.data.as_chunks_mut::<BPP>().0 {
             px[3] = 0xFF;
         }
         self.width = width;
@@ -281,11 +281,11 @@ impl GfxClient {
                 // The reset only resizes the output buffer (MS-RDPEGFX 2.2.2.14): surfaces,
                 // the bitmap cache and codec state live on until the server deletes them —
                 // Windows keeps placing cached tiles after a resize.
-                if let Some(id) = self.aliased.take() {
-                    if let Some(s) = self.surfaces.get_mut(&id) {
-                        // The primary surface's pixels are the output being replaced.
-                        s.store = Store::Own(std::mem::take(&mut out.data));
-                    }
+                if let Some(id) = self.aliased.take()
+                    && let Some(s) = self.surfaces.get_mut(&id)
+                {
+                    // The primary surface's pixels are the output being replaced.
+                    s.store = Store::Own(std::mem::take(&mut out.data));
                 }
                 out.reset(w, h);
                 self.dirty.clear();
@@ -682,24 +682,24 @@ impl GfxClient {
                     .decode_bitmap_stream_to_rgb24(&pdu.bitmap_data, &mut rgb, usize::from(dest.w), usize::from(dest.h))
                     .inspect_err(|e| warn!(error = %e, "planar decode failed"))
                     .is_ok();
-                if ok {
-                    if let Some(r) = dest.clip(sw, sh) {
-                        let src_stride = usize::from(dest.w) * 3;
-                        for y in 0..usize::from(r.h) {
-                            let s = y * src_stride;
-                            let Some(src) = rgb.get(s..s + usize::from(r.w) * 3) else {
-                                break;
-                            };
-                            let d = (usize::from(r.y) + y) * stride + usize::from(r.x) * BPP;
-                            for (dp, sp) in buf[d..d + usize::from(r.w) * BPP]
-                                .chunks_exact_mut(4)
-                                .zip(src.chunks_exact(3))
-                            {
-                                dp.copy_from_slice(&[sp[0], sp[1], sp[2], 0xFF]);
-                            }
+                if ok && let Some(r) = dest.clip(sw, sh) {
+                    let src_stride = usize::from(dest.w) * 3;
+                    for y in 0..usize::from(r.h) {
+                        let s = y * src_stride;
+                        let Some(src) = rgb.get(s..s + usize::from(r.w) * 3) else {
+                            break;
+                        };
+                        let d = (usize::from(r.y) + y) * stride + usize::from(r.x) * BPP;
+                        for (dp, sp) in buf[d..d + usize::from(r.w) * BPP]
+                            .as_chunks_mut::<4>()
+                            .0
+                            .iter_mut()
+                            .zip(src.as_chunks::<3>().0)
+                        {
+                            dp.copy_from_slice(&[sp[0], sp[1], sp[2], 0xFF]);
                         }
-                        self.dirty.push((id, r));
                     }
+                    self.dirty.push((id, r));
                 }
                 self.scratch = rgb;
                 self.stats.planar.fetch_add(1, Ordering::Relaxed);
@@ -805,7 +805,7 @@ impl GfxClient {
             };
             for y in 0..usize::from(r.h) {
                 let d = (usize::from(r.y) + y) * stride + usize::from(r.x) * BPP;
-                for dp in buf[d..d + usize::from(r.w) * BPP].chunks_exact_mut(4) {
+                for dp in buf[d..d + usize::from(r.w) * BPP].as_chunks_mut::<4>().0 {
                     dp.copy_from_slice(&px);
                 }
             }
@@ -910,7 +910,7 @@ impl GfxClient {
 }
 
 fn bgrx_to_rgba(src: &[u8], dst: &mut [u8]) {
-    for (d, s) in dst.chunks_exact_mut(4).zip(src.chunks_exact(4)) {
+    for (d, s) in dst.as_chunks_mut::<4>().0.iter_mut().zip(src.as_chunks::<4>().0) {
         d[0] = s[2];
         d[1] = s[1];
         d[2] = s[0];

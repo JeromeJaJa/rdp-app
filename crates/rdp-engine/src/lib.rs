@@ -438,12 +438,12 @@ impl Engine {
     /// (or just connects when it is not running).
     pub fn reconnect(&self, id: &str, params: ConnectParams) {
         let mut state = self.state.lock();
-        if let Some(handle) = state.sessions.get(id) {
-            if !handle.tx.is_closed() {
-                let _ = handle.tx.send(Command::Disconnect);
-                state.restarts.insert(id.to_owned(), params);
-                return;
-            }
+        if let Some(handle) = state.sessions.get(id)
+            && !handle.tx.is_closed()
+        {
+            let _ = handle.tx.send(Command::Disconnect);
+            state.restarts.insert(id.to_owned(), params);
+            return;
         }
         drop(state);
         self.connect(id, params);
@@ -593,10 +593,10 @@ impl Engine {
 /// Starts a session thread unless one is already running for `id`.
 fn start(shared: &Arc<Shared>, state_lock: &Arc<Mutex<State>>, id: &str, params: ConnectParams) {
     let mut state = state_lock.lock();
-    if let Some(existing) = state.sessions.get(id) {
-        if !existing.tx.is_closed() {
-            return; // already running
-        }
+    if let Some(existing) = state.sessions.get(id)
+        && !existing.tx.is_closed()
+    {
+        return; // already running
     }
 
     let generation = state.next_generation;
@@ -631,7 +631,10 @@ fn start(shared: &Arc<Shared>, state_lock: &Arc<Mutex<State>>, id: &str, params:
 
 /// Runs when a session thread exits: forgets it, and starts it again if a reconnect
 /// was requested meanwhile.
-fn cleanup(shared: &Arc<Shared>, state: &Arc<Mutex<State>>) -> Arc<dyn Fn(&str, u64) + Send + Sync> {
+/// Called with (session id, generation) when a session thread exits.
+pub(crate) type Cleanup = Arc<dyn Fn(&str, u64) + Send + Sync>;
+
+fn cleanup(shared: &Arc<Shared>, state: &Arc<Mutex<State>>) -> Cleanup {
     let (shared, state) = (Arc::downgrade(shared), Arc::downgrade(state));
     Arc::new(move |id: &str, generation: u64| {
         let Some(state) = state.upgrade() else { return };

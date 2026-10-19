@@ -59,7 +59,7 @@ pub(crate) struct SessionInit {
 
 pub(crate) fn spawn(
     shared: Arc<Shared>,
-    cleanup: Arc<dyn Fn(&str, u64) + Send + Sync>,
+    cleanup: crate::Cleanup,
     init: SessionInit,
     rx: mpsc::UnboundedReceiver<Command>,
 ) {
@@ -269,11 +269,11 @@ impl Session {
                     self.thumb = Some(ThumbWriter::new(writer, w, h));
                 }
             }
-            if let Some(thumb) = self.thumb.as_mut() {
-                if !fits || self.views_dirty {
-                    thumb.mark_all();
-                    thumb.flush(frame.data);
-                }
+            if let Some(thumb) = self.thumb.as_mut()
+                && (!fits || self.views_dirty)
+            {
+                thumb.mark_all();
+                thumb.flush(frame.data);
             }
         } else {
             self.release_thumb();
@@ -301,28 +301,28 @@ impl Session {
         if damage.is_empty() {
             return;
         }
-        if self.view.full {
-            if let Some(full) = self.full.as_mut() {
-                for rect in damage {
-                    full.copy_rect(frame.data, frame.stride, rect);
-                    full.publish(rect);
-                }
+        if self.view.full
+            && let Some(full) = self.full.as_mut()
+        {
+            for rect in damage {
+                full.copy_rect(frame.data, frame.stride, rect);
+                full.publish(rect);
             }
         }
-        if self.view.thumb {
-            if let Some(thumb) = self.thumb.as_mut() {
-                for rect in damage {
-                    thumb.mark(rect);
-                }
+        if self.view.thumb
+            && let Some(thumb) = self.thumb.as_mut()
+        {
+            for rect in damage {
+                thumb.mark(rect);
             }
         }
     }
 
     fn flush_thumb(&mut self, frame: Frame<'_>) {
-        if let Some(thumb) = self.thumb.as_mut() {
-            if thumb.has_pending() {
-                thumb.flush(frame.data);
-            }
+        if let Some(thumb) = self.thumb.as_mut()
+            && thumb.has_pending()
+        {
+            thumb.flush(frame.data);
         }
     }
 }
@@ -1023,8 +1023,8 @@ async fn active(
                 }
 
                 _ = sleep_until_opt(resize_deadline), if resize_deadline.is_some() => {
-                    if let Some((vp, _)) = live.resize_to.take() {
-                        if !live.resize_now(vp).await? {
+                    if let Some((vp, _)) = live.resize_to.take()
+                        && !live.resize_now(vp).await? {
                             // Display control not ready yet; retry shortly (gives up quietly
                             // on servers without the channel).
                             if !live.resize_unavailable_logged {
@@ -1033,7 +1033,6 @@ async fn active(
                                 live.resize_to = Some((vp, Instant::now() + Duration::from_secs(2)));
                             }
                         }
-                    }
                 }
 
                 _ = sleep_until_opt(shots_deadline), if shots_deadline.is_some() => {
@@ -1154,7 +1153,7 @@ fn capture(live: &Live) -> crate::Screenshot {
         for y in 0..h {
             rgba.extend_from_slice(&f.data[y * f.stride..y * f.stride + w * 4]);
         }
-        for px in rgba.chunks_exact_mut(4) {
+        for px in rgba.as_chunks_mut::<4>().0 {
             px[3] = 0xFF;
         }
         crate::Screenshot {

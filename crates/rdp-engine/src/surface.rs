@@ -69,6 +69,9 @@ pub fn surface_len(width: u32, height: u32) -> usize {
 pub trait SurfaceMemory: Send + Sync {
     fn as_ptr(&self) -> *mut u8;
     fn len(&self) -> usize;
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 /// Allocates surfaces for sessions. Calls come from session threads and may block
@@ -139,7 +142,7 @@ pub struct SurfaceWriter {
 impl SurfaceWriter {
     pub fn new(mem: Arc<dyn SurfaceMemory>, width: u32, height: u32) -> anyhow::Result<Self> {
         anyhow::ensure!(mem.len() >= surface_len(width, height), "surface memory too small");
-        anyhow::ensure!(mem.as_ptr() as usize % 8 == 0, "surface memory misaligned");
+        anyhow::ensure!((mem.as_ptr() as usize).is_multiple_of(8), "surface memory misaligned");
         let writer = Self {
             mem,
             width,
@@ -388,8 +391,7 @@ mod tests {
     #[test]
     fn thumbnail_downscales_uniform_color() {
         let (sw, sh) = (64u32, 32u32);
-        let src: Vec<u8> = std::iter::repeat([10u8, 20, 30, 255])
-            .take((sw * sh) as usize)
+        let src: Vec<u8> = std::iter::repeat_n([10u8, 20, 30, 255], (sw * sh) as usize)
             .flatten()
             .collect();
         let (tw, th) = ThumbWriter::dims(sw, sh, 16);

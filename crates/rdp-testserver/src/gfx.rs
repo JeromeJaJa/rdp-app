@@ -69,6 +69,7 @@ pub const PALETTE: [(u8, u8, u8); 6] = [
 ];
 
 /// Streams the animated desktop as H.264 frames whenever a client's pipeline is ready.
+#[allow(clippy::too_many_arguments)] // one call site; the options are its command-line flags
 pub async fn produce(
     port: u16,
     slots: GfxSlots,
@@ -147,7 +148,7 @@ pub async fn produce(
         };
         frame_no += 1;
         // Periodic key frames, as a real host produces after loss/refresh.
-        if frame_no % 60 == 0 {
+        if frame_no.is_multiple_of(60) {
             encoder.request_key_frame();
             if let Some(e) = enc444.as_mut() {
                 e.request_key_frame();
@@ -183,7 +184,7 @@ pub async fn produce(
         };
 
         // Fault injection: silently lose a P-frame to break the decoder's reference chain.
-        if drop_every > 0 && frame_no % u64::from(drop_every) == 0 {
+        if drop_every > 0 && frame_no.is_multiple_of(u64::from(drop_every)) {
             continue;
         }
 
@@ -256,7 +257,7 @@ pub async fn produce(
                 }
                 if let Some(sw) = origin_swatch {
                     let bgra = animator.bgra_region(sw);
-                    if period % 2 == 0 {
+                    if period.is_multiple_of(2) {
                         let mut planar = vec![0u8; bgra.len() + 64];
                         let mut enc =
                             ironrdp_graphics::rdp6::BitmapStreamEncoder::new(usize::from(sw.2), usize::from(sw.3));

@@ -676,7 +676,8 @@ impl Core {
             })
             .collect();
         for event in self.engine.snapshot() {
-            let (id, apply): (&str, Box<dyn Fn(&mut SessionInfo)>) = match &event {
+            type Apply = Box<dyn Fn(&mut SessionInfo)>;
+            let (id, apply): (&str, Apply) = match &event {
                 EngineEvent::Status { id, status, message } => {
                     let status = serde_json::to_value(status)
                         .ok()
