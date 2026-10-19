@@ -290,6 +290,8 @@ pub(crate) enum Command {
     PauseHidden(bool),
     CtrlAltDel,
     Clipboard(ironrdp_cliprdr::backend::ClipboardMessage),
+    /// New audio mode for this session (live when its connection has an audio channel).
+    Audio(AudioMode),
     /// Encoded DVC messages produced off-thread (microphone).
     SendDvc(Vec<ironrdp_svc::SvcMessage>),
     Screenshot(tokio::sync::oneshot::Sender<anyhow::Result<Screenshot>>),
@@ -306,6 +308,8 @@ pub struct Screenshot {
 struct SessionHandle {
     tx: mpsc::UnboundedSender<Command>,
     generation: u64,
+    /// Whether the current connection negotiated audio playback.
+    audio_channel: Arc<std::sync::atomic::AtomicBool>,
 }
 
 pub(crate) struct Shared {
@@ -471,6 +475,21 @@ impl Engine {
         }
     }
 
+    /// Changes a session's audio mode without reconnecting. Returns false when the
+    /// running connection was opened with audio off and so has no audio channel: the
+    /// mode then takes effect from its next connection.
+    pub fn set_audio(&self, id: &str, mode: AudioMode) -> bool {
+        let mut state = self.state.lock();
+        if let Some(params) = state.restarts.get_mut(id) {
+            params.audio = mode;
+        }
+        let Some(handle) = state.sessions.get(id) else {
+            return true;
+        };
+        let _ = handle.tx.send(Command::Audio(mode));
+        mode == AudioMode::Off || handle.audio_channel.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     pub fn ctrl_alt_del(&self, id: &str) {
         let state = self.state.lock();
         if let Some(handle) = state.sessions.get(id) {
@@ -584,6 +603,7 @@ fn start(shared: &Arc<Shared>, state_lock: &Arc<Mutex<State>>, id: &str, params:
     state.next_generation += 1;
     let (tx, rx) = mpsc::unbounded_channel();
     let view = view_for(&state, id);
+    let audio_channel = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let init = session::SessionInit {
         id: id.to_owned(),
         clipboard: SessionClipboard::new(tx.clone()),
@@ -593,8 +613,16 @@ fn start(shared: &Arc<Shared>, state_lock: &Arc<Mutex<State>>, id: &str, params:
         viewport: state.viewport,
         settings: state.settings,
         view,
+        audio_channel: Arc::clone(&audio_channel),
     };
-    state.sessions.insert(id.to_owned(), SessionHandle { tx, generation });
+    state.sessions.insert(
+        id.to_owned(),
+        SessionHandle {
+            tx,
+            generation,
+            audio_channel,
+        },
+    );
     drop(state);
 
     info!(session = id, "starting session");

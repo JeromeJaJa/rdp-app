@@ -53,7 +53,12 @@ export interface Connection {
   createdAt: number;
   /** null = use the group's gateway (if any). */
   gateway: GatewaySettings | null;
+  /** Sound for this connection; null/absent = follow Settings → Audio. */
+  audio?: AudioMode | null;
 }
+
+/** Remote audio playback: off, only the session on screen, or always. */
+export type AudioMode = "off" | "active" | "all";
 
 export interface NewConnection {
   name?: string;
@@ -68,6 +73,7 @@ export interface NewConnection {
   /** Duplicate support: copy the stored password of this existing connection (ignored if `password` is set). */
   copyPasswordFrom?: ConnectionId;
   gateway?: GatewayInput | null;
+  audio?: AudioMode | null;
 }
 
 export interface ConnectionPatch {
@@ -82,6 +88,8 @@ export interface ConnectionPatch {
   notes?: string;
   /** undefined = unchanged, null = inherit from group. */
   gateway?: GatewayInput | null;
+  /** undefined = unchanged, null = follow the app setting. */
+  audio?: AudioMode | null;
 }
 
 export interface Group {
@@ -132,7 +140,7 @@ export interface Settings {
   /** Share the clipboard (text, images, files) with remote sessions. */
   clipboardSync: boolean;
   /** Remote audio playback: off, only the session on screen, or every session. */
-  audio: "off" | "active" | "all";
+  audio: AudioMode;
   /** Redirect this PC's microphone to the session on screen. */
   microphone: boolean;
   /** Share local drives with sessions. "custom" uses `drivePaths`. */

@@ -139,6 +139,8 @@ struct DocConnection {
     notes: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     gateway: Option<DocGateway>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    audio: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -216,6 +218,7 @@ impl Store {
                             password: reveal(&c.password)?,
                             notes: c.notes.clone(),
                             gateway: c.gateway.as_ref().map(gateway).transpose()?,
+                            audio: c.audio.clone(),
                         });
                     }
                     doc_groups.push(DocGroup {
@@ -294,6 +297,7 @@ fn parse_source(source: &ImportSource) -> anyhow::Result<Parsed> {
                         password: reveal(c.password),
                         notes: Some(c.notes).filter(|n| !n.is_empty()),
                         gateway: c.gateway.map(gateway),
+                        audio: c.audio.filter(|a| super::AUDIO_MODES.contains(&a.as_str())),
                         ..Default::default()
                     })
                     .collect(),

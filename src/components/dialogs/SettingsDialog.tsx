@@ -260,7 +260,7 @@ function Devices() {
   return (
     <>
       <h3 className="settings__heading">Audio</h3>
-      <Row title="Remote audio" desc="Play sound from remote sessions on this PC.">
+      <Row title="Remote audio" desc="Play sound from remote sessions on this PC. Connections can override this (Mute in the toolbar or menu, or Sound in Edit).">
         <Segmented
           size="sm"
           value={s.audio}

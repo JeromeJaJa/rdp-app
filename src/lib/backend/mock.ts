@@ -12,6 +12,7 @@ import {
   type ExportOptions,
   type GatewayInput,
   type GatewaySettings,
+  type AudioMode,
   type Group,
   type GroupId,
   type GroupInput,
@@ -342,6 +343,14 @@ export class MockBackend implements Backend {
     c.gateway = this.storeGateway(`c:${id}`, gateway, c.gateway);
     this.persist();
     return structuredClone(c);
+  }
+
+  async setConnectionAudio(id: ConnectionId, audio: AudioMode | null): Promise<boolean> {
+    const c = this.lib.connections.find((x) => x.id === id);
+    if (!c) throw new Error("Connection not found");
+    c.audio = audio;
+    this.persist();
+    return true;
   }
 
   async deleteConnections(ids: ConnectionId[]): Promise<void> {

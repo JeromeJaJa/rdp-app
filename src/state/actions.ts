@@ -1,6 +1,7 @@
 import { getBackend, type Backend } from "../lib/backend";
 import {
   DEFAULT_GROUP_ID,
+  type AudioMode,
   type Connection,
   type ConnectionId,
   type ConnectionPatch,
@@ -344,11 +345,11 @@ export function confirm(opts: Omit<Extract<DialogState, { kind: "confirm" }>, "k
 }
 
 let toastSeq = 0;
-export function toast(tone: Toast["tone"], title: string, message?: string) {
+export function toast(tone: Toast["tone"], title: string, message?: string, action?: Toast["action"]) {
   const id = ++toastSeq;
-  const toasts = [...getState().toasts, { id, tone, title, message }].slice(-4);
+  const toasts = [...getState().toasts, { id, tone, title, message, action }].slice(-4);
   setState({ toasts });
-  window.setTimeout(() => dismissToast(id), tone === "error" ? 6000 : 3500);
+  window.setTimeout(() => dismissToast(id), tone === "error" || action ? 6000 : 3500);
 }
 
 export function dismissToast(id: number) {
@@ -446,6 +447,39 @@ export async function addConnections(items: NewConnection[]): Promise<Connection
   return created;
 }
 
+/** The sound a connection plays with: its own choice, or Settings → Audio. */
+export function effectiveAudio(id: ConnectionId): AudioMode {
+  const s = getState();
+  return s.connById[id]?.audio ?? s.settings.audio;
+}
+
+/** Sets a connection's sound (null = follow the app setting), live where possible. */
+export async function setConnectionAudio(id: ConnectionId, audio: AudioMode | null): Promise<void> {
+  const s = getState();
+  const prev = s.connById[id];
+  if (!prev) return;
+  setState({ connById: { ...s.connById, [id]: { ...prev, audio } } });
+  try {
+    const live = await be().setConnectionAudio(id, audio);
+    if (!live && isLive(sessionOf(id).status)) {
+      toast("info", "Reconnect to hear this session", "It connected with sound off.", {
+        label: "Reconnect",
+        run: () => reconnect(id),
+      });
+    }
+  } catch (err) {
+    setState({ connById: { ...getState().connById, [id]: prev } });
+    toast("error", "Could not change sound", errorText(err));
+  }
+}
+
+/** Mutes the connection, or unmutes it (back to the app setting when that plays sound). */
+export function toggleConnectionMute(id: ConnectionId) {
+  const muted = effectiveAudio(id) === "off";
+  const global = getState().settings.audio;
+  void setConnectionAudio(id, muted ? (global === "off" ? "active" : null) : "off");
+}
+
 export async function updateConnection(id: ConnectionId, patch: ConnectionPatch): Promise<void> {
   const s = getState();
   const prev = s.connById[id];
@@ -480,6 +514,7 @@ export async function duplicateConnection(id: ConnectionId) {
       groupId: c.groupId,
       notes: c.notes,
       copyPasswordFrom: c.hasPassword ? c.id : undefined,
+      audio: c.audio ?? undefined,
     },
   ]);
   if (copy) {

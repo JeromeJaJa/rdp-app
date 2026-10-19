@@ -13,6 +13,8 @@ import {
   Plus,
   RotateCw,
   Trash2,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 import {
   closeMenu,
@@ -29,6 +31,7 @@ import {
   openDialog,
   reconnect,
   startRenameGroup,
+  toggleConnectionMute,
 } from "../../state/actions";
 import { FEATURES } from "../../lib/features";
 import { displayName, isBusy, isLive, useBulkActions, useStore, type MenuState } from "../../state/store";
@@ -91,6 +94,7 @@ function ConnectionMenu({ id }: { id: string }) {
   const conn = useStore((s) => s.connById[id]);
   const status = useStore((s) => s.sessions[id]?.status ?? "idle");
   const groups = useStore((s) => s.groups);
+  const muted = useStore((s) => (s.connById[id]?.audio ?? s.settings.audio) === "off");
   if (!conn) return null;
   const active = isLive(status) || isBusy(status);
 
@@ -107,6 +111,11 @@ function ConnectionMenu({ id }: { id: string }) {
       <Sep />
       <Item icon={<Pencil size={14} />} label="Edit…" onSelect={() => openDialog({ kind: "edit", id })} />
       <Item icon={<Copy size={14} />} label="Duplicate" onSelect={() => duplicateConnection(id)} />
+      <Item
+        icon={muted ? <Volume2 size={14} /> : <VolumeX size={14} />}
+        label={muted ? "Unmute" : "Mute"}
+        onSelect={() => toggleConnectionMute(id)}
+      />
       <Item
         icon={<FolderInput size={14} />}
         label="Move to group"

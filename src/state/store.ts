@@ -64,6 +64,8 @@ export interface Toast {
   tone: "info" | "success" | "error";
   title: string;
   message?: string;
+  /** One follow-up button (e.g. "Reconnect"). */
+  action?: { label: string; run: () => void };
 }
 
 export interface AppState {

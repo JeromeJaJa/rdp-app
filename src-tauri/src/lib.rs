@@ -53,6 +53,11 @@ fn update_connection(state: State<'_, AppState>, id: String, patch: ConnectionPa
 }
 
 #[tauri::command]
+fn set_connection_audio(state: State<'_, AppState>, id: String, audio: Option<String>) -> CmdResult<bool> {
+    state.core.set_connection_audio(&id, audio, Origin::Ui).map_err(err)
+}
+
+#[tauri::command]
 fn delete_connections(state: State<'_, AppState>, ids: Vec<String>) -> CmdResult<()> {
     state.core.delete_connections(&ids, Origin::Ui).map_err(err)
 }
@@ -346,6 +351,7 @@ pub fn run() {
             load_library,
             add_connections,
             update_connection,
+            set_connection_audio,
             delete_connections,
             reorder_connections,
             save_groups,

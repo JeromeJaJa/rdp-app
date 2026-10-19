@@ -245,9 +245,49 @@ impl Core {
     }
 
     pub fn update_connection(&self, id: &str, patch: ConnectionPatch, origin: Origin) -> anyhow::Result<Connection> {
+        let audio_changed = patch.audio.is_some();
         let c = self.store.lock().update(id, patch)?;
+        if audio_changed {
+            self.apply_audio(id);
+        }
         self.changed(origin);
         Ok(c)
+    }
+
+    /// Sets a connection's sound (`None` = follow the app setting) and applies it to its
+    /// session. Returns false when the session must reconnect to hear it (it connected
+    /// with sound off, so has no audio channel).
+    pub fn set_connection_audio(&self, id: &str, audio: Option<String>, origin: Origin) -> anyhow::Result<bool> {
+        self.store.lock().update(
+            id,
+            ConnectionPatch {
+                audio: Some(audio),
+                ..Default::default()
+            },
+        )?;
+        let live = self.apply_audio(id);
+        self.changed(origin);
+        Ok(live)
+    }
+
+    /// The audio mode a connection should use: its override, or the app setting.
+    fn audio_mode(&self, id: &str) -> AudioMode {
+        let fallback = self
+            .settings()
+            .get("audio")
+            .and_then(Value::as_str)
+            .unwrap_or("active")
+            .to_owned();
+        let mode = self.store.lock().audio_override(id).unwrap_or(fallback);
+        match mode.as_str() {
+            "off" => AudioMode::Off,
+            "all" => AudioMode::All,
+            _ => AudioMode::Active,
+        }
+    }
+
+    fn apply_audio(&self, id: &str) -> bool {
+        self.engine.set_audio(id, self.audio_mode(id))
     }
 
     pub fn delete_connections(&self, ids: &[String], origin: Origin) -> anyhow::Result<()> {
@@ -497,6 +537,10 @@ impl Core {
             pause_hidden: s.get("pauseHiddenSessions").and_then(Value::as_bool).unwrap_or(true),
             ..current
         });
+        // The app-wide audio setting may have changed: running sessions follow it live.
+        for id in self.engine.running() {
+            self.apply_audio(&id);
+        }
 
         let clipboard = s.get("clipboardSync").and_then(Value::as_bool).unwrap_or(true);
         #[cfg(windows)]
@@ -561,7 +605,7 @@ impl Core {
                 "ignore" => CertPolicy::Ignore,
                 _ => CertPolicy::TrustOnFirstUse,
             },
-            audio: match str_of("audio").as_str() {
+            audio: match creds.audio.unwrap_or_else(|| str_of("audio")).as_str() {
                 "off" => AudioMode::Off,
                 "all" => AudioMode::All,
                 _ => AudioMode::Active,

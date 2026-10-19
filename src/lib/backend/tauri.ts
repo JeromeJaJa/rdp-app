@@ -7,6 +7,7 @@ import {
   type ApiInfo,
   type Connection,
   type ConnectionId,
+  type AudioMode,
   type ConnectionPatch,
   type ExportOptions,
   type GroupId,
@@ -67,6 +68,10 @@ export class TauriBackend implements Backend {
 
   updateConnection(id: ConnectionId, patch: ConnectionPatch): Promise<Connection> {
     return invoke("update_connection", { id, patch });
+  }
+
+  setConnectionAudio(id: ConnectionId, audio: AudioMode | null): Promise<boolean> {
+    return invoke("set_connection_audio", { id, audio });
   }
 
   deleteConnections(ids: ConnectionId[]): Promise<void> {

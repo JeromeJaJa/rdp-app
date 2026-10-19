@@ -176,6 +176,9 @@ struct StoredConnection {
     created_at: u64,
     #[serde(default)]
     gateway: Option<StoredGateway>,
+    /// Sound for this connection ("off" | "active" | "all"); absent = the app setting.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    audio: Option<String>,
 }
 
 fn default_port() -> u16 {
@@ -207,6 +210,8 @@ pub struct Connection {
     pub notes: String,
     pub created_at: u64,
     pub gateway: Option<Gateway>,
+    /// `null` = follow the app's audio setting.
+    pub audio: Option<String>,
 }
 
 impl From<&StoredConnection> for Connection {
@@ -223,6 +228,7 @@ impl From<&StoredConnection> for Connection {
             notes: c.notes.clone(),
             created_at: c.created_at,
             gateway: c.gateway.as_ref().map(StoredGateway::view),
+            audio: c.audio.clone(),
         }
     }
 }
@@ -250,6 +256,9 @@ pub struct NewConnection {
     pub copy_password_from: Option<String>,
     #[serde(default)]
     pub gateway: Option<GatewayInput>,
+    /// "off" | "active" | "all"; absent = follow the app setting.
+    #[serde(default)]
+    pub audio: Option<String>,
 }
 
 impl NewConnection {
@@ -281,7 +290,13 @@ pub struct ConnectionPatch {
     /// Absent = unchanged; `null` = inherit the group's gateway.
     #[serde(default, deserialize_with = "double_option")]
     pub gateway: Option<Option<GatewayInput>>,
+    /// Absent = unchanged; `null` = follow the app setting; otherwise "off" | "active" | "all".
+    #[serde(default, deserialize_with = "double_option")]
+    pub audio: Option<Option<String>>,
 }
+
+/// Valid per-connection audio values.
+pub const AUDIO_MODES: [&str; 3] = ["off", "active", "all"];
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -344,6 +359,8 @@ pub struct Credentials {
     pub domain: String,
     pub password: String,
     pub gateway: Option<GatewayCredentials>,
+    /// Per-connection audio override.
+    pub audio: Option<String>,
 }
 
 pub struct Store {
@@ -495,6 +512,9 @@ impl Store {
             _ => String::new(),
         };
         let gateway = item.gateway.map(|g| StoredGateway::from_input(None, g)).transpose()?;
+        if let Some(mode) = item.audio.as_deref().filter(|m| !AUDIO_MODES.contains(m)) {
+            bail!("audio must be off, active or all (got {mode:?})");
+        }
         Ok(Some(StoredConnection {
             id: uuid::Uuid::new_v4().to_string(),
             name: item.name.unwrap_or_default().trim().to_owned(),
@@ -507,6 +527,7 @@ impl Store {
             notes: item.notes.unwrap_or_default(),
             created_at: now,
             gateway,
+            audio: item.audio,
         }))
     }
 
@@ -564,6 +585,12 @@ impl Store {
                 None => None,
                 Some(input) => Some(StoredGateway::from_input(c.gateway.as_ref(), input)?),
             };
+        }
+        if let Some(audio) = patch.audio {
+            if let Some(mode) = audio.as_deref().filter(|m| !AUDIO_MODES.contains(m)) {
+                bail!("audio must be off, active, all or null (got {mode:?})");
+            }
+            c.audio = audio;
         }
         let out = Connection::from(&*c);
         self.save()?;
@@ -787,7 +814,13 @@ impl Store {
             domain: c.domain.clone(),
             password,
             gateway,
+            audio: c.audio.clone(),
         })
+    }
+
+    /// The connection's audio override (`None` = follow the app setting).
+    pub fn audio_override(&self, id: &str) -> Option<String> {
+        self.data.connections.iter().find(|c| c.id == id)?.audio.clone()
     }
 }
 
@@ -939,6 +972,24 @@ pub(crate) mod tests {
         // The kept connection keeps its id and gets the new password.
         assert_eq!(lib.connections[2].id, before[1].id);
         assert_eq!(store.credentials(&before[1].id).unwrap().password, "new");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn audio_override_is_validated_and_clearable() {
+        let (mut store, dir) = temp_store();
+        let id = store.add(vec![nc("h", "u", "p", None)]).unwrap()[0].id.clone();
+        assert_eq!(store.audio_override(&id), None);
+        let patch = |audio: Option<&str>| ConnectionPatch {
+            audio: Some(audio.map(Into::into)),
+            ..Default::default()
+        };
+        store.update(&id, patch(Some("off"))).unwrap();
+        assert_eq!(store.audio_override(&id).as_deref(), Some("off"));
+        assert_eq!(store.credentials(&id).unwrap().audio.as_deref(), Some("off"));
+        assert!(store.update(&id, patch(Some("loud"))).is_err());
+        store.update(&id, patch(None)).unwrap();
+        assert_eq!(store.audio_override(&id), None);
         let _ = std::fs::remove_dir_all(dir);
     }
 

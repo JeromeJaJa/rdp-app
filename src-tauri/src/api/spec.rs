@@ -85,7 +85,7 @@ pub const ENDPOINTS: &[Endpoint] = &[
         params: &[],
         body: None,
         response: Some(
-            r#"{"library": {"groups": [{"id":"all","name":"All","collapsed":false,"builtin":true,"gateway":null}], "connections": [{"id":"9f1c…","name":"","host":"10.0.0.5","port":3389,"username":"admin","domain":"","hasPassword":true,"groupId":"all","notes":"","createdAt":1760857200000,"gateway":null}], "settings": {…}}, "sessions": [{"id":"9f1c…","status":"connected","width":1920,"height":1080,"codec":"H.264 · AVC420"}], "ui": {"selectedId":"9f1c…","view":"session","fullscreen":false}}"#,
+            r#"{"library": {"groups": [{"id":"all","name":"All","collapsed":false,"builtin":true,"gateway":null}], "connections": [{"id":"9f1c…","name":"","host":"10.0.0.5","port":3389,"username":"admin","domain":"","hasPassword":true,"groupId":"all","notes":"","createdAt":1760857200000,"gateway":null,"audio":null}], "settings": {…}}, "sessions": [{"id":"9f1c…","status":"connected","width":1920,"height":1080,"codec":"H.264 · AVC420"}], "ui": {"selectedId":"9f1c…","view":"session","fullscreen":false}}"#,
         ),
         auth: true,
     },
@@ -124,7 +124,7 @@ pub const ENDPOINTS: &[Endpoint] = &[
         ],
         body: None,
         response: Some(
-            r#"[{"id":"9f1c…","name":"web-01","host":"10.0.0.5","port":3389,"username":"admin","domain":"","hasPassword":true,"groupId":"all","notes":"","createdAt":1760857200000,"gateway":null}]"#,
+            r#"[{"id":"9f1c…","name":"web-01","host":"10.0.0.5","port":3389,"username":"admin","domain":"","hasPassword":true,"groupId":"all","notes":"","createdAt":1760857200000,"gateway":null,"audio":null}]"#,
         ),
         auth: true,
     },
@@ -165,7 +165,7 @@ pub const ENDPOINTS: &[Endpoint] = &[
         params: &[ID],
         body: None,
         response: Some(
-            r#"{"id":"9f1c…","name":"web-01","host":"10.0.0.5","port":3389,"username":"admin","domain":"","hasPassword":true,"groupId":"all","notes":"","createdAt":1760857200000,"gateway":null}"#,
+            r#"{"id":"9f1c…","name":"web-01","host":"10.0.0.5","port":3389,"username":"admin","domain":"","hasPassword":true,"groupId":"all","notes":"","createdAt":1760857200000,"gateway":null,"audio":null}"#,
         ),
         auth: true,
     },
@@ -174,7 +174,7 @@ pub const ENDPOINTS: &[Endpoint] = &[
         path: "/api/v1/connections/{id}",
         tag: "Connections",
         summary: "Update a connection",
-        description: "Only the fields you send change. password: \"\" clears it. gateway: null means \"use the group's gateway\"; {\"enabled\": false} forces a direct connection.",
+        description: "Only the fields you send change. password: \"\" clears it. gateway: null means \"use the group's gateway\"; {\"enabled\": false} forces a direct connection. audio: \"off\" | \"active\" (only while on screen) | \"all\", or null to follow the app setting; it applies to a running session immediately unless that session connected with sound off (then from its next connection).",
         params: &[ID],
         body: Some(
             r#"{"name":"web-01 (new)","password":"new-secret","groupId":"<group id>","gateway":{"enabled":true,"host":"rdg.example.com","sameCredentials":true,"username":"","domain":""}}"#,

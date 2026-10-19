@@ -53,6 +53,8 @@ pub(crate) struct SessionInit {
     pub viewport: Viewport,
     pub settings: EngineSettings,
     pub view: ViewState,
+    /// Set for each connection attempt: whether it negotiates audio playback.
+    pub audio_channel: Arc<std::sync::atomic::AtomicBool>,
 }
 
 pub(crate) fn spawn(
@@ -166,6 +168,10 @@ impl Session {
             Command::Resize(vp) => self.viewport = vp,
             Command::ThumbnailWidth(w) => self.settings.thumbnail_width = w,
             Command::PauseHidden(p) => self.settings.pause_hidden = p,
+            Command::Audio(mode) => {
+                self.params.audio = mode;
+                self.update_audible();
+            }
             Command::Screenshot(reply) => {
                 let _ = reply.send(Err(anyhow::anyhow!("session is not connected")));
             }
@@ -424,6 +430,10 @@ async fn run(
         let started = Instant::now();
         let attempt_result = {
             let params = s.params.clone();
+            init.audio_channel.store(
+                params.audio != crate::AudioMode::Off,
+                std::sync::atomic::Ordering::Relaxed,
+            );
             let fut = tokio::time::timeout(
                 CONNECT_TIMEOUT,
                 connect::connect(
@@ -921,6 +931,10 @@ async fn active(
                         Command::PauseHidden(p) => {
                             s.settings.pause_hidden = p;
                             s.views_dirty = true;
+                        }
+                        Command::Audio(mode) => {
+                            s.params.audio = mode;
+                            s.update_audible();
                         }
                     }
                 }

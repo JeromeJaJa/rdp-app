@@ -1,5 +1,6 @@
 import type {
   ApiInfo,
+  AudioMode,
   Connection,
   ConnectionId,
   ConnectionPatch,
@@ -38,6 +39,11 @@ export interface Backend {
   /** Adds one or many connections (bulk import). Returns them with ids assigned. */
   addConnections(items: NewConnection[]): Promise<Connection[]>;
   updateConnection(id: ConnectionId, patch: ConnectionPatch): Promise<Connection>;
+  /**
+   * Sets a connection's sound (null = follow the app setting) and applies it to its
+   * session. Resolves false when the session has to reconnect before it can be heard.
+   */
+  setConnectionAudio(id: ConnectionId, audio: AudioMode | null): Promise<boolean>;
   deleteConnections(ids: ConnectionId[]): Promise<void>;
   /** Full new display order + group membership of every connection. */
   reorderConnections(order: { id: ConnectionId; groupId: GroupId }[]): Promise<void>;

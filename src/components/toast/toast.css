@@ -50,6 +50,22 @@
   overflow-wrap: anywhere;
   user-select: text;
 }
+.toast__action {
+  flex: none;
+  align-self: center;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--text);
+  background: var(--hover);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.toast__action:hover {
+  background: var(--active, var(--hover));
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
 .toast__close {
   flex: none;
   display: grid;
