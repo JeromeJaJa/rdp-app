@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, AlertTriangle, ArrowRight, ClipboardPaste, FileText, FolderOpen, Lock, X } from "lucide-react";
+import { AlertCircle, AlertTriangle, ArrowRight, ClipboardPaste, FileText, FolderOpen, X } from "lucide-react";
 import type { GroupId, ImportOptions, ImportPreview } from "../../lib/types";
 import { applyLibrary, be, closeDialog, errorText, toast } from "../../state/actions";
 import { useStore } from "../../state/store";
-import { Button, Field, Segmented, Select, Spinner, TextInput } from "../ui/ui";
+import { Button, Field, Segmented, Select, Spinner } from "../ui/ui";
 import { Dialog } from "./Dialog";
 
 interface Source {
@@ -18,7 +18,6 @@ export function ImportDialog({ groupId }: { groupId?: GroupId }) {
   const groupName = useMemo(() => new Map(groups.map((g) => [g.id, g.name])), [groups]);
   const [source, setSource] = useState<Source | null>(null);
   const [pasting, setPasting] = useState(false);
-  const [passphrase, setPassphrase] = useState("");
   const [mode, setMode] = useState<ImportOptions["mode"]>("merge");
   const [target, setTarget] = useState<string>(groupId ?? BY_NAME);
   const [preview, setPreview] = useState<ImportPreview | null>(null);
@@ -41,7 +40,7 @@ export function ImportDialog({ groupId }: { groupId?: GroupId }) {
     setLoading(true);
     const t = window.setTimeout(async () => {
       try {
-        const p = await be().previewImport({ text, passphrase: passphrase || undefined }, { mode, target });
+        const p = await be().previewImport({ text }, { mode, target });
         if (id === seq.current) {
           setPreview(p);
           setPreviewError(null);
@@ -56,7 +55,7 @@ export function ImportDialog({ groupId }: { groupId?: GroupId }) {
       }
     }, 220);
     return () => window.clearTimeout(t);
-  }, [source, passphrase, mode, target]);
+  }, [source, mode, target]);
 
   const chooseFile = async () => {
     try {
@@ -90,7 +89,7 @@ export function ImportDialog({ groupId }: { groupId?: GroupId }) {
     if (!source) return;
     setBusy(true);
     try {
-      const r = await be().applyImport({ text: source.text, passphrase: passphrase || undefined }, { mode, target });
+      const r = await be().applyImport({ text: source.text }, { mode, target });
       applyLibrary(r.library);
       closeDialog();
       const parts = [
@@ -108,7 +107,7 @@ export function ImportDialog({ groupId }: { groupId?: GroupId }) {
   };
 
   const total = preview?.total ?? 0;
-  const canApply = !!source && !!preview && total > 0 && !preview.needsPassphrase && !busy && !loading;
+  const canApply = !!source && !!preview && total > 0 && !busy && !loading;
   const targetOptions = [
     { value: BY_NAME, label: "Matching groups by name" },
     ...groups.map((g) => ({ value: g.id, label: `Into “${g.name}”` })),
@@ -228,22 +227,6 @@ export function ImportDialog({ groupId }: { groupId?: GroupId }) {
             : "Each destination group ends up containing exactly the imported connections. Others in those groups are removed."}
         </div>
 
-        {preview?.needsPassphrase && (
-          <div className="import__pass">
-            <Field
-              label={
-                <span className="field__label-icon">
-                  <Lock size={11} /> Passphrase
-                </span>
-              }
-              hint={passphrase ? "That passphrase doesn't unlock this file." : "This export's passwords are encrypted."}
-              className={passphrase ? "has-error" : ""}
-            >
-              <TextInput type="password" value={passphrase} autoFocus onChange={(e) => setPassphrase(e.target.value)} />
-            </Field>
-          </div>
-        )}
-
         {previewError && (
           <div className="callout callout--danger">
             <AlertCircle size={14} />
@@ -310,7 +293,7 @@ export function ImportDialog({ groupId }: { groupId?: GroupId }) {
             <Spinner /> Reading…
           </div>
         )}
-        {preview && preview.groups.length === 0 && !preview.needsPassphrase && !previewError && (
+        {preview && preview.groups.length === 0 && !previewError && (
           <div className="import__empty">No connections found.</div>
         )}
       </div>

@@ -918,16 +918,12 @@ async fn patch_settings(State(core): State<AppState>, Json(patch): Json<Map<Stri
 struct ExportQuery {
     groups: Option<String>,
     format: Option<String>,
-    passwords: Option<String>,
-    passphrase: Option<String>,
 }
 
 fn export_options(q: ExportQuery, groups: Option<Vec<String>>) -> ApiResult<ExportOptions> {
     let v = json!({
         "groupIds": groups.or_else(|| q.groups.map(|g| g.split(',').map(|s| s.trim().to_owned()).filter(|s| !s.is_empty()).collect())),
         "format": q.format.unwrap_or_else(|| "json".into()),
-        "passwords": q.passwords.unwrap_or_else(|| "none".into()),
-        "passphrase": q.passphrase,
     });
     serde_json::from_value(v).map_err(|e| bad(e.to_string()))
 }
@@ -967,8 +963,6 @@ async fn export_group(
 #[serde(rename_all = "camelCase")]
 struct ImportBody {
     text: String,
-    #[serde(default)]
-    passphrase: Option<String>,
     #[serde(default = "default_mode")]
     mode: String,
     #[serde(default = "default_target")]
@@ -986,13 +980,7 @@ fn default_target() -> String {
 fn import_args(body: ImportBody) -> ApiResult<(ImportSource, ImportOptions)> {
     let options: ImportOptions =
         serde_json::from_value(json!({ "mode": body.mode, "target": body.target })).map_err(|e| bad(e.to_string()))?;
-    Ok((
-        ImportSource {
-            text: body.text,
-            passphrase: body.passphrase,
-        },
-        options,
-    ))
+    Ok((ImportSource { text: body.text }, options))
 }
 
 async fn import_preview(State(core): State<AppState>, Json(body): Json<ImportBody>) -> ApiResult<Json<Value>> {

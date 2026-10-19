@@ -31,9 +31,6 @@ futures-util = "0.3"
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "query", "tokio"] }
 png = "0.17"
 rand = "0.8"
-aes-gcm = "0.10"
-pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
-sha2 = "0.10"
 
 [target.'cfg(windows)'.dependencies]
 rdp-clipboard = { path = "../crates/rdp-clipboard" }

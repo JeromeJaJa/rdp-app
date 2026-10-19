@@ -49,7 +49,7 @@ Authentication: every /api/v1 request except /health needs the token from Settin
 Conventions:
 - JSON in, JSON out (camelCase). Errors: {"error": "message"} with a 4xx/5xx status.
 - Connection ids double as session ids. The built-in group id is "all".
-- Passwords are write-only: they are never returned except by an explicit export with passwords="plain".
+- Passwords are write-only: the only way to read them back is an export, which always includes them in plain text.
 - Connecting is asynchronous. Add ?wait=true to block until sessions are connected or failed (timeout ?timeout=30 s),
   or follow GET /api/v1/events (Server-Sent Events).
 - Coordinates for mouse input are remote desktop pixels; GET /sessions/{id} reports the current width/height.
@@ -331,12 +331,7 @@ pub const ENDPOINTS: &[Endpoint] = &[
         tag: "Groups",
         summary: "Export one group with its connections",
         description: "Same options as GET /export.",
-        params: &[
-            GID,
-            p("format", "query", "string", "json (default) | text"),
-            p("passwords", "query", "string", "none (default) | plain | encrypted"),
-            p("passphrase", "query", "string", "Required for passwords=encrypted"),
-        ],
+        params: &[GID, p("format", "query", "string", "json (default) | text")],
         body: None,
         response: Some("The export document (application/json) or bulk text (text/plain)."),
         auth: true,
@@ -569,7 +564,7 @@ pub const ENDPOINTS: &[Endpoint] = &[
         path: "/api/v1/export",
         tag: "Import & export",
         summary: "Export groups and connections",
-        description: "format json keeps everything (groups, gateways, notes); text is bulk lines with \"# Group: name\" headers. passwords: none | plain | encrypted (AES-256-GCM, key from passphrase via PBKDF2). Also available as POST with the same fields in a JSON body (keeps the passphrase out of URLs).",
+        description: "format json keeps everything (groups, gateways, notes, passwords); text is bulk lines (host:port:user:pass) with \"# Group: name\" headers. Passwords are always included in plain text. Also available as POST with the same fields in a JSON body.",
         params: &[
             p(
                 "groups",
@@ -578,12 +573,10 @@ pub const ENDPOINTS: &[Endpoint] = &[
                 "Comma-separated group ids (default: all groups)",
             ),
             p("format", "query", "string", "json (default) | text"),
-            p("passwords", "query", "string", "none (default) | plain | encrypted"),
-            p("passphrase", "query", "string", "Required for passwords=encrypted"),
         ],
         body: None,
         response: Some(
-            r#"{"format":"rdp-app/export","version":1,"exportedAt":"2026-10-19T07:00:00Z","passwords":"none","groups":[{"name":"Production","connections":[{"name":"","host":"10.0.0.5","port":3389,"username":"admin","domain":""}]}]}"#,
+            r#"{"format":"rdp-app/export","version":1,"exportedAt":"2026-10-19T07:00:00Z","passwords":"plain","groups":[{"name":"Production","connections":[{"name":"","host":"10.0.0.5","port":3389,"username":"admin","domain":"","password":"…"}]}]}"#,
         ),
         auth: true,
     },
@@ -592,11 +585,11 @@ pub const ENDPOINTS: &[Endpoint] = &[
         path: "/api/v1/import/preview",
         tag: "Import & export",
         summary: "Preview an import",
-        description: "text is an export document or bulk text. target: \"byName\" (into groups with matching names, creating missing ones) or a group id. needsPassphrase is true when passwords are encrypted and the passphrase is missing or wrong.",
+        description: "text is an export document or bulk text. target: \"byName\" (into groups with matching names, creating missing ones) or a group id.",
         params: &[],
-        body: Some(r#"{"text": "…", "passphrase": null, "mode": "merge", "target": "byName"}"#),
+        body: Some(r#"{"text": "…", "mode": "merge", "target": "byName"}"#),
         response: Some(
-            r#"{"format":"json","groups":[{"name":"Production","connections":12,"existingGroupId":null,"duplicates":0}],"total":12,"needsPassphrase":false,"errors":[]}"#,
+            r#"{"format":"json","groups":[{"name":"Production","connections":12,"existingGroupId":null,"duplicates":0}],"total":12,"errors":[]}"#,
         ),
         auth: true,
     },

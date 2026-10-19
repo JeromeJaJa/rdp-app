@@ -1,25 +1,17 @@
 //! Import / export of groups and connections.
 //!
 //! JSON format (`"format": "rdp-app/export"`, version 1) keeps everything:
-//! groups, gateways, notes. Passwords are omitted, written in plain text, or
-//! encrypted per field with AES-256-GCM under a key derived from a passphrase
-//! (PBKDF2-HMAC-SHA256). The text format is bulk lines (`host:port:user:pass`)
-//! with `# Group: <name>` headers.
+//! groups, gateways, notes and passwords (in plain text: an export is meant to
+//! move a library to another machine). The text format is bulk lines
+//! (`host:port:user:pass`) with `# Group: <name>` headers.
 
-use aes_gcm::aead::{Aead, KeyInit};
-use aes_gcm::{Aes256Gcm, Nonce};
-use anyhow::{Context as _, anyhow, bail};
-use base64::Engine as _;
-use base64::engine::general_purpose::STANDARD as B64;
-use rand::RngCore as _;
+use anyhow::{Context as _, bail};
 use serde::{Deserialize, Serialize};
 
 use super::{DEFAULT_GROUP, GatewayInput, NewConnection, Store, StoredGateway, now_ms};
 use crate::{bulk, dpapi};
 
 const FORMAT: &str = "rdp-app/export";
-const KDF_ITERATIONS: u32 = 310_000;
-const CHECK_PLAINTEXT: &str = "rdp-app passphrase check";
 
 #[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -29,12 +21,15 @@ pub enum Format {
     Text,
 }
 
+/// How a file stores passwords. New exports are always `plain`; `none` files
+/// import without credentials. Passphrase-encrypted files (`encrypted`, written by
+/// early builds) are no longer supported.
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
-pub enum PasswordMode {
-    #[default]
+enum PasswordMode {
     None,
     Encrypted,
+    #[default]
     Plain,
 }
 
@@ -45,18 +40,12 @@ pub struct ExportOptions {
     pub group_ids: Option<Vec<String>>,
     #[serde(default)]
     pub format: Format,
-    #[serde(default)]
-    pub passwords: PasswordMode,
-    #[serde(default)]
-    pub passphrase: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportSource {
     pub text: String,
-    #[serde(default)]
-    pub passphrase: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
@@ -96,7 +85,6 @@ pub struct ImportPreview {
     pub format: &'static str,
     pub groups: Vec<PreviewGroup>,
     pub total: usize,
-    pub needs_passphrase: bool,
     pub errors: Vec<String>,
 }
 
@@ -118,26 +106,9 @@ struct Doc {
     version: u32,
     #[serde(default)]
     exported_at: String,
-    #[serde(default = "default_password_mode")]
+    #[serde(default)]
     passwords: PasswordMode,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    encryption: Option<Encryption>,
     groups: Vec<DocGroup>,
-}
-
-fn default_password_mode() -> PasswordMode {
-    PasswordMode::Plain
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Encryption {
-    kdf: String,
-    iterations: u32,
-    salt: String,
-    cipher: String,
-    /// `CHECK_PLAINTEXT` sealed with the key, to tell a wrong passphrase apart.
-    check: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -182,40 +153,6 @@ struct DocGateway {
     password: Option<String>,
 }
 
-// ── Crypto ──────────────────────────────────────────────────────────────────
-
-struct Key(Aes256Gcm);
-
-impl Key {
-    fn derive(passphrase: &str, salt: &[u8], iterations: u32) -> Self {
-        let mut key = [0u8; 32];
-        pbkdf2::pbkdf2_hmac::<sha2::Sha256>(passphrase.as_bytes(), salt, iterations, &mut key);
-        Self(Aes256Gcm::new_from_slice(&key).expect("32-byte key"))
-    }
-
-    fn seal(&self, plaintext: &str) -> String {
-        let mut nonce = [0u8; 12];
-        rand::rngs::OsRng.fill_bytes(&mut nonce);
-        let ct = self
-            .0
-            .encrypt(Nonce::from_slice(&nonce), plaintext.as_bytes())
-            .expect("AES-GCM encryption cannot fail");
-        let mut out = nonce.to_vec();
-        out.extend_from_slice(&ct);
-        B64.encode(out)
-    }
-
-    fn open(&self, sealed: &str) -> anyhow::Result<String> {
-        let bytes = B64.decode(sealed).context("invalid encrypted value")?;
-        anyhow::ensure!(bytes.len() > 12, "invalid encrypted value");
-        let pt = self
-            .0
-            .decrypt(Nonce::from_slice(&bytes[..12]), &bytes[12..])
-            .map_err(|_| anyhow!("wrong passphrase"))?;
-        String::from_utf8(pt).context("invalid encrypted value")
-    }
-}
-
 // ── Export ──────────────────────────────────────────────────────────────────
 
 impl Store {
@@ -228,7 +165,7 @@ impl Store {
             bail!("no matching groups to export");
         }
         let reveal = |sealed: &str| -> anyhow::Result<Option<String>> {
-            if sealed.is_empty() || options.passwords == PasswordMode::None {
+            if sealed.is_empty() {
                 Ok(None)
             } else {
                 dpapi::unprotect(sealed).map(Some)
@@ -237,9 +174,6 @@ impl Store {
 
         match options.format {
             Format::Text => {
-                if options.passwords == PasswordMode::Encrypted {
-                    bail!("text exports cannot encrypt passwords; use JSON or omit them");
-                }
                 let mut out = String::new();
                 for g in groups {
                     out.push_str(&format!("# Group: {}\n", g.name));
@@ -259,35 +193,6 @@ impl Store {
                 Ok(out)
             }
             Format::Json => {
-                let (key, encryption) = if options.passwords == PasswordMode::Encrypted {
-                    let passphrase = options
-                        .passphrase
-                        .as_deref()
-                        .filter(|p| !p.is_empty())
-                        .context("a passphrase is required to encrypt passwords")?;
-                    let mut salt = [0u8; 16];
-                    rand::rngs::OsRng.fill_bytes(&mut salt);
-                    let key = Key::derive(passphrase, &salt, KDF_ITERATIONS);
-                    let check = key.seal(CHECK_PLAINTEXT);
-                    (
-                        Some(key),
-                        Some(Encryption {
-                            kdf: "pbkdf2-sha256".into(),
-                            iterations: KDF_ITERATIONS,
-                            salt: B64.encode(salt),
-                            cipher: "aes-256-gcm".into(),
-                            check,
-                        }),
-                    )
-                } else {
-                    (None, None)
-                };
-                let protect = |sealed: &str| -> anyhow::Result<Option<String>> {
-                    Ok(reveal(sealed)?.map(|p| match &key {
-                        Some(k) => k.seal(&p),
-                        None => p,
-                    }))
-                };
                 let gateway = |g: &StoredGateway| -> anyhow::Result<DocGateway> {
                     Ok(DocGateway {
                         enabled: g.enabled,
@@ -295,7 +200,7 @@ impl Store {
                         same_credentials: g.same_credentials,
                         username: g.username.clone(),
                         domain: g.domain.clone(),
-                        password: protect(&g.password)?,
+                        password: reveal(&g.password)?,
                     })
                 };
                 let mut doc_groups = Vec::new();
@@ -308,7 +213,7 @@ impl Store {
                             port: c.port,
                             username: c.username.clone(),
                             domain: c.domain.clone(),
-                            password: protect(&c.password)?,
+                            password: reveal(&c.password)?,
                             notes: c.notes.clone(),
                             gateway: c.gateway.as_ref().map(gateway).transpose()?,
                         });
@@ -323,8 +228,7 @@ impl Store {
                     format: FORMAT.into(),
                     version: 1,
                     exported_at: rfc3339(now_ms()),
-                    passwords: options.passwords,
-                    encryption,
+                    passwords: PasswordMode::Plain,
                     groups: doc_groups,
                 };
                 Ok(serde_json::to_string_pretty(&doc)?)
@@ -345,7 +249,6 @@ struct ImportGroup {
 struct Parsed {
     format: &'static str,
     groups: Vec<ImportGroup>,
-    needs_passphrase: bool,
     errors: Vec<String>,
 }
 
@@ -360,30 +263,10 @@ fn parse_source(source: &ImportSource) -> anyhow::Result<Parsed> {
             bail!("export version {} is newer than this app supports", doc.version);
         }
 
-        let key = match (&doc.encryption, doc.passwords) {
-            (Some(enc), PasswordMode::Encrypted) => match source.passphrase.as_deref().filter(|p| !p.is_empty()) {
-                None => None,
-                Some(passphrase) => {
-                    let salt = B64.decode(&enc.salt).context("invalid salt")?;
-                    let key = Key::derive(passphrase, &salt, enc.iterations.max(1));
-                    match key.open(&enc.check) {
-                        Ok(check) if check == CHECK_PLAINTEXT => Some(key),
-                        _ => None,
-                    }
-                }
-            },
-            _ => None,
-        };
-        let encrypted = doc.passwords == PasswordMode::Encrypted;
-        let needs_passphrase = encrypted && key.is_none();
-        let reveal = |p: Option<String>| -> Option<String> {
-            let p = p.filter(|p| !p.is_empty())?;
-            if encrypted {
-                key.as_ref().and_then(|k| k.open(&p).ok())
-            } else {
-                Some(p)
-            }
-        };
+        if doc.passwords == PasswordMode::Encrypted {
+            bail!("this export's passwords are encrypted with a passphrase, which is no longer supported");
+        }
+        let reveal = |p: Option<String>| p.filter(|p| !p.is_empty());
         let gateway = |g: DocGateway| GatewayInput {
             enabled: g.enabled,
             host: g.host,
@@ -419,7 +302,6 @@ fn parse_source(source: &ImportSource) -> anyhow::Result<Parsed> {
         return Ok(Parsed {
             format: "json",
             groups,
-            needs_passphrase,
             errors: Vec::new(),
         });
     }
@@ -440,7 +322,6 @@ fn parse_source(source: &ImportSource) -> anyhow::Result<Parsed> {
     Ok(Parsed {
         format: "text",
         groups,
-        needs_passphrase: false,
         errors: parsed
             .errors
             .into_iter()
@@ -526,20 +407,12 @@ impl Store {
             format: parsed.format,
             groups,
             total,
-            needs_passphrase: parsed.needs_passphrase,
             errors: parsed.errors,
         })
     }
 
     pub fn apply_import(&mut self, source: &ImportSource, options: &ImportOptions) -> anyhow::Result<ImportResult> {
         let parsed = parse_source(source)?;
-        if parsed.needs_passphrase {
-            bail!(if source.passphrase.as_deref().is_some_and(|p| !p.is_empty()) {
-                "wrong passphrase"
-            } else {
-                "this export has encrypted passwords: a passphrase is required"
-            });
-        }
 
         // Group entries by target group id, creating groups as needed.
         let mut result = ImportResult::default();
@@ -662,17 +535,10 @@ mod tests {
     use super::super::tests::{nc, temp_store};
     use super::*;
 
-    fn opts(
-        format: Format,
-        passwords: PasswordMode,
-        passphrase: Option<&str>,
-        groups: Option<Vec<String>>,
-    ) -> ExportOptions {
+    fn opts(format: Format, groups: Option<Vec<String>>) -> ExportOptions {
         ExportOptions {
             group_ids: groups,
             format,
-            passwords,
-            passphrase: passphrase.map(Into::into),
         }
     }
 
@@ -683,42 +549,21 @@ mod tests {
     }
 
     #[test]
-    fn json_round_trip_with_encrypted_passwords() {
+    fn json_round_trip_keeps_passwords() {
         let (mut src, d1) = temp_store();
         let g = src.create_group("Prod", None).unwrap();
         src.add(vec![nc("a", "admin", "p:1", Some(&g.id)), nc("b", "root", "p2", None)])
             .unwrap();
-        let json = src
-            .export(&opts(Format::Json, PasswordMode::Encrypted, Some("hunter2"), None))
-            .unwrap();
-        assert!(
-            !json.contains("p:1") && !json.contains("p2"),
-            "passwords must be encrypted"
-        );
+        let json = src.export(&opts(Format::Json, None)).unwrap();
+        assert!(json.contains("\"p:1\"") && json.contains("\"passwords\": \"plain\""));
 
         let (mut dst, d2) = temp_store();
         let by_name = ImportOptions {
             mode: ImportMode::Merge,
             target: "byName".into(),
         };
-        let no_pass = ImportSource {
-            text: json.clone(),
-            passphrase: None,
-        };
-        let preview = dst.preview_import(&no_pass, &by_name).unwrap();
-        assert!(preview.needs_passphrase);
-        assert_eq!(preview.total, 2);
-        assert!(dst.apply_import(&no_pass, &by_name).is_err());
-        let wrong = ImportSource {
-            text: json.clone(),
-            passphrase: Some("nope".into()),
-        };
-        assert!(dst.preview_import(&wrong, &by_name).unwrap().needs_passphrase);
-
-        let right = ImportSource {
-            text: json,
-            passphrase: Some("hunter2".into()),
-        };
+        let right = ImportSource { text: json };
+        assert_eq!(dst.preview_import(&right, &by_name).unwrap().total, 2);
         let result = dst.apply_import(&right, &by_name).unwrap();
         assert_eq!((result.added, result.groups_created), (2, 1));
         let lib = dst.library();
@@ -737,21 +582,29 @@ mod tests {
     }
 
     #[test]
+    fn passphrase_encrypted_exports_are_refused_clearly() {
+        let (store, dir) = temp_store();
+        let source = ImportSource {
+            text: r#"{"format":"rdp-app/export","version":1,"passwords":"encrypted","groups":[]}"#.into(),
+        };
+        let by_name = ImportOptions {
+            mode: ImportMode::Merge,
+            target: "byName".into(),
+        };
+        let err = store.preview_import(&source, &by_name).unwrap_err().to_string();
+        assert!(err.contains("no longer supported"), "{err}");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn text_export_import_and_replace_into_group() {
         let (mut store, dir) = temp_store();
         let g = store.create_group("Lab", None).unwrap();
         store
             .add(vec![nc("x", "u", "old", Some(&g.id)), nc("y", "u", "p", Some(&g.id))])
             .unwrap();
-        let text = store
-            .export(&opts(Format::Text, PasswordMode::Plain, None, Some(vec![g.id.clone()])))
-            .unwrap();
+        let text = store.export(&opts(Format::Text, Some(vec![g.id.clone()]))).unwrap();
         assert_eq!(text, "# Group: Lab\nx:3389:u:old\ny:3389:u:p\n\n");
-        assert!(
-            store
-                .export(&opts(Format::Text, PasswordMode::Encrypted, Some("x"), None))
-                .is_err()
-        );
 
         let replace = ImportOptions {
             mode: ImportMode::Replace,
@@ -759,7 +612,6 @@ mod tests {
         };
         let source = ImportSource {
             text: "x:u:new\nz:u:p\nhost-without-user\n".into(),
-            passphrase: None,
         };
         let preview = store.preview_import(&source, &replace).unwrap();
         assert_eq!(

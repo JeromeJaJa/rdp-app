@@ -21,7 +21,6 @@ import {
   type ImportSource,
   type Library,
   type NewConnection,
-  type PasswordExport,
   type ReplaceResult,
   type SessionEvent,
   type SessionStatus,
@@ -172,64 +171,33 @@ interface ExportDoc {
   format: "rdp-app/export";
   version: 1;
   exportedAt: string;
-  passwords: PasswordExport;
-  encryption?: { kdf: string; check: string };
+  passwords: "none" | "encrypted" | "plain";
   groups: ExportGroup[];
-}
-
-// Toy "encryption" for the mock only: reversible obfuscation keyed by the
-// passphrase, plus a check value to detect a wrong passphrase.
-function hash(s: string): string {
-  let h = 2166136261;
-  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
-  return (h >>> 0).toString(16);
-}
-function seal(plain: string, passphrase: string): string {
-  const out = Array.from(plain, (ch, i) => String.fromCharCode(ch.charCodeAt(0) ^ passphrase.charCodeAt(i % passphrase.length)));
-  return "enc:" + btoa(unescape(encodeURIComponent(out.join(""))));
-}
-function unseal(sealed: string, passphrase: string): string {
-  const raw = decodeURIComponent(escape(atob(sealed.slice(4))));
-  return Array.from(raw, (ch, i) => String.fromCharCode(ch.charCodeAt(0) ^ passphrase.charCodeAt(i % passphrase.length))).join("");
 }
 
 interface ParsedImport {
   format: "json" | "text";
   groups: ExportGroup[];
-  needsPassphrase: boolean;
   errors: string[];
 }
 
 function parseImport(source: ImportSource): ParsedImport {
   const text = source.text.trim();
-  if (!text) return { format: "text", groups: [], needsPassphrase: false, errors: [] };
+  if (!text) return { format: "text", groups: [], errors: [] };
   if (text.startsWith("{")) {
     let doc: ExportDoc;
     try {
       doc = JSON.parse(text) as ExportDoc;
     } catch (e) {
-      return { format: "json", groups: [], needsPassphrase: false, errors: [`Invalid JSON: ${(e as Error).message}`] };
+      return { format: "json", groups: [], errors: [`Invalid JSON: ${(e as Error).message}`] };
     }
     if (doc.format !== "rdp-app/export" || !Array.isArray(doc.groups)) {
-      return { format: "json", groups: [], needsPassphrase: false, errors: ["Not an RDP App export file"] };
+      return { format: "json", groups: [], errors: ["Not an RDP App export file"] };
     }
     if (doc.passwords === "encrypted") {
-      const ok = !!source.passphrase && hash(source.passphrase) === doc.encryption?.check;
-      if (!ok) return { format: "json", groups: doc.groups, needsPassphrase: true, errors: [] };
-      const pp = source.passphrase!;
-      const open = (p?: string) => (p ? unseal(p, pp) : undefined);
-      const groups = doc.groups.map((g) => ({
-        ...g,
-        gateway: g.gateway ? { ...g.gateway, password: open(g.gateway.password) } : g.gateway,
-        connections: g.connections.map((c) => ({
-          ...c,
-          password: open(c.password),
-          gateway: c.gateway ? { ...c.gateway, password: open(c.gateway.password) } : c.gateway,
-        })),
-      }));
-      return { format: "json", groups, needsPassphrase: false, errors: [] };
+      return { format: "json", groups: [], errors: ["This export's passwords are encrypted with a passphrase, which is no longer supported"] };
     }
-    return { format: "json", groups: doc.groups, needsPassphrase: false, errors: [] };
+    return { format: "json", groups: doc.groups, errors: [] };
   }
 
   // Bulk text, optionally split into groups with "# Group: <name>" lines.
@@ -254,7 +222,7 @@ function parseImport(source: ImportSource): ParsedImport {
     } else buffer.push(line);
   }
   flush();
-  return { format: "text", groups, needsPassphrase: false, errors };
+  return { format: "text", groups, errors };
 }
 
 interface SessionSim {
@@ -480,14 +448,10 @@ export class MockBackend implements Backend {
   // ── Export / import ──────────────────────────────────────────────────────
 
   async exportData(options: ExportOptions): Promise<string> {
-    const { format, passwords, passphrase } = options;
-    if (passwords === "encrypted" && !passphrase) throw new Error("A passphrase is required to encrypt passwords");
+    const { format } = options;
     const wanted = options.groupIds?.length ? new Set(options.groupIds) : null;
     const groups = this.lib.groups.filter((g) => !wanted || wanted.has(g.id));
-    const pw = (raw: string | undefined): string | undefined => {
-      if (!raw || passwords === "none") return undefined;
-      return passwords === "encrypted" ? seal(raw, passphrase!) : raw;
-    };
+    const pw = (raw: string | undefined): string | undefined => raw || undefined;
     const gw = (key: string, g: GatewaySettings | null): ExportGateway | null =>
       g ? { ...g, password: pw(this.gatewayPasswords[key]) } : null;
 
@@ -499,7 +463,7 @@ export class MockBackend implements Backend {
         out.push(`# Group: ${g.name}`);
         for (const c of members) {
           const user = c.domain ? `${c.domain}\\${c.username}` : c.username;
-          const p = passwords === "plain" ? this.passwords[c.id] : undefined;
+          const p = this.passwords[c.id];
           out.push(p ? `${c.host}:${c.port}:${user}:${p}` : `${c.host}:${c.port}:${user}`);
         }
         out.push("");
@@ -511,8 +475,7 @@ export class MockBackend implements Backend {
       format: "rdp-app/export",
       version: 1,
       exportedAt: new Date().toISOString(),
-      passwords,
-      ...(passwords === "encrypted" ? { encryption: { kdf: "mock", check: hash(passphrase!) } } : {}),
+      passwords: "plain",
       groups: groups.map((g) => ({
         name: g.name,
         gateway: gw(`g:${g.id}`, g.gateway),
@@ -556,14 +519,12 @@ export class MockBackend implements Backend {
       format: parsed.format,
       groups,
       total: groups.reduce((n, g) => n + g.connections, 0),
-      needsPassphrase: parsed.needsPassphrase,
       errors: parsed.errors,
     };
   }
 
   async applyImport(source: ImportSource, options: ImportOptions): Promise<ImportResult> {
     const parsed = parseImport(source);
-    if (parsed.needsPassphrase) throw new Error("Wrong or missing passphrase");
     let added = 0;
     let updated = 0;
     let removed = 0;

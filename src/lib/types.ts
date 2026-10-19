@@ -229,23 +229,17 @@ export interface ReplaceResult {
   library: Library;
 }
 
-export type PasswordExport = "none" | "encrypted" | "plain";
-
+/** Exports always include passwords, in plain text. */
 export interface ExportOptions {
   /** null/undefined = everything; otherwise only these groups (with their connections). */
   groupIds?: GroupId[] | null;
   /** "json" = full fidelity (groups, gateways, notes); "text" = bulk lines host:port:user:pass. */
   format: "json" | "text";
-  /** How passwords are written. "encrypted" needs `passphrase`. Text format supports "none" | "plain". */
-  passwords: PasswordExport;
-  passphrase?: string;
 }
 
 export interface ImportSource {
   /** File contents (JSON export or bulk text). */
   text: string;
-  /** Needed when the export has encrypted passwords. */
-  passphrase?: string;
 }
 
 export interface ImportPreviewGroup {
@@ -261,8 +255,6 @@ export interface ImportPreview {
   format: "json" | "text";
   groups: ImportPreviewGroup[];
   total: number;
-  /** True when passwords are encrypted and `passphrase` is missing or wrong. */
-  needsPassphrase: boolean;
   errors: string[];
 }
 
