@@ -1,6 +1,7 @@
 import { useMemo, useState, type ClipboardEvent, type FormEvent } from "react";
 import { ChevronRight, Eye, EyeOff, Trash2 } from "lucide-react";
 import { parseBulk } from "../../lib/bulkParse";
+import { FEATURES } from "../../lib/features";
 import { describeGateway } from "../../lib/gateway";
 import { DEFAULT_GROUP_ID, type Connection, type GatewayInput, type GroupId } from "../../lib/types";
 import { useStore } from "../../state/store";
@@ -23,8 +24,17 @@ export interface ConnectionFormValues {
   group: GroupId | typeof NEW_GROUP;
   newGroupName: string;
   notes: string;
-  /** null = use the group's gateway. */
-  gateway: GatewayInput | null;
+  /** null = use the group's gateway; undefined = unchanged (edit mode). */
+  gateway: GatewayInput | null | undefined;
+}
+
+/** Without a Domain field, the domain is shown and edited as `DOMAIN\user`. */
+const joinUser = (domain: string, user: string) => (domain && !FEATURES.domainField ? `${domain}\\${user}` : user);
+function splitUser(value: string, domain: string): [domain: string, user: string] {
+  const v = value.trim();
+  if (FEATURES.domainField) return [domain.trim(), v];
+  const slash = v.indexOf("\\");
+  return slash > 0 ? [v.slice(0, slash), v.slice(slash + 1)] : ["", v];
 }
 
 const HOST_RE = /^(\[[0-9A-Fa-f:.%\w]+\]|[0-9A-Fa-f:]+:[0-9A-Fa-f:.]+|[A-Za-z0-9]([A-Za-z0-9\-_.]*[A-Za-z0-9])?)$/;
@@ -51,8 +61,8 @@ export function ConnectionForm({
   const [name, setName] = useState(initial?.name ?? "");
   const [host, setHost] = useState(initial?.host ?? "");
   const [port, setPort] = useState(String(initial?.port ?? 3389));
-  const [username, setUsername] = useState(initial?.username ?? "");
-  const [domain, setDomain] = useState(initial?.domain ?? "");
+  const [username, setUsername] = useState(joinUser(initial?.domain ?? "", initial?.username ?? ""));
+  const [domain, setDomain] = useState(FEATURES.domainField ? (initial?.domain ?? "") : "");
   const [password, setPassword] = useState("");
   const [passwordTouched, setPasswordTouched] = useState(false);
   const [clearPassword, setClearPassword] = useState(false);
@@ -75,15 +85,15 @@ export function ConnectionForm({
     else if (!HOST_RE.test(h)) e.host = "Not a valid host name or IP";
     const p = Number(port);
     if (!Number.isInteger(p) || p < 1 || p > 65535) e.port = "1–65535";
-    if (!username.trim()) e.username = "Username is required";
+    if (!splitUser(username, domain)[1]) e.username = "Username is required";
     if (group === NEW_GROUP && !newGroupName.trim()) e.group = "Name the new group";
-    if (gwMode === "custom") {
+    if (FEATURES.gateway && gwMode === "custom") {
       const gh = gwDraft.host.trim();
       if (!gh) e.gateway = "Gateway server is required";
       else if (!GATEWAY_HOST_RE.test(gh)) e.gateway = "Not a valid host name";
     }
     return e;
-  }, [host, port, username, group, newGroupName, gwMode, gwDraft.host]);
+  }, [host, port, username, domain, group, newGroupName, gwMode, gwDraft.host]);
 
   const onHostPaste = (e: ClipboardEvent<HTMLInputElement>) => {
     const text = e.clipboardData.getData("text");
@@ -100,8 +110,10 @@ export function ConnectionForm({
         e.preventDefault();
         setHost(parsed.entry.host);
         setPort(String(parsed.entry.port));
-        setUsername(parsed.entry.username);
-        setDomain(parsed.entry.domain);
+        if (FEATURES.domainField) {
+          setUsername(parsed.entry.username);
+          setDomain(parsed.entry.domain);
+        } else setUsername(joinUser(parsed.entry.domain, parsed.entry.username));
         if (parsed.entry.password) {
           setPassword(parsed.entry.password);
           setPasswordTouched(true);
@@ -119,18 +131,27 @@ export function ConnectionForm({
       return;
     }
     setBusy(true);
+    const [submitDomain, submitUser] = splitUser(username, domain);
     try {
       await onSubmit({
         name: name.trim(),
         host: host.trim().replace(/^\[(.*)\]$/, "$1"),
         port: Number(port),
-        username: username.trim(),
-        domain: domain.trim(),
+        username: submitUser,
+        domain: submitDomain,
         password: editing ? (clearPassword ? "" : passwordTouched && password ? password : undefined) : password,
         group,
         newGroupName: newGroupName.trim(),
         notes,
-        gateway: gwMode === "group" ? null : gwMode === "direct" ? DIRECT : draftToInput(gwDraft, true),
+        gateway: !FEATURES.gateway
+          ? editing
+            ? undefined
+            : null
+          : gwMode === "group"
+            ? null
+            : gwMode === "direct"
+              ? DIRECT
+              : draftToInput(gwDraft, true),
       });
     } finally {
       setBusy(false);
@@ -167,15 +188,19 @@ export function ConnectionForm({
           />
         </Field>
         </div>
-        <Field label="Username" hint={err("username")} className={err("username") ? "has-error" : ""}>
+        <Field
+          label="Username"
+          hint={err("username") ?? (!FEATURES.domainField && !username ? "DOMAIN\\user for domain accounts" : undefined)}
+          className={`${FEATURES.domainField ? "" : "span-2"} ${err("username") ? "has-error" : ""}`}
+        >
           <TextInput
             value={username}
             placeholder="Administrator"
             onChange={(e) => {
               const v = e.target.value;
-              // Typing DOMAIN\user splits into the domain field.
+              // Typing DOMAIN\user splits into the domain field (when there is one).
               const slash = v.indexOf("\\");
-              if (slash > 0 && !domain) {
+              if (FEATURES.domainField && slash > 0 && !domain) {
                 setDomain(v.slice(0, slash));
                 setUsername(v.slice(slash + 1));
               } else setUsername(v);
@@ -183,9 +208,11 @@ export function ConnectionForm({
             className={err("username") ? "is-invalid" : ""}
           />
         </Field>
-        <Field label="Domain" hint={!domain ? "Optional" : undefined}>
-          <TextInput value={domain} placeholder="CORP" onChange={(e) => setDomain(e.target.value)} />
-        </Field>
+        {FEATURES.domainField && (
+          <Field label="Domain" hint={!domain ? "Optional" : undefined}>
+            <TextInput value={domain} placeholder="CORP" onChange={(e) => setDomain(e.target.value)} />
+          </Field>
+        )}
         <Field
           label="Password"
           className="span-2"
@@ -243,6 +270,7 @@ export function ConnectionForm({
         <Field label="Group" hint={err("group")} className="span-2">
           <GroupSelect value={group} onChange={setGroup} newName={newGroupName} onNewName={setNewGroupName} />
         </Field>
+        {FEATURES.gateway && (
         <div className="span-2 disclosure">
           <button type="button" className={`disclosure__head ${gwOpen ? "is-open" : ""}`} onClick={() => setGwOpen((o) => !o)}>
             <ChevronRight size={13} className="disclosure__chevron" />
@@ -288,6 +316,7 @@ export function ConnectionForm({
             </div>
           )}
         </div>
+        )}
         <Field label="Notes" className="span-2">
           <textarea
             className="textarea"

@@ -30,6 +30,7 @@ import {
   reconnect,
   startRenameGroup,
 } from "../../state/actions";
+import { FEATURES } from "../../lib/features";
 import { displayName, isBusy, isLive, useBulkActions, useStore, type MenuState } from "../../state/store";
 import { ConnectIcon, DisconnectIcon } from "../common/SessionIcons";
 import "./menu.css";
@@ -168,13 +169,15 @@ function GroupMenu({ id }: { id: string }) {
       <Item icon={<ListRestart size={14} />} label="Replace connections…" onSelect={() => openDialog({ kind: "replace", groupId: id })} />
       <Item icon={<ArrowDownToLine size={14} />} label="Import into group…" onSelect={() => openDialog({ kind: "import", groupId: id })} />
       <Item icon={<ArrowUpFromLine size={14} />} label="Export group…" onSelect={() => openDialog({ kind: "export", groupIds: [id] })} />
-      <Sep />
-      <Item
-        icon={<Network size={14} />}
-        label="Gateway…"
-        hint={group.gateway?.enabled && group.gateway.host ? "On" : undefined}
-        onSelect={() => openDialog({ kind: "gateway", groupId: id })}
-      />
+      {(FEATURES.gateway || !group.builtin) && <Sep />}
+      {FEATURES.gateway && (
+        <Item
+          icon={<Network size={14} />}
+          label="Gateway…"
+          hint={group.gateway?.enabled && group.gateway.host ? "On" : undefined}
+          onSelect={() => openDialog({ kind: "gateway", groupId: id })}
+        />
+      )}
       {!group.builtin && <Item icon={<Pencil size={14} />} label="Rename" onSelect={() => startRenameGroup(id)} />}
       {!group.builtin && (
         <>

@@ -2,6 +2,7 @@ import { memo, useEffect, useRef } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import { ChevronRight, MoreHorizontal } from "lucide-react";
 import { connectAll, disconnectAll, openMenu, renameGroup, startRenameGroup, toggleGroupCollapsed } from "../../state/actions";
+import { FEATURES } from "../../lib/features";
 import { isLive, setState, useBulkActions, useStore } from "../../state/store";
 import { ConnectIcon, DisconnectIcon } from "../common/SessionIcons";
 import type { ConnectionId, Group } from "../../lib/types";
@@ -53,7 +54,7 @@ function GroupHeaderInner({ group, ids }: { group: Group; ids: ConnectionId[] })
       ) : (
         <span className="group-header__name">
           {group.name}
-          {group.gateway?.enabled && group.gateway.host && (
+          {FEATURES.gateway && group.gateway?.enabled && group.gateway.host && (
             <span className="group-header__badge" title={`RD Gateway: ${group.gateway.host}`}>
               GW
             </span>
