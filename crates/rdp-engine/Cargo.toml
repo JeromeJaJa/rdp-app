@@ -1,0 +1,63 @@
+[package]
+name = "rdp-engine"
+description = "Multi-session RDP client engine: connection management, decoding and frame delivery."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[features]
+default = ["openh264"]
+# Software H.264 fallback (compiled from source; needs MSVC + NASM at build time).
+openh264 = ["dep:openh264"]
+
+[dependencies]
+ironrdp-connector.workspace = true
+ironrdp-session.workspace = true
+ironrdp-pdu.workspace = true
+ironrdp-core.workspace = true
+ironrdp-graphics.workspace = true
+ironrdp-dvc.workspace = true
+ironrdp-svc.workspace = true
+ironrdp-egfx.workspace = true
+ironrdp-displaycontrol.workspace = true
+ironrdp-input.workspace = true
+ironrdp-cliprdr.workspace = true
+ironrdp-rdpsnd.workspace = true
+ironrdp-rdpdr.workspace = true
+ironrdp-rdpeai.workspace = true
+ironrdp-mstsgu = { workspace = true, features = ["rustls"] }
+ironrdp-tokio = { workspace = true, features = ["reqwest"] }
+ironrdp-tls = { workspace = true, features = ["rustls-ring"] }
+
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+tokio = { version = "1", features = ["rt", "net", "time", "sync", "macros", "io-util"] }
+tracing = "0.1"
+anyhow = "1"
+parking_lot = "0.12"
+openh264 = { version = "0.9", optional = true, default-features = false, features = ["source"] }
+yuv = "0.8"
+sha2 = "0.10"
+x509-cert = { version = "0.3", default-features = false, features = ["std"] }
+png = "0.17"
+base64 = "0.22"
+serde = { version = "1", features = ["derive"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[target.'cfg(windows)'.dependencies]
+ironrdp-rdpsnd-native = { workspace = true, features = ["capture"] }
+ironrdp-rdpdr-native.workspace = true
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_System_Com",
+    "Win32_Media_MediaFoundation",
+    "Win32_System_Variant",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+] }
+
+
+[[bin]]
+name = "rdp-probe"
+path = "src/bin/rdp-probe.rs"
