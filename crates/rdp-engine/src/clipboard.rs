@@ -45,6 +45,25 @@ impl ClipboardMessageProxy for SessionClipboard {
     }
 }
 
+/// Expires clipboard requests the server never answered (their waiters get an error
+/// instead of hanging) and stale locks. Returns a frame to send, if any.
+pub(crate) fn drive_timeouts(stage: &mut ActiveStage) -> anyhow::Result<Option<Vec<u8>>> {
+    let Some(cliprdr) = stage.get_svc_processor_mut::<CliprdrClient>() else {
+        return Ok(None);
+    };
+    let messages = cliprdr
+        .drive_timeouts()
+        .map_err(|e| anyhow::anyhow!("clipboard: {e}"))?;
+    let messages: Vec<ironrdp_svc::SvcMessage> = messages.into();
+    if messages.is_empty() {
+        return Ok(None);
+    }
+    let frame = stage
+        .process_svc_processor_messages(ironrdp_svc::SvcProcessorMessages::<CliprdrClient>::new(messages))
+        .map_err(|e| anyhow::anyhow!("clipboard: {e}"))?;
+    Ok(Some(frame))
+}
+
 /// Encodes a clipboard backend event for the server.
 pub(crate) fn encode(stage: &mut ActiveStage, message: ClipboardMessage) -> anyhow::Result<Option<Vec<u8>>> {
     let Some(cliprdr) = stage.get_svc_processor_mut::<CliprdrClient>() else {

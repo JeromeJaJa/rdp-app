@@ -10,6 +10,9 @@
 //!   contents (MS-RDPECLIP file streams);
 //! - files copied on the remote are offered locally as an OLE data object whose streams
 //!   pull their contents from the server as they are read;
+//! - file requests, file data and paste replies go straight between the session thread
+//!   and the threads that need them, not through the UI thread's event queue (which is
+//!   also unbounded now, so a busy UI thread never stalls the session's network loop);
 //! - file transfer capabilities are advertised;
 //! - dropping the monitor destroys its window and state (upstream leaked both).
 #![cfg(windows)]
@@ -29,8 +32,7 @@ use std::sync::mpsc as mpsc_sync;
 
 use ironrdp_cliprdr::backend::{ClipboardMessageProxy, CliprdrBackend, CliprdrBackendFactory};
 use ironrdp_cliprdr::pdu::{
-    ClipboardFormat, ClipboardFormatId, ClipboardGeneralCapabilityFlags, FileContentsRequest, FormatDataRequest,
-    FormatDataResponse,
+    ClipboardFormat, ClipboardFormatId, ClipboardGeneralCapabilityFlags, FormatDataRequest, FormatDataResponse,
 };
 use tracing::error;
 pub use windows::Win32::Foundation::HWND;
@@ -46,9 +48,9 @@ use windows::core::{Error, s};
 
 use self::clipboard_impl::{WinClipboardImpl, clipboard_subproc};
 use self::cliprdr_backend::WinCliprdrBackend;
+use self::files::FileServer;
 use self::remote_files::{Inbox, SharedProxy};
 
-const BACKEND_CHANNEL_SIZE: usize = 8;
 const WM_CLIPRDR_BACKEND_EVENT: u32 = WM_USER;
 
 pub type WinCliprdrResult<T> = Result<T, WinCliprdrError>;
@@ -134,10 +136,25 @@ pub(crate) enum BackendEvent {
     DowngradedCapabilities(ClipboardGeneralCapabilityFlags),
     RemoteFormatList(Vec<ClipboardFormat>),
     FormatDataRequest(FormatDataRequest),
-    FormatDataResponse(FormatDataResponse<'static>),
     RemoteRequestsFormatList,
-    /// The server pulls part of a file this side offered.
-    FileContentsRequest(FileContentsRequest),
+}
+
+/// Where a CLIPRDR backend (on the session thread) delivers directly, bypassing the UI
+/// thread's event queue.
+#[derive(Clone)]
+pub(crate) struct Direct {
+    /// Remote file lists and file data, for the thread serving them to local apps.
+    pub inbox: Arc<Inbox>,
+    /// Replies to the UI thread's paste requests (`WM_RENDERFORMAT`).
+    pub paste: mpsc_sync::Sender<FormatDataResponse<'static>>,
+    /// The server's requests for files this side offered.
+    pub files: Arc<FileServer>,
+}
+
+impl core::fmt::Debug for Direct {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("Direct")
+    }
 }
 
 /// Windows RDP client clipboard implementation.
@@ -153,8 +170,8 @@ pub(crate) enum BackendEvent {
 /// can be safely used in other threads.
 pub struct WinClipboard {
     window: HWND,
-    backend_tx: mpsc_sync::SyncSender<BackendEvent>,
-    inbox: Arc<Inbox>,
+    backend_tx: mpsc_sync::Sender<BackendEvent>,
+    direct: Direct,
 
     /// From MS docs:
     /// ```text
@@ -225,14 +242,21 @@ impl WinClipboard {
         // SAFETY: `window` is a valid window handle
         unsafe { AddClipboardFormatListener(window)? };
 
-        let (backend_tx, backend_rx) = mpsc_sync::sync_channel(BACKEND_CHANNEL_SIZE);
+        let (backend_tx, backend_rx) = mpsc_sync::channel();
+        let (paste_tx, paste_rx) = mpsc_sync::channel();
 
-        let inbox = Arc::new(Inbox::default());
+        let proxy = SharedProxy::new(message_proxy);
+        let direct = Direct {
+            inbox: Arc::new(Inbox::default()),
+            paste: paste_tx,
+            files: Arc::new(FileServer::new(proxy.clone())),
+        };
         let ctx = Box::new(WinClipboardImpl::new(
             window,
-            SharedProxy::new(message_proxy),
+            proxy,
             backend_rx,
-            Arc::clone(&inbox),
+            paste_rx,
+            direct.clone(),
         ));
 
         // We need to receive winapi messages in the main thread, so we need to add a subclass to
@@ -256,7 +280,7 @@ impl WinClipboard {
         Ok(Self {
             window,
             backend_tx,
-            inbox,
+            direct,
             _thread_marker: Default::default(),
         })
     }
@@ -266,7 +290,7 @@ impl WinClipboard {
         Box::new(WinCliprdrBackendFactory {
             tx: self.backend_tx.clone(),
             window: self.window,
-            inbox: Arc::clone(&self.inbox),
+            direct: self.direct.clone(),
         })
     }
 }
@@ -291,9 +315,9 @@ impl Drop for WinClipboard {
 
 /// Windows-specific clipboard backend factory
 struct WinCliprdrBackendFactory {
-    tx: mpsc_sync::SyncSender<BackendEvent>,
+    tx: mpsc_sync::Sender<BackendEvent>,
     window: HWND,
-    inbox: Arc<Inbox>,
+    direct: Direct,
 }
 
 // SAFETY: window handle is thread safe for PostMessageW usage
@@ -304,7 +328,7 @@ impl CliprdrBackendFactory for WinCliprdrBackendFactory {
         Box::new(WinCliprdrBackend::new(
             self.window,
             self.tx.clone(),
-            Arc::clone(&self.inbox),
+            self.direct.clone(),
         ))
     }
 }

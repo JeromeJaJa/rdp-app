@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use std::sync::mpsc as mpsc_sync;
 
 use ironrdp_cliprdr::backend::CliprdrBackend;
@@ -10,15 +9,13 @@ use ironrdp_core::{IntoOwned as _, impl_as_any};
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 
-use crate::remote_files::Inbox;
-use crate::{BackendEvent, WM_CLIPRDR_BACKEND_EVENT};
+use crate::{BackendEvent, Direct, WM_CLIPRDR_BACKEND_EVENT};
 
 #[derive(Debug)]
 pub(crate) struct WinCliprdrBackend {
-    backend_event_tx: mpsc_sync::SyncSender<BackendEvent>,
+    backend_event_tx: mpsc_sync::Sender<BackendEvent>,
     window: HWND,
-    /// Answers for transfers of remote files, delivered straight to the waiting thread.
-    inbox: Arc<Inbox>,
+    direct: Direct,
 }
 
 // SAFETY: window handle is thread safe for PostMessageW usage
@@ -27,11 +24,11 @@ unsafe impl Send for WinCliprdrBackend {}
 impl_as_any!(WinCliprdrBackend);
 
 impl WinCliprdrBackend {
-    pub(crate) fn new(window: HWND, backend_event_tx: mpsc_sync::SyncSender<BackendEvent>, inbox: Arc<Inbox>) -> Self {
+    pub(crate) fn new(window: HWND, backend_event_tx: mpsc_sync::Sender<BackendEvent>, direct: Direct) -> Self {
         Self {
             window,
             backend_event_tx,
-            inbox,
+            direct,
         }
     }
 
@@ -77,22 +74,22 @@ impl CliprdrBackend for WinCliprdrBackend {
 
     fn on_format_data_response(&mut self, response: FormatDataResponse<'_>) {
         // A refused file list arrives here rather than in `on_remote_file_list`.
-        if response.is_error() && self.inbox.list_failed() {
+        if response.is_error() && self.direct.inbox.list_failed() {
             return;
         }
-        self.send_event(BackendEvent::FormatDataResponse(response.into_owned()));
+        let _ = self.direct.paste.send(response.into_owned());
     }
 
     fn on_file_contents_request(&mut self, request: FileContentsRequest) {
-        self.send_event(BackendEvent::FileContentsRequest(request));
+        self.direct.files.serve(request);
     }
 
     fn on_file_contents_response(&mut self, response: FileContentsResponse<'_>) {
-        self.inbox.file_contents(&response);
+        self.direct.inbox.file_contents(&response);
     }
 
     fn on_remote_file_list(&mut self, files: &[FileDescriptor], _clip_data_id: Option<u32>) {
-        if !self.inbox.file_list(files) {
+        if !self.direct.inbox.file_list(files) {
             tracing::debug!("file list arrived after its request was given up");
         }
     }

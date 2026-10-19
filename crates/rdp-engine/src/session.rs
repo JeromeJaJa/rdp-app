@@ -1069,6 +1069,11 @@ async fn active(
                     if pause != live.suppressed {
                         live.set_suppressed(pause).await?;
                     }
+                    match crate::clipboard::drive_timeouts(&mut live.stage) {
+                        Ok(Some(frame)) => live.send(&frame).await?,
+                        Ok(None) => {}
+                        Err(e) => warn!(session = %s.id, error = %e, "clipboard timeouts"),
+                    }
                 }
             }
         }

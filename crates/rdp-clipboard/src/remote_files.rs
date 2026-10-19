@@ -17,7 +17,7 @@ use ironrdp_cliprdr::pdu::{
     ClipboardFileAttributes, ClipboardFormat, ClipboardFormatId, FileContentsFlags, FileContentsRequest,
     FileContentsResponse, FileDescriptor,
 };
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 use windows::Win32::Foundation::{
     DV_E_DVASPECT, DV_E_FORMATETC, DV_E_LINDEX, DV_E_TYMED, E_FAIL, E_NOTIMPL, E_OUTOFMEMORY, E_POINTER, FILETIME,
     GlobalFree, OLE_E_ADVISENOTSUPPORTED, S_OK, STG_E_ACCESSDENIED, STG_E_INVALIDFUNCTION, STG_E_INVALIDPOINTER,
@@ -55,6 +55,8 @@ pub(crate) fn is_file_format(format: &ClipboardFormat) -> bool {
 
 /// Bytes asked for per File Contents Request.
 const CHUNK: u32 = 512 * 1024;
+/// Smallest request size, however little the server returns per reply.
+const MIN_CHUNK: u32 = 16 * 1024;
 /// Requests kept in flight per stream, so the link stays busy while a chunk is consumed.
 const DEPTH: usize = 4;
 const LIST_TIMEOUT: Duration = Duration::from_secs(30);
@@ -667,6 +669,17 @@ struct Reader {
     in_flight: VecDeque<(u32, u64, u32)>,
     /// Where the next request starts.
     next: u64,
+    /// Request size: `CHUNK`, lowered to what the server actually returns per reply.
+    chunk: Option<u32>,
+    stats: ReadStats,
+}
+
+#[derive(Default)]
+struct ReadStats {
+    started: Option<Instant>,
+    bytes: u64,
+    requests: u32,
+    short: u32,
 }
 
 impl Reader {
@@ -687,7 +700,10 @@ impl Reader {
             }
             self.fill(remote, index, size);
             let (id, start, len) = self.in_flight.pop_front().ok_or(())?;
+            self.stats.started.get_or_insert_with(Instant::now);
             let data = remote.take_response(id).ok_or(())?;
+            self.stats.requests += 1;
+            self.stats.bytes += data.len() as u64;
             if data.is_empty() || data.len() > len as usize {
                 warn!(
                     index,
@@ -698,8 +714,15 @@ impl Reader {
                 return Err(());
             }
             if data.len() < len as usize {
-                // Later requests assumed a full chunk; ask again from where this one ended.
-                self.restart(remote, start + data.len() as u64);
+                // The server returns less per reply than asked: fetch the rest of this
+                // range next (keeping later requests in flight) and ask for that much from
+                // now on.
+                self.stats.short += 1;
+                let got = u32::try_from(data.len()).unwrap_or(len);
+                let tail = start + u64::from(got);
+                let id = remote.request_range(index, tail, len - got);
+                self.in_flight.push_front((id, tail, len - got));
+                self.chunk = Some(got.max(MIN_CHUNK));
             }
             self.buf_start = start;
             self.buf = data;
@@ -709,7 +732,8 @@ impl Reader {
 
     fn fill(&mut self, remote: &Remote, index: i32, size: u64) {
         while self.in_flight.len() < DEPTH && self.next < size {
-            let len = u32::try_from((size - self.next).min(u64::from(CHUNK))).unwrap_or(CHUNK);
+            let chunk = self.chunk.unwrap_or(CHUNK);
+            let len = u32::try_from((size - self.next).min(u64::from(chunk))).unwrap_or(chunk);
             let id = remote.request_range(index, self.next, len);
             self.in_flight.push_back((id, self.next, len));
             self.next += u64::from(len);
@@ -726,6 +750,20 @@ impl Drop for RemoteStream {
     fn drop(&mut self) {
         let reader = self.reader.get_mut().unwrap_or_else(PoisonError::into_inner);
         self.remote.abandon(reader.in_flight.drain(..).map(|r| r.0));
+        let stats = &reader.stats;
+        if let Some(started) = stats.started {
+            let secs = started.elapsed().as_secs_f64().max(0.001);
+            info!(
+                file = %self.name,
+                size = self.size,
+                received = stats.bytes,
+                requests = stats.requests,
+                short_replies = stats.short,
+                secs = format!("{secs:.2}"),
+                mib_per_s = format!("{:.2}", stats.bytes as f64 / 1_048_576.0 / secs),
+                "file received from the remote"
+            );
+        }
     }
 }
 
@@ -894,6 +932,7 @@ mod tests {
         contents: Vec<Vec<u8>>,
         /// Ranges come back at most this long (servers may answer short).
         max_chunk: usize,
+        requests: Arc<AtomicU32>,
     }
 
     impl ClipboardMessageProxy for FakeServer {
@@ -903,6 +942,7 @@ mod tests {
                     assert!(self.inbox.file_list(&self.files));
                 }
                 ClipboardMessage::SendFileContentsRequest(request) => {
+                    self.requests.fetch_add(1, Ordering::Relaxed);
                     let data = &self.contents[usize::try_from(request.index).unwrap()];
                     let response = if request.flags.contains(FileContentsFlags::SIZE) {
                         FileContentsResponse::new_size_response(request.stream_id, data.len() as u64)
@@ -950,6 +990,7 @@ mod tests {
             ],
             contents: vec![Vec::new(), big.clone(), b"hello".to_vec()],
             max_chunk: CHUNK as usize - 1000,
+            requests: Arc::default(),
         };
         let formats = Formats::register();
         let object: IDataObject = RemoteDataObject {
@@ -1012,6 +1053,38 @@ mod tests {
             );
         }
         assert!(lock(&inbox.state).waiting.is_empty(), "nothing left in flight");
+    }
+
+    #[test]
+    fn short_replies_shrink_requests_instead_of_resending() {
+        const CAP: usize = 64 * 1024;
+        let data: Vec<u8> = (0..CAP * 40 + 77).map(|i| (i % 253) as u8).collect();
+        let inbox = Arc::new(Inbox::default());
+        let requests = Arc::new(AtomicU32::new(0));
+        let server = FakeServer {
+            inbox: Arc::clone(&inbox),
+            files: vec![FileDescriptor::new("f.bin").with_file_size(data.len() as u64)],
+            contents: vec![data.clone()],
+            max_chunk: CAP,
+            requests: Arc::clone(&requests),
+        };
+        let remote = Remote {
+            inbox,
+            proxy: SharedProxy::new(server),
+        };
+        let mut reader = Reader::default();
+        let mut out = vec![0u8; data.len()];
+        let mut done = 0;
+        while done < out.len() {
+            done += reader.read(&remote, 0, data.len() as u64, &mut out[done..]).unwrap();
+        }
+        assert_eq!(out, data);
+        // One reply per 64 KiB, plus the first large requests that were already out.
+        let needed = data.len().div_ceil(CAP) as u32;
+        assert!(
+            requests.load(Ordering::Relaxed) <= needed + DEPTH as u32,
+            "{requests:?} requests"
+        );
     }
 
     #[test]

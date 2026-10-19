@@ -5,10 +5,9 @@ use std::sync::{Arc, mpsc};
 
 use ironrdp_cliprdr::backend::{ClipboardMessage, ClipboardMessageProxy};
 use ironrdp_cliprdr::pdu::{
-    ClipboardFormat, ClipboardFormatId, ClipboardGeneralCapabilityFlags, FileContentsFlags, FileContentsRequest,
-    FileContentsResponse, FormatDataRequest, FormatDataResponse,
+    ClipboardFormat, ClipboardFormatId, ClipboardGeneralCapabilityFlags, FormatDataRequest, FormatDataResponse,
 };
-use tracing::warn;
+use tracing::{debug, info};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::DataExchange::GetClipboardOwner;
 use windows::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass};
@@ -18,12 +17,15 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use crate::clipboard_data_ref::ClipboardDataRef;
 use crate::os_clipboard::OwnedOsClipboard;
-use crate::remote_files::{FILE_LIST_FORMAT_NAME, Inbox, OleClipboard, Remote, SharedProxy, is_file_format};
+use crate::remote_files::{FILE_LIST_FORMAT_NAME, OleClipboard, Remote, SharedProxy, is_file_format};
 use crate::remote_format_registry::RemoteClipboardFormatRegistry;
 use crate::utils::render_format;
 use crate::{BackendEvent, WM_CLIPRDR_BACKEND_EVENT, WinCliprdrError, WinCliprdrResult};
 
-const RENDER_FORMAT_TIMEOUT_SECS: u64 = 10;
+/// How long a paste waits for the remote's data. Windows needs it before
+/// `WM_RENDERFORMAT` returns, so the UI thread is blocked meanwhile; large text or
+/// images over a slow link can take a while.
+const RENDER_FORMAT_TIMEOUT_SECS: u64 = 45;
 const IDT_CLIPBOARD_RETRY: usize = 1;
 
 /// Internal implementation of the clipboard processing logic.
@@ -31,10 +33,12 @@ pub(crate) struct WinClipboardImpl {
     window: HWND,
     message_proxy: Box<dyn ClipboardMessageProxy>,
     backend_rx: mpsc::Receiver<BackendEvent>,
+    /// Replies to this thread's paste requests.
+    paste_rx: mpsc::Receiver<FormatDataResponse<'static>>,
     /// The server accepted file streaming (CB_STREAM_FILECLIP_ENABLED).
     file_transfer: bool,
-    /// Local files last offered to the server, by list index.
-    local_files: Vec<std::path::PathBuf>,
+    /// Serves the files last offered to the server.
+    files: Arc<crate::files::FileServer>,
     /// Reaches the server from the thread serving remote files to local apps.
     remote: Remote,
     /// That thread, started the first time the remote copies files.
@@ -53,15 +57,20 @@ impl WinClipboardImpl {
         window: HWND,
         proxy: SharedProxy,
         backend_rx: mpsc::Receiver<BackendEvent>,
-        inbox: Arc<Inbox>,
+        paste_rx: mpsc::Receiver<FormatDataResponse<'static>>,
+        direct: crate::Direct,
     ) -> Self {
         Self {
             window,
             message_proxy: Box::new(proxy.clone()),
             backend_rx,
+            paste_rx,
             file_transfer: false,
-            local_files: Vec::new(),
-            remote: Remote { inbox, proxy },
+            files: direct.files,
+            remote: Remote {
+                inbox: direct.inbox,
+                proxy,
+            },
             ole: None,
             attempt: 0,
             retry_message: None,
@@ -114,7 +123,7 @@ impl WinClipboardImpl {
             drop(clipboard); // walking folders can take a moment; don't hold the clipboard
             let files = crate::files::collect(&paths);
             if !files.descriptors.is_empty() {
-                self.local_files = files.paths;
+                self.files.offer(files.paths);
                 return Ok(Some(ClipboardMessage::SendInitiateFileCopy(files.descriptors)));
             }
             clipboard = OwnedOsClipboard::new(self.window)?;
@@ -147,21 +156,22 @@ impl WinClipboardImpl {
         // expects us to set clipboard data before returning from `WM_RENDERFORMAT` handler.
         //
         // Sadly, this will block the GUI thread, while data is being received
+        while self.paste_rx.try_recv().is_ok() {} // a late reply to an earlier paste
+        let started = std::time::Instant::now();
         self.message_proxy
             .send_clipboard_message(ClipboardMessage::SendInitiatePaste(remote_format));
-        let data = self
-            .backend_rx
+        let response = self
+            .paste_rx
             .recv_timeout(Duration::from_secs(RENDER_FORMAT_TIMEOUT_SECS))
             .map_err(|_| WinCliprdrError::DataReceiveTimeout)?;
-
-        match data {
-            BackendEvent::FormatDataResponse(response) => Ok(Some(response)),
-            _ => {
-                warn!("Unexpected FormatData response: {:?}", data);
-                // Unexpected message, ignore it
-                Ok(None)
-            }
+        let bytes = response.data().len();
+        let ms = started.elapsed().as_millis();
+        if bytes >= 1024 * 1024 {
+            info!(bytes, ms, "remote clipboard data received");
+        } else {
+            debug!(bytes, ms, "remote clipboard data received");
         }
+        Ok(Some(response))
     }
 
     fn on_render_format(&mut self, format: ClipboardFormatId) -> WinCliprdrResult<Option<ClipboardMessage>> {
@@ -258,40 +268,9 @@ impl WinClipboardImpl {
         Ok(None)
     }
 
-    /// Serves a size or byte-range request for a file offered by this side.
-    fn on_file_contents_request(
-        &mut self,
-        request: &FileContentsRequest,
-    ) -> WinCliprdrResult<Option<ClipboardMessage>> {
-        let path = usize::try_from(request.index)
-            .ok()
-            .and_then(|i| self.local_files.get(i));
-        let response = match path {
-            None => FileContentsResponse::new_error(request.stream_id),
-            Some(path) => {
-                let result = if request.flags.contains(FileContentsFlags::SIZE) {
-                    crate::files::size(path)
-                        .map(|size| FileContentsResponse::new_size_response(request.stream_id, size))
-                } else {
-                    crate::files::read_range(path, request.position, request.requested_size)
-                        .map(|data| FileContentsResponse::new_data_response(request.stream_id, data))
-                };
-                result.unwrap_or_else(|error| {
-                    warn!(path = %path.display(), %error, "file requested by the remote could not be read");
-                    FileContentsResponse::new_error(request.stream_id)
-                })
-            }
-        };
-        Ok(Some(ClipboardMessage::SendFileContentsResponse(response)))
-    }
-
     fn handle_event(&mut self, event: BackendEvent) {
         let result = match &event {
             BackendEvent::FormatDataRequest(request) => self.on_format_data_request(request),
-            BackendEvent::FormatDataResponse(_) => {
-                // Out-of-order message, ignore it.
-                Ok(None)
-            }
             BackendEvent::RemoteFormatList(formats) => self.on_remote_format_list(formats),
 
             BackendEvent::ClipboardUpdated | BackendEvent::RemoteRequestsFormatList => self.on_clipboard_update(),
@@ -302,7 +281,6 @@ impl WinClipboardImpl {
                 self.file_transfer = flags.contains(ClipboardGeneralCapabilityFlags::STREAM_FILECLIP_ENABLED);
                 Ok(None)
             }
-            BackendEvent::FileContentsRequest(request) => self.on_file_contents_request(request),
         };
 
         let retry_err = match result {
