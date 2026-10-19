@@ -1,10 +1,12 @@
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { DndContext, DragOverlay, useDroppable } from "@dnd-kit/core";
+import { SortableContext, rectSortingStrategy } from "@dnd-kit/sortable";
 import { connectAll, updateSettings } from "../../state/actions";
 import { isLive, setState, useStore } from "../../state/store";
-import { useSections } from "../tabs/useTabsDnd";
+import { containerId, useTabsDnd } from "../tabs/useTabsDnd";
 import { Button, Segmented } from "../ui/ui";
 import { ConnectIcon } from "../common/SessionIcons";
-import { GridTile } from "./GridTile";
+import { GridTile, GridTileOverlay, noteDragEnd } from "./GridTile";
 import { TileObserverContext, type TileObserver } from "./tileObserver";
 import "./grid.css";
 
@@ -52,8 +54,18 @@ function useTileObserver(root: React.RefObject<HTMLDivElement | null>): TileObse
   return obs;
 }
 
+/** A section's grid; also the drop target for tiles dragged in from another group. */
+function GridDropZone({ groupId, tileWidth, children }: { groupId: string; tileWidth: number; children: ReactNode }) {
+  const { setNodeRef } = useDroppable({ id: containerId(groupId) });
+  return (
+    <div ref={setNodeRef} className="grid" style={{ "--tile": `${tileWidth}px` } as React.CSSProperties}>
+      {children}
+    </div>
+  );
+}
+
 function GridViewInner() {
-  const sections = useSections();
+  const { sections, activeId, sensors, collisionDetection, handlers } = useTabsDnd();
   const groups = useStore((s) => s.groups);
   const filter = useStore((s) => s.settings.gridFilter);
   const tileWidth = useStore((s) => s.settings.gridTileWidth);
@@ -118,29 +130,48 @@ function GridViewInner() {
       </div>
 
       <div className="grid-scroll" ref={scrollRef}>
-        <TileObserverContext.Provider value={observer}>
-          {visibleSections.length === 0 ? (
-            <div className="grid-empty">
-              {filter === "connected" ? "No connected sessions" : "No connections"}
-            </div>
-          ) : (
-            visibleSections.map((sec) => (
-              <section key={sec.groupId} className="grid-section">
-                {showHeaders && (
-                  <h2 className="grid-section__title">
-                    {groupName.get(sec.groupId)}
-                    <span className="grid-section__count">{sec.ids.length}</span>
-                  </h2>
-                )}
-                <div className="grid" style={{ "--tile": `${tileWidth}px` } as React.CSSProperties}>
-                  {sec.ids.map((id) => (
-                    <GridTile key={id} id={id} />
-                  ))}
-                </div>
-              </section>
-            ))
-          )}
-        </TileObserverContext.Provider>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={collisionDetection}
+          {...handlers}
+          onDragEnd={(e) => {
+            noteDragEnd();
+            handlers.onDragEnd(e);
+          }}
+          onDragCancel={() => {
+            noteDragEnd();
+            handlers.onDragCancel();
+          }}
+        >
+          <TileObserverContext.Provider value={observer}>
+            {visibleSections.length === 0 ? (
+              <div className="grid-empty">
+                {filter === "connected" ? "No connected sessions" : "No connections"}
+              </div>
+            ) : (
+              visibleSections.map((sec) => (
+                <section key={sec.groupId} className="grid-section">
+                  {showHeaders && (
+                    <h2 className="grid-section__title">
+                      {groupName.get(sec.groupId)}
+                      <span className="grid-section__count">{sec.ids.length}</span>
+                    </h2>
+                  )}
+                  <SortableContext items={sec.ids} strategy={rectSortingStrategy}>
+                    <GridDropZone groupId={sec.groupId} tileWidth={tileWidth}>
+                      {sec.ids.map((id) => (
+                        <GridTile key={id} id={id} />
+                      ))}
+                    </GridDropZone>
+                  </SortableContext>
+                </section>
+              ))
+            )}
+          </TileObserverContext.Provider>
+          <DragOverlay dropAnimation={{ duration: 180, easing: "cubic-bezier(0.16, 1, 0.3, 1)" }}>
+            {activeId ? <GridTileOverlay id={activeId} /> : null}
+          </DragOverlay>
+        </DndContext>
       </div>
     </div>
   );

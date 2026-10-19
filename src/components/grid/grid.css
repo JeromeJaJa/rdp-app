@@ -128,6 +128,24 @@
 .tile.is-selected:hover .tile__screen {
   box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--accent) 80%, transparent), var(--shadow-md);
 }
+/* Dragging: the tile stays as a faint placeholder; a lifted copy follows the pointer. */
+.tile {
+  touch-action: none;
+}
+.tile.is-dragging {
+  opacity: 0.35;
+}
+.tile.is-dragging .tile__screen {
+  transform: none;
+  box-shadow: 0 0 0 1px var(--border);
+}
+.tile.is-overlay {
+  cursor: grabbing;
+}
+.tile.is-overlay .tile__screen {
+  transform: scale(1.03);
+  box-shadow: 0 0 0 1px var(--border-strong), var(--shadow-lg);
+}
 .tile__thumb {
   position: absolute;
   inset: 0;

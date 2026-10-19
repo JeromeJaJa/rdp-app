@@ -1,4 +1,6 @@
-import { memo, useContext, useEffect, useRef } from "react";
+import { memo, useCallback, useContext, useEffect, useRef, type CSSProperties } from "react";
+import { useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { AlertCircle } from "lucide-react";
 import { ConnectIcon } from "../common/SessionIcons";
 import { RemoteThumbnail } from "../../engine";
@@ -8,29 +10,78 @@ import { StatusDot, statusLabel } from "../common/StatusDot";
 import { Spinner } from "../ui/ui";
 import { TileObserverContext } from "./tileObserver";
 
+/** The click that ends a drag must not also select (and open) the tile. */
+let dragEndedAt = 0;
+export function noteDragEnd() {
+  dragEndedAt = performance.now();
+}
+
+/** A tile in the grid; drag to reorder (also across groups). */
 function GridTileInner({ id }: { id: string }) {
-  const conn = useConnection(id);
-  const status = useStatus(id);
-  const message = useStore((s) => (s.sessions[id]?.status === "error" ? s.sessions[id]?.message : undefined));
   const visible = useStore((s) => s.visibleTiles.includes(id));
-  const selected = useStore((s) => s.selectedId === id);
   const observer = useContext(TileObserverContext);
-  const ref = useRef<HTMLDivElement>(null);
+  const ref = useRef<HTMLDivElement | null>(null);
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const setRefs = useCallback(
+    (el: HTMLDivElement | null) => {
+      ref.current = el;
+      setNodeRef(el);
+    },
+    [setNodeRef],
+  );
 
   useEffect(() => {
     if (!observer || !ref.current) return;
     return observer.observe(ref.current, id);
   }, [observer, id]);
 
+  const style: CSSProperties = { transform: CSS.Translate.toString(transform), transition };
+  return (
+    <TileCard
+      id={id}
+      showThumb={visible}
+      nodeRef={setRefs}
+      style={style}
+      className={isDragging ? "is-dragging" : ""}
+      {...attributes}
+      {...listeners}
+    />
+  );
+}
+
+/** The floating copy that follows the pointer while a tile is dragged. */
+export function GridTileOverlay({ id }: { id: string }) {
+  return <TileCard id={id} showThumb className="is-overlay" />;
+}
+
+type TileCardProps = {
+  id: string;
+  showThumb: boolean;
+  nodeRef?: (el: HTMLDivElement | null) => void;
+  style?: CSSProperties;
+  className?: string;
+} & Omit<React.HTMLAttributes<HTMLDivElement>, "id" | "style" | "className">;
+
+function TileCard({ id, showThumb, nodeRef, style, className, ...rest }: TileCardProps) {
+  const conn = useConnection(id);
+  const status = useStatus(id);
+  const message = useStore((s) => (s.sessions[id]?.status === "error" ? s.sessions[id]?.message : undefined));
+  const selected = useStore((s) => s.selectedId === id);
+
   if (!conn) return null;
   const live = isLive(status);
   const busy = status === "queued" || status === "connecting";
+  const visible = showThumb;
 
   return (
     <div
-      ref={ref}
-      className={`tile ${live ? "is-live" : ""} ${selected ? "is-selected" : ""}`}
-      onClick={() => select(id, { connect: false })}
+      ref={nodeRef}
+      style={style}
+      {...rest}
+      className={`tile ${live ? "is-live" : ""} ${selected ? "is-selected" : ""} ${className ?? ""}`}
+      onClick={() => {
+        if (performance.now() - dragEndedAt > 250) select(id, { connect: false });
+      }}
       onContextMenu={(e) => {
         e.preventDefault();
         openMenu({ x: e.clientX, y: e.clientY, target: { kind: "connection", id } });
