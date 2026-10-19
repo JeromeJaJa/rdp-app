@@ -6,12 +6,12 @@ A fast, minimal Windows Remote Desktop client for managing many connections at o
 
 - **Built for scale**: 50–100+ simultaneous sessions. Each session has its own thread, and sessions you aren't looking at are paused on the server side, so they cost almost nothing.
 - **H.264**: graphics pipeline with AVC420 and AVC444 (full 4:4:4 color, so small colored text stays crisp), decoded on the GPU (Media Foundation / DXVA) or in software. Only the regions that changed are converted, straight into shared memory.
-- **Tabs on top or left**, drag to reorder, a live **grid view** of every session.
+- **Tabs on top or left**, drag to reorder (in the grid too, also across groups), a live **grid view** of every session.
 - **Groups**: every connection belongs to a group, the built-in **All** group or one of yours. Each group can connect/disconnect as a whole and have its whole list **replaced** from a pasted list (matching connections keep their live sessions).
 - **Bulk add**: paste `host:user:pass` lines (also `host:port:user:pass`, `DOMAIN\user`, `user@domain`, `[ipv6]:port:…`).
 - **Import / export** everything or single groups, as JSON (groups, notes) or bulk text. Exports include passwords in plain text, so treat the file like the passwords themselves.
 - Connections only connect when you ask: double-click or Enter on a tab, **Connect all** / **Disconnect all**, per group too.
-- Audio playback (from the session on screen, or all), microphone, drive / printer / smart card redirection, RD Gateway (engine and API only for now; hidden in the interface), clipboard sharing (text, images, and files copied either way: copy in Explorer on one side, paste on the other), dynamic resolution, auto-reconnect.
+- Audio playback (from the session on screen, or all; each connection can override it or be muted), microphone, drive / printer / smart card redirection, RD Gateway (engine and API only for now; hidden in the interface), clipboard sharing (text, images, and files copied either way: copy in Explorer on one side, paste on the other), dynamic resolution, auto-reconnect.
 - Server certificates are pinned on first use and you are asked if one ever changes.
 - A **local REST API** (with docs) so scripts and AI agents can do everything you can do in the window.
 - Passwords are encrypted with Windows DPAPI (tied to your Windows account) and never reach the UI.
@@ -23,9 +23,11 @@ A fast, minimal Windows Remote Desktop client for managing many connections at o
 | Add one / many | `Ctrl+N` / `Ctrl+Shift+N`, or **+ New** (top of the sidebar; title bar when tabs are on top) |
 | Connect a tab | Double-click it, or select and press `Enter` |
 | Group actions (connect, replace list, import/export, rename) | Right-click the group header |
-| Grid view | `Ctrl+G` or the grid toggle (bottom of the sidebar; title bar when tabs are on top) — click a tile to open it |
+| Grid view | `Ctrl+G` or the grid toggle (bottom of the sidebar; title bar when tabs are on top) — click a tile to open it, drag to reorder |
+| Switch within a group | With tabs on the left, click the connection name in the title bar |
 | Next / previous tab | `Ctrl+Tab` / `Ctrl+Shift+Tab`, or `Ctrl+1…9` |
-| Send Win, Win+R, Alt+Tab, Task Manager… | Hover the top of a session → keyboard button |
+| Session toolbar (send keys, mute, reconnect, fullscreen) | Rest the pointer on the top edge of a session; its X hides it until you move away |
+| Send Win, Win+R, Alt+Tab, Task Manager… | Session toolbar → keyboard button |
 | Release keyboard from a session | Click outside it, or `Ctrl+Alt+Home` |
 
 While a session has focus, every key goes to it (app shortcuts resume when it loses focus). Windows itself keeps a few
