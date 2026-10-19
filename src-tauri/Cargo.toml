@@ -1,0 +1,48 @@
+[package]
+name = "rdp-app"
+description = "Fast multi-session RDP client"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[lib]
+name = "rdp_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+rdp-engine = { path = "../crates/rdp-engine" }
+tauri = { version = "2", features = [] }
+tauri-plugin-single-instance = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1"
+parking_lot = "0.12"
+base64 = "0.22"
+uuid = { version = "1", features = ["v4"] }
+tauri-plugin-dialog = "2"
+tokio = { version = "1", features = ["sync", "time", "net", "macros"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+futures-util = "0.3"
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "query", "tokio"] }
+png = "0.17"
+rand = "0.8"
+aes-gcm = "0.10"
+pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
+sha2 = "0.10"
+
+[target.'cfg(windows)'.dependencies]
+rdp-clipboard = { path = "../crates/rdp-clipboard" }
+ironrdp-cliprdr.workspace = true
+webview2-com = "0.39"
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Security_Cryptography",
+    "Win32_System_Memory",
+    "Win32_Storage_FileSystem",
+] }
+windows-core = "0.62"

@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RDP App · Local API</title>
+<style>
+  :root {
+    --bg: #09090b; --panel: #0e0e11; --elev: #141418; --border: rgba(255,255,255,.07);
+    --text: #ededef; --text2: #a1a1aa; --text3: #63636e; --accent: #8b9cff;
+    --get: #3dd68c; --post: #8b9cff; --patch: #f5a524; --delete: #f2555a;
+    --mono: ui-monospace, "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f7f7f8; --panel: #fff; --elev: #fff; --border: rgba(0,0,0,.08);
+      --text: #111113; --text2: #52525b; --text3: #a1a1aa; --accent: #5b6cff; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.55 Inter, "Segoe UI", system-ui, sans-serif; }
+  a { color: var(--accent); }
+  .layout { display: grid; grid-template-columns: 260px 1fr; min-height: 100vh; }
+  nav { position: sticky; top: 0; height: 100vh; overflow: auto; padding: 24px 16px; border-right: 1px solid var(--border); background: var(--panel); }
+  nav h1 { font-size: 15px; margin: 0 0 2px; letter-spacing: -.01em; }
+  nav .sub { color: var(--text3); font-size: 12px; margin-bottom: 20px; }
+  nav .tag { color: var(--text3); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; margin: 18px 8px 6px; }
+  nav a { display: flex; gap: 8px; align-items: baseline; padding: 4px 8px; border-radius: 6px; color: var(--text2); text-decoration: none; font-size: 12.5px; }
+  nav a:hover { background: rgba(127,127,127,.08); color: var(--text); }
+  nav a .m { font: 600 10px var(--mono); width: 42px; flex: none; }
+  main { padding: 40px 48px 120px; max-width: 980px; }
+  .hero h2 { font-size: 26px; margin: 0 0 6px; letter-spacing: -.02em; }
+  .hero p { color: var(--text2); margin: 0 0 20px; }
+  pre, code { font-family: var(--mono); font-size: 12.5px; }
+  pre { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+  .overview { color: var(--text2); }
+  .token { display: flex; gap: 8px; align-items: center; margin: 18px 0 28px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); }
+  .token input { flex: 1; background: transparent; border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 7px 10px; font: 12.5px var(--mono); }
+  .token label { color: var(--text2); font-size: 12.5px; white-space: nowrap; }
+  section.tag-section h3 { margin: 40px 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--text3); }
+  .ep { border: 1px solid var(--border); border-radius: 12px; background: var(--panel); margin: 12px 0; overflow: hidden; }
+  .ep summary { list-style: none; cursor: pointer; display: flex; gap: 12px; align-items: center; padding: 12px 16px; }
+  .ep summary::-webkit-details-marker { display: none; }
+  .ep summary:hover { background: rgba(127,127,127,.05); }
+  .method { font: 700 11px var(--mono); padding: 3px 7px; border-radius: 5px; min-width: 56px; text-align: center; }
+  .GET { color: var(--get); background: color-mix(in srgb, var(--get) 12%, transparent); }
+  .POST { color: var(--post); background: color-mix(in srgb, var(--post) 12%, transparent); }
+  .PATCH { color: var(--patch); background: color-mix(in srgb, var(--patch) 12%, transparent); }
+  .DELETE { color: var(--delete); background: color-mix(in srgb, var(--delete) 12%, transparent); }
+  .path { font: 13px var(--mono); }
+  .summary { color: var(--text2); margin-left: auto; font-size: 12.5px; }
+  .body { padding: 4px 16px 16px; border-top: 1px solid var(--border); }
+  .body p { color: var(--text2); }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; margin: 8px 0; }
+  td { padding: 6px 8px; border-top: 1px solid var(--border); vertical-align: top; }
+  td:first-child { font-family: var(--mono); white-space: nowrap; }
+  td.dim { color: var(--text3); white-space: nowrap; }
+  .label { color: var(--text3); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; margin: 14px 0 6px; }
+  .try { display: grid; gap: 8px; margin-top: 12px; }
+  .try input, .try textarea { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 8px 10px; font: 12.5px var(--mono); }
+  .try textarea { min-height: 90px; resize: vertical; }
+  .try button { justify-self: start; background: var(--accent); color: #0b0b10; border: 0; border-radius: 7px; padding: 7px 14px; font-weight: 600; cursor: pointer; }
+  .try img { max-width: 100%; border-radius: 8px; border: 1px solid var(--border); }
+  .badge { font-size: 11px; color: var(--text3); border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; }
+</style>
+</head>
+<body>
+<div class="layout">
+  <nav id="nav"><h1>RDP App API</h1><div class="sub">Local REST · v1</div></nav>
+  <main>
+    <div class="hero">
+      <h2>Local API</h2>
+      <p>Control everything in RDP App from scripts and agents. Machine-readable:
+        <a href="/openapi.json">openapi.json</a> · <a href="/llms.txt">llms.txt</a></p>
+    </div>
+    <div class="token">
+      <label for="tok">Token</label>
+      <input id="tok" placeholder="Paste the token from Settings → Automation to try requests" autocomplete="off" spellcheck="false" />
+    </div>
+    <pre class="overview" id="overview"></pre>
+    <div id="endpoints"></div>
+  </main>
+</div>
+<script>
+const tok = document.getElementById("tok");
+tok.value = localStorage.getItem("rdp-api-token") || "";
+tok.addEventListener("input", () => localStorage.setItem("rdp-api-token", tok.value.trim()));
+
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const slug = (m, p) => (m + p).toLowerCase().replace(/[^a-z0-9]+/g, "-");
+
+fetch("/openapi.json").then((r) => r.json()).then((doc) => {
+  document.getElementById("overview").textContent = doc.info.description;
+  const byTag = new Map();
+  for (const [path, item] of Object.entries(doc.paths)) {
+    for (const [method, op] of Object.entries(item)) {
+      const tag = op.tags[0];
+      if (!byTag.has(tag)) byTag.set(tag, []);
+      byTag.get(tag).push({ method: method.toUpperCase(), path, op });
+    }
+  }
+  const nav = document.getElementById("nav");
+  const root = document.getElementById("endpoints");
+  for (const [tag, eps] of byTag) {
+    nav.insertAdjacentHTML("beforeend", `<div class="tag">${esc(tag)}</div>`);
+    const section = document.createElement("section");
+    section.className = "tag-section";
+    section.innerHTML = `<h3>${esc(tag)}</h3>`;
+    for (const { method, path, op } of eps) {
+      const id = slug(method, path);
+      nav.insertAdjacentHTML("beforeend", `<a href="#${id}"><span class="m ${method}">${method}</span>${esc(path.replace("/api/v1", ""))}</a>`);
+      const params = op.parameters || [];
+      const example = op.requestBody ? op.requestBody.content["application/json"].example : null;
+      const resp = op.responses["200"];
+      const respEx = resp.content ? JSON.stringify(resp.content["application/json"].example, null, 2) : resp.description;
+      const noAuth = op.security && op.security.length === 0;
+      const el = document.createElement("details");
+      el.className = "ep";
+      el.id = id;
+      el.innerHTML = `
+        <summary><span class="method ${method}">${method}</span><span class="path">${esc(path)}</span>
+          ${noAuth ? '<span class="badge">no auth</span>' : ""}<span class="summary">${esc(op.summary)}</span></summary>
+        <div class="body">
+          ${op.description ? `<p>${esc(op.description)}</p>` : ""}
+          ${params.length ? `<div class="label">Parameters</div><table>${params.map((p) => `<tr><td>${esc(p.name)}</td><td class="dim">${esc(p.in)} · ${esc(p.schema.type)}</td><td>${esc(p.description)}</td></tr>`).join("")}</table>` : ""}
+          ${example ? `<div class="label">Body</div><pre>${esc(typeof example === "string" ? example : JSON.stringify(example, null, 2))}</pre>` : ""}
+          <div class="label">Response</div><pre>${esc(respEx)}</pre>
+          <div class="try">
+            <div class="label">Try it</div>
+            <input class="url" value="${esc(path)}" spellcheck="false" />
+            ${method !== "GET" && method !== "DELETE" ? `<textarea class="req" spellcheck="false">${esc(example ? (typeof example === "string" ? example : JSON.stringify(example, null, 2)) : "")}</textarea>` : ""}
+            <button>Send</button>
+            <div class="out"></div>
+          </div>
+        </div>`;
+      el.querySelector("button").addEventListener("click", async () => {
+        const out = el.querySelector(".out");
+        const url = el.querySelector(".url").value;
+        const body = el.querySelector(".req");
+        out.innerHTML = "<pre>…</pre>";
+        try {
+          const res = await fetch(url, {
+            method,
+            headers: { Authorization: `Bearer ${tok.value.trim()}`, ...(body ? { "Content-Type": "application/json" } : {}) },
+            body: body && body.value.trim() ? body.value : undefined,
+          });
+          const type = res.headers.get("content-type") || "";
+          if (type.startsWith("image/")) {
+            const blob = await res.blob();
+            out.innerHTML = `<img alt="screenshot" src="${URL.createObjectURL(blob)}" />`;
+          } else if (type.includes("event-stream")) {
+            out.innerHTML = "<pre>Streaming… (open in a terminal: curl -N -H 'Authorization: Bearer …' " + esc(location.origin + url) + ")</pre>";
+            res.body.cancel();
+          } else {
+            const text = await res.text();
+            let pretty = text;
+            try { pretty = JSON.stringify(JSON.parse(text), null, 2); } catch {}
+            out.innerHTML = `<pre>${res.status} ${esc(res.statusText)}\n\n${esc(pretty)}</pre>`;
+          }
+        } catch (e) {
+          out.innerHTML = `<pre>${esc(e)}</pre>`;
+        }
+      });
+      section.appendChild(el);
+    }
+    root.appendChild(section);
+  }
+  if (location.hash) document.querySelector(location.hash)?.setAttribute("open", "");
+});
+</script>
+</body>
+</html>
