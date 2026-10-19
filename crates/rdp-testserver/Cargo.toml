@@ -1,0 +1,24 @@
+[package]
+name = "rdp-testserver"
+description = "Local RDP servers with animated content, for development and load testing."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+ironrdp-server = { workspace = true, features = ["helper", "egfx"] }
+ironrdp-egfx = { workspace = true, features = ["openh264-bundled"] }
+ironrdp-pdu.workspace = true
+ironrdp-displaycontrol.workspace = true
+ironrdp-dvc.workspace = true
+ironrdp-svc.workspace = true
+ironrdp-graphics.workspace = true
+openh264 = { version = "0.9", default-features = false, features = ["source"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "net"] }
+async-trait = "0.1"
+anyhow = "1"
+bytes = "1"
+rcgen = "0.13"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
