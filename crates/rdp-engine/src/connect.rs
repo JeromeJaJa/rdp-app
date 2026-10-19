@@ -100,6 +100,49 @@ pub(crate) struct ConnectContext {
 
 type Erased = Box<dyn AsyncReadWrite + Unpin + Send + Sync>;
 
+/// Largest write the RD Gateway tunnel accepts at once: it frames each write into a
+/// fixed 8 KiB websocket buffer, and a TLS record (up to ~16 KiB) passed whole would
+/// overflow it and drop the tunnel.
+const GATEWAY_MAX_WRITE: usize = 8000;
+
+/// Splits writes so none exceeds `max` bytes.
+struct CappedWrites<S> {
+    inner: S,
+    max: usize,
+}
+
+impl<S: AsyncRead + Unpin> AsyncRead for CappedWrites<S> {
+    fn poll_read(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.inner).poll_read(cx, buf)
+    }
+}
+
+impl<S: AsyncWrite + Unpin> AsyncWrite for CappedWrites<S> {
+    fn poll_write(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        let n = buf.len().min(self.max);
+        std::pin::Pin::new(&mut self.inner).poll_write(cx, &buf[..n])
+    }
+
+    fn poll_flush(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.inner).poll_flush(cx)
+    }
+
+    fn poll_shutdown(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.inner).poll_shutdown(cx)
+    }
+}
+
 /// Opens the transport: direct TCP, or a tunnel through an RD Gateway.
 async fn open_transport(
     params: &ConnectParams,
@@ -145,6 +188,10 @@ async fn open_transport(
         .await
         .map_err(|_| anyhow::anyhow!("RD Gateway connect timed out"))?
         .map_err(|e| anyhow::anyhow!("RD Gateway: {e}"))?;
+        let stream = CappedWrites {
+            inner: stream,
+            max: GATEWAY_MAX_WRITE,
+        };
         return Ok((Box::new(stream), client_addr));
     }
 
