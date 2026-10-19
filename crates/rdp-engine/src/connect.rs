@@ -131,7 +131,10 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for CappedWrites<S> {
         std::pin::Pin::new(&mut self.inner).poll_write(cx, &buf[..n])
     }
 
-    fn poll_flush(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<std::io::Result<()>> {
+    fn poll_flush(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
         std::pin::Pin::new(&mut self.inner).poll_flush(cx)
     }
 
