@@ -4,7 +4,9 @@
 use ironrdp_graphics::progressive::ProgressiveDecoder;
 
 fn main() {
-    let path = std::env::args().nth(1).expect("usage: replay_progressive <capture file>");
+    let path = std::env::args()
+        .nth(1)
+        .expect("usage: replay_progressive <capture file>");
     let data = std::fs::read(&path).expect("read capture");
     let mut decoder = ProgressiveDecoder::new();
     let (mut pos, mut index, mut ok, mut failed) = (0usize, 0usize, 0usize, 0usize);

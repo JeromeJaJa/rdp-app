@@ -345,8 +345,14 @@ pub(crate) mod tests {
             height: h as u32,
         };
         let mut out = vec![0; w * h * 4];
-        yuv::yuv444_to_rgba(&img, &mut out, (w * 4) as u32, yuv::YuvRange::Full, yuv::YuvStandardMatrix::Bt709)
-            .unwrap();
+        yuv::yuv444_to_rgba(
+            &img,
+            &mut out,
+            (w * 4) as u32,
+            yuv::YuvRange::Full,
+            yuv::YuvStandardMatrix::Bt709,
+        )
+        .unwrap();
         out
     }
 
@@ -363,13 +369,26 @@ pub(crate) mod tests {
         // Whole frame, then an odd-aligned rect on top: both must match the source.
         convert_region(&main, &aux_p.yuv(), layout, &mut out, w * 4, (0, 0, w, h), &mut scratch).unwrap();
         out.fill(0);
-        convert_region(&main, &aux_p.yuv(), layout, &mut out, w * 4, (3, 5, 40, 17), &mut scratch).unwrap();
+        convert_region(
+            &main,
+            &aux_p.yuv(),
+            layout,
+            &mut out,
+            w * 4,
+            (3, 5, 40, 17),
+            &mut scratch,
+        )
+        .unwrap();
         for row in 0..h {
             for col in 0..w {
                 let i = (row * w + col) * 4;
                 let inside = (3..43).contains(&col) && (5..22).contains(&row);
                 if !inside {
-                    assert_eq!(out[i..i + 4], [0, 0, 0, 0], "pixel ({col},{row}) outside the rect was written");
+                    assert_eq!(
+                        out[i..i + 4],
+                        [0, 0, 0, 0],
+                        "pixel ({col},{row}) outside the rect was written"
+                    );
                     continue;
                 }
                 for c in 0..3 {
@@ -377,7 +396,12 @@ pub(crate) mod tests {
                     // The checkerboard is recovered exactly through the reverse filter;
                     // the gradient keeps the (rounded) filtered value for one sample in four.
                     let limit = if col < w / 2 { 2 } else { 12 };
-                    assert!(d <= limit, "{layout:?} ({col},{row}) channel {c}: got {} want {}", out[i + c], expected[i + c]);
+                    assert!(
+                        d <= limit,
+                        "{layout:?} ({col},{row}) channel {c}: got {} want {}",
+                        out[i + c],
+                        expected[i + c]
+                    );
                 }
             }
         }
@@ -407,6 +431,9 @@ pub(crate) mod tests {
             .map(|i| (i32::from(out[i]) - i32::from(expected[i])).abs())
             .max()
             .unwrap();
-        assert!(worst > 60, "4:2:0 unexpectedly kept single-pixel chroma (max error {worst})");
+        assert!(
+            worst > 60,
+            "4:2:0 unexpectedly kept single-pixel chroma (max error {worst})"
+        );
     }
 }

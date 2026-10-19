@@ -86,7 +86,9 @@ fn create_gpu() -> anyhow::Result<Gpu> {
         let mut manager: Option<IMFDXGIDeviceManager> = None;
         MFCreateDXGIDeviceManager(&mut token, &mut manager).context("MFCreateDXGIDeviceManager")?;
         let manager = manager.context("no DXGI device manager")?;
-        manager.ResetDevice(&device, token).context("IMFDXGIDeviceManager::ResetDevice")?;
+        manager
+            .ResetDevice(&device, token)
+            .context("IMFDXGIDeviceManager::ResetDevice")?;
         Ok(Gpu {
             manager,
             _device: device,
@@ -153,8 +155,12 @@ impl MfDecoder {
                 stride: 0,
             };
             decoder.negotiate_output()?;
-            decoder.transform.ProcessMessage(MFT_MESSAGE_NOTIFY_BEGIN_STREAMING, 0)?;
-            decoder.transform.ProcessMessage(MFT_MESSAGE_NOTIFY_START_OF_STREAM, 0)?;
+            decoder
+                .transform
+                .ProcessMessage(MFT_MESSAGE_NOTIFY_BEGIN_STREAMING, 0)?;
+            decoder
+                .transform
+                .ProcessMessage(MFT_MESSAGE_NOTIFY_START_OF_STREAM, 0)?;
             ACTIVE.fetch_add(1, Ordering::Relaxed);
             Ok(decoder)
         }
@@ -187,8 +193,7 @@ impl MfDecoder {
             };
 
             let info = self.transform.GetOutputStreamInfo(0)?;
-            let provides =
-                (MFT_OUTPUT_STREAM_PROVIDES_SAMPLES.0 | MFT_OUTPUT_STREAM_CAN_PROVIDE_SAMPLES.0) as u32;
+            let provides = (MFT_OUTPUT_STREAM_PROVIDES_SAMPLES.0 | MFT_OUTPUT_STREAM_CAN_PROVIDE_SAMPLES.0) as u32;
             self.provides_samples = info.dwFlags & provides != 0;
             self.out_size = info.cbSize;
             Ok(())
@@ -379,7 +384,10 @@ mod tests {
 
     fn planes(p: &Yuv<'_>) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
         let grab = |pl: Plane<'_>, w: usize, h: usize| {
-            (0..h).flat_map(|y| (0..w).map(move |x| (x, y))).map(|(x, y)| pl.at(x, y).unwrap()).collect::<Vec<_>>()
+            (0..h)
+                .flat_map(|y| (0..w).map(move |x| (x, y)))
+                .map(|(x, y)| pl.at(x, y).unwrap())
+                .collect::<Vec<_>>()
         };
         (
             grab(p.y_plane(), p.width, p.height),
@@ -413,15 +421,22 @@ mod tests {
             .skip_frames(false);
         let mut encoder = Encoder::with_api_config(OpenH264API::from_source(), config).unwrap();
         for frame in 0..12usize {
-            let y: Vec<u8> = (0..w * h).map(|i| ((i % w + i / w * 2 + frame * 9) % 220 + 16) as u8).collect();
-            let u: Vec<u8> = (0..(w / 2) * (h / 2)).map(|i| (64 + (i % (w / 2) + frame) % 128) as u8).collect();
+            let y: Vec<u8> = (0..w * h)
+                .map(|i| ((i % w + i / w * 2 + frame * 9) % 220 + 16) as u8)
+                .collect();
+            let u: Vec<u8> = (0..(w / 2) * (h / 2))
+                .map(|i| (64 + (i % (w / 2) + frame) % 128) as u8)
+                .collect();
             let v: Vec<u8> = vec![160; (w / 2) * (h / 2)];
             let bits = encoder
                 .encode(&YUVSlices::new((&y, &u, &v), (w, h), (w, w / 2, w / 2)))
                 .unwrap()
                 .to_vec();
             let sw = planes(&software.decode(&bits).unwrap().expect("software picture"));
-            let pic = gpu.decode(&bits).unwrap().expect("a GPU picture per access unit (low latency)");
+            let pic = gpu
+                .decode(&bits)
+                .unwrap()
+                .expect("a GPU picture per access unit (low latency)");
             assert_eq!((pic.width, pic.height), (w, h));
             let hw = planes(&pic);
             let src = (y, u, v);
@@ -430,7 +445,10 @@ mod tests {
                 max_diff(&hw, &sw),
                 max_diff(&sw, &src)
             );
-            assert!(max_diff(&hw, &sw) <= 1, "frame {frame}: GPU and software pictures differ");
+            assert!(
+                max_diff(&hw, &sw) <= 1,
+                "frame {frame}: GPU and software pictures differ"
+            );
         }
         assert!(gpu.hardware());
     }

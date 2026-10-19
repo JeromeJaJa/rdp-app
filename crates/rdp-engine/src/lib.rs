@@ -14,8 +14,8 @@ mod autodetect;
 pub mod certs;
 mod clipboard;
 mod connect;
-mod devices;
 mod cursor;
+mod devices;
 mod errors;
 mod gfx;
 mod session;
@@ -552,7 +552,11 @@ impl Engine {
     /// Identifies the session thread currently running for `id` (changes on reconnect).
     pub fn generation(&self, id: &str) -> Option<u64> {
         let state = self.state.lock();
-        state.sessions.get(id).filter(|h| !h.tx.is_closed()).map(|h| h.generation)
+        state
+            .sessions
+            .get(id)
+            .filter(|h| !h.tx.is_closed())
+            .map(|h| h.generation)
     }
 
     /// Ids of sessions whose threads are still alive.
@@ -565,7 +569,6 @@ impl Engine {
             .map(|(id, _)| id.clone())
             .collect()
     }
-
 }
 
 /// Starts a session thread unless one is already running for `id`.

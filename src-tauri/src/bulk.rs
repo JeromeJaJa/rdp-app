@@ -76,7 +76,8 @@ fn valid_hostname(h: &str) -> bool {
     !h.is_empty()
         && bytes[0].is_ascii_alphanumeric()
         && bytes[bytes.len() - 1].is_ascii_alphanumeric()
-        && h.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+        && h.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
 }
 
 fn valid_ipv6(h: &str) -> bool {
@@ -137,7 +138,10 @@ pub fn parse_line(text: &str) -> Result<Entry, String> {
 
     let mut port = DEFAULT_PORT;
     if rest.len() >= 3 && !rest[0].trim().is_empty() && rest[0].trim().chars().all(|c| c.is_ascii_digit()) {
-        let p: u32 = rest[0].trim().parse().map_err(|_| format!("Invalid port {}", rest[0].trim()))?;
+        let p: u32 = rest[0]
+            .trim()
+            .parse()
+            .map_err(|_| format!("Invalid port {}", rest[0].trim()))?;
         if !(1..=65535).contains(&p) {
             return Err(format!("Invalid port {}", rest[0].trim()));
         }
@@ -168,7 +172,11 @@ pub fn parse_line(text: &str) -> Result<Entry, String> {
 
 /// Formats an entry back into a bulk line.
 pub fn format_line(host: &str, port: u16, username: &str, domain: &str, password: Option<&str>) -> String {
-    let host = if host.contains(':') { format!("[{host}]") } else { host.to_owned() };
+    let host = if host.contains(':') {
+        format!("[{host}]")
+    } else {
+        host.to_owned()
+    };
     let user = if domain.is_empty() {
         username.to_owned()
     } else {
@@ -196,16 +204,34 @@ mod tests {
 
     #[test]
     fn parses_all_shapes() {
-        assert_eq!(parse_line("10.0.0.5:admin:hunter2"), Ok(e("10.0.0.5", 3389, "admin", "", "hunter2")));
-        assert_eq!(parse_line("10.0.0.5:3390:admin:hunter2"), Ok(e("10.0.0.5", 3390, "admin", "", "hunter2")));
+        assert_eq!(
+            parse_line("10.0.0.5:admin:hunter2"),
+            Ok(e("10.0.0.5", 3389, "admin", "", "hunter2"))
+        );
+        assert_eq!(
+            parse_line("10.0.0.5:3390:admin:hunter2"),
+            Ok(e("10.0.0.5", 3390, "admin", "", "hunter2"))
+        );
         assert_eq!(
             parse_line(r"srv01.corp.local:CORP\jdoe:p@ss:word"),
             Ok(e("srv01.corp.local", 3389, "jdoe", "CORP", "p@ss:word"))
         );
-        assert_eq!(parse_line("srv01:jdoe@corp.local:secret"), Ok(e("srv01", 3389, "jdoe@corp.local", "", "secret")));
-        assert_eq!(parse_line("[fe80::1]:3389:admin:secret"), Ok(e("fe80::1", 3389, "admin", "", "secret")));
-        assert_eq!(parse_line("10.0.0.5  admin  secret"), Ok(e("10.0.0.5", 3389, "admin", "", "secret")));
-        assert_eq!(parse_line("10.0.0.5\tadmin\tsecret"), Ok(e("10.0.0.5", 3389, "admin", "", "secret")));
+        assert_eq!(
+            parse_line("srv01:jdoe@corp.local:secret"),
+            Ok(e("srv01", 3389, "jdoe@corp.local", "", "secret"))
+        );
+        assert_eq!(
+            parse_line("[fe80::1]:3389:admin:secret"),
+            Ok(e("fe80::1", 3389, "admin", "", "secret"))
+        );
+        assert_eq!(
+            parse_line("10.0.0.5  admin  secret"),
+            Ok(e("10.0.0.5", 3389, "admin", "", "secret"))
+        );
+        assert_eq!(
+            parse_line("10.0.0.5\tadmin\tsecret"),
+            Ok(e("10.0.0.5", 3389, "admin", "", "secret"))
+        );
         assert_eq!(parse_line("10.0.0.5:admin"), Ok(e("10.0.0.5", 3389, "admin", "", "")));
         // Two fields after the host: the second is a password even if numeric.
         assert_eq!(parse_line("h:admin:1234"), Ok(e("h", 3389, "admin", "", "1234")));

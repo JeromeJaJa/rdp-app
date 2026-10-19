@@ -145,10 +145,7 @@ pub fn validate_settings(settings: &Map<String, Value>) -> anyhow::Result<()> {
         ("driveRedirection", &["none", "all", "custom"]),
         ("certificatePolicy", &["tofu", "prompt", "ignore"]),
     ];
-    const RANGES: &[(&str, u64, u64)] = &[
-        ("maxConcurrentConnects", 1, 32),
-        ("apiPort", 1024, 65535),
-    ];
+    const RANGES: &[(&str, u64, u64)] = &[("maxConcurrentConnects", 1, 32), ("apiPort", 1024, 65535)];
     // Layout sizes from pointer drags may be fractional.
     const SIZES: &[&str] = &["sidebarWidth", "gridTileWidth"];
     let defaults = default_settings();
@@ -190,7 +187,13 @@ pub struct Core {
 }
 
 impl Core {
-    pub fn new(store: Store, engine: Engine, app: AppHandle, certs: Arc<CertStore>, bus: broadcast::Sender<Value>) -> Self {
+    pub fn new(
+        store: Store,
+        engine: Engine,
+        app: AppHandle,
+        certs: Arc<CertStore>,
+        bus: broadcast::Sender<Value>,
+    ) -> Self {
         Self {
             store: Mutex::new(store),
             engine,
@@ -362,7 +365,10 @@ impl Core {
     /// Reorders groups (the built-in group stays first).
     pub fn reorder_groups(&self, ids: &[String], origin: Origin) -> anyhow::Result<Library> {
         let lib = self.library();
-        let mut ordered: Vec<&Group> = ids.iter().filter_map(|id| lib.groups.iter().find(|g| &g.id == id)).collect();
+        let mut ordered: Vec<&Group> = ids
+            .iter()
+            .filter_map(|id| lib.groups.iter().find(|g| &g.id == id))
+            .collect();
         for g in &lib.groups {
             if !ordered.iter().any(|o| o.id == g.id) {
                 ordered.push(g);
@@ -406,7 +412,12 @@ impl Core {
         self.store.lock().preview_import(source, options)
     }
 
-    pub fn apply_import(&self, source: &ImportSource, options: &ImportOptions, origin: Origin) -> anyhow::Result<ImportResult> {
+    pub fn apply_import(
+        &self,
+        source: &ImportSource,
+        options: &ImportOptions,
+        origin: Origin,
+    ) -> anyhow::Result<ImportResult> {
         let (result, library) = {
             let mut store = self.store.lock();
             let result = store.apply_import(source, options)?;
@@ -463,7 +474,11 @@ impl Core {
         Ok(next)
     }
 
-    pub fn patch_settings(self: &Arc<Self>, patch: Map<String, Value>, origin: Origin) -> anyhow::Result<Map<String, Value>> {
+    pub fn patch_settings(
+        self: &Arc<Self>,
+        patch: Map<String, Value>,
+        origin: Origin,
+    ) -> anyhow::Result<Map<String, Value>> {
         let next = self.merged_settings(patch)?;
         self.save_settings(next, origin)?;
         Ok(self.settings())
@@ -507,7 +522,12 @@ impl Core {
             "custom" => s
                 .get("drivePaths")
                 .and_then(Value::as_array)
-                .map(|a| a.iter().filter_map(Value::as_str).map(std::path::PathBuf::from).collect())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(Value::as_str)
+                        .map(std::path::PathBuf::from)
+                        .collect()
+                })
                 .unwrap_or_default(),
             _ => Vec::new(),
         };
@@ -619,17 +639,23 @@ impl Core {
                         .and_then(|v| v.as_str().map(str::to_owned))
                         .unwrap_or_default();
                     let message = message.clone();
-                    (id, Box::new(move |i| {
-                        i.status = status.clone();
-                        i.message = message.clone();
-                    }))
+                    (
+                        id,
+                        Box::new(move |i| {
+                            i.status = status.clone();
+                            i.message = message.clone();
+                        }),
+                    )
                 }
                 EngineEvent::Resolution { id, width, height } => {
                     let (w, h) = (*width, *height);
-                    (id, Box::new(move |i| {
-                        i.width = Some(w);
-                        i.height = Some(h);
-                    }))
+                    (
+                        id,
+                        Box::new(move |i| {
+                            i.width = Some(w);
+                            i.height = Some(h);
+                        }),
+                    )
                 }
                 EngineEvent::Codec { id, codec } => {
                     let codec = codec.clone();
@@ -763,7 +789,10 @@ mod tests {
     fn settings_validation() {
         assert!(validate_settings(&default_settings()).is_ok());
         assert!(check(json!({"maxConcurrentConnects": 12, "theme": "light", "sidebarWidth": 231.5})).is_ok());
-        assert!(check(json!({"someUiValue": {"anything": true}})).is_ok(), "unknown keys pass through");
+        assert!(
+            check(json!({"someUiValue": {"anything": true}})).is_ok(),
+            "unknown keys pass through"
+        );
         assert!(check(json!({"maxConcurrentConnects": "lots"})).is_err());
         assert!(check(json!({"maxConcurrentConnects": 0})).is_err());
         assert!(check(json!({"apiPort": 80})).is_err());

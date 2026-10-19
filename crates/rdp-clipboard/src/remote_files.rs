@@ -981,7 +981,11 @@ mod tests {
 
             let mut medium = object.GetData(&etc(formats.contents, 1, TYMED_ISTREAM)).unwrap();
             let stream = ManuallyDrop::take(&mut medium.u.pstm).unwrap();
-            assert_eq!(read_all(&stream, 100_000), big, "short answers and read-ahead keep the order");
+            assert_eq!(
+                read_all(&stream, 100_000),
+                big,
+                "short answers and read-ahead keep the order"
+            );
 
             let mut stat = STATSTG::default();
             stream.Stat(&mut stat, STATFLAG_DEFAULT).unwrap();
@@ -1002,7 +1006,10 @@ mod tests {
             let folder = object.GetData(&etc(formats.contents, 0, TYMED_ISTREAM));
             assert_eq!(folder.err().map(|e| e.code()), Some(DV_E_LINDEX));
             assert_eq!(object.QueryGetData(&etc(1, -1, TYMED_HGLOBAL)), DV_E_FORMATETC);
-            assert_eq!(object.QueryGetData(&etc(formats.contents, 1, TYMED_HGLOBAL)), DV_E_TYMED);
+            assert_eq!(
+                object.QueryGetData(&etc(formats.contents, 1, TYMED_HGLOBAL)),
+                DV_E_TYMED
+            );
         }
         assert!(lock(&inbox.state).waiting.is_empty(), "nothing left in flight");
     }

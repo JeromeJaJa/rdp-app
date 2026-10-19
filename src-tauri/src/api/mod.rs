@@ -66,7 +66,11 @@ fn ok() -> Json<Value> {
 pub fn ensure_running(core: &Arc<Core>) {
     let s = core.settings();
     let enabled = s.get("apiEnabled").and_then(Value::as_bool).unwrap_or(true);
-    let port = s.get("apiPort").and_then(Value::as_u64).unwrap_or(47123).clamp(1024, 65535) as u16;
+    let port = s
+        .get("apiPort")
+        .and_then(Value::as_u64)
+        .unwrap_or(47123)
+        .clamp(1024, 65535) as u16;
 
     let mut rt = core.api.lock();
     let up_to_date = if enabled {
@@ -109,7 +113,10 @@ pub fn ensure_running(core: &Arc<Core>) {
             }
         }
         let Some(listener) = listener else {
-            let msg = format!("cannot listen on 127.0.0.1:{port}: {}", last_err.map(|e| e.to_string()).unwrap_or_default());
+            let msg = format!(
+                "cannot listen on 127.0.0.1:{port}: {}",
+                last_err.map(|e| e.to_string()).unwrap_or_default()
+            );
             tracing::warn!("{msg}");
             let mut rt = core.api.lock();
             rt.running = false;
@@ -188,7 +195,9 @@ fn router(core: AppState, port: u16) -> Router {
         .route("/openapi.json", get(openapi))
         .route("/llms.txt", get(llms))
         .nest("/api/v1", api)
-        .layer(middleware::from_fn(move |req: Request, next: Next| host_guard(req, next, port)))
+        .layer(middleware::from_fn(move |req: Request, next: Next| {
+            host_guard(req, next, port)
+        }))
         .with_state(core)
 }
 
@@ -221,11 +230,10 @@ async fn auth(State(core): State<AppState>, req: Request, next: Next) -> Respons
         .and_then(|h| h.strip_prefix("Bearer ").or_else(|| h.strip_prefix("bearer ")))
         .map(str::trim)
         .map(str::to_owned);
-    let query = req.uri().query().and_then(|q| {
-        q.split('&')
-            .find_map(|kv| kv.strip_prefix("token="))
-            .map(str::to_owned)
-    });
+    let query = req
+        .uri()
+        .query()
+        .and_then(|q| q.split('&').find_map(|kv| kv.strip_prefix("token=")).map(str::to_owned));
     let given = bearer.or(query).unwrap_or_default();
     if expected.is_empty() || !constant_time_eq(given.as_bytes(), expected.as_bytes()) {
         return ApiError(
@@ -318,7 +326,9 @@ async fn list_connections(State(core): State<AppState>, Query(q): Query<ListQuer
         .filter(|c| q.group.as_deref().is_none_or(|g| c.group_id == g))
         .filter(|c| {
             needle.as_deref().is_none_or(|n| {
-                c.name.to_lowercase().contains(n) || c.host.to_lowercase().contains(n) || c.username.to_lowercase().contains(n)
+                c.name.to_lowercase().contains(n)
+                    || c.host.to_lowercase().contains(n)
+                    || c.username.to_lowercase().contains(n)
             })
         })
         .filter(|c| {
@@ -368,10 +378,14 @@ async fn bulk_add(State(core): State<AppState>, Json(body): Json<BulkBody>) -> A
     let (items, errors) = parse_bulk(&body.text, Some(group.clone()));
     if body.mode.as_deref() == Some("replace") {
         let r = core.replace_group(&group, items, Origin::Api)?;
-        return Ok(Json(json!({ "added": r.added, "kept": r.kept, "removed": r.removed, "errors": errors })));
+        return Ok(Json(
+            json!({ "added": r.added, "kept": r.kept, "removed": r.removed, "errors": errors }),
+        ));
     }
     let added = core.add_connections(items, Origin::Api)?;
-    Ok(Json(json!({ "added": added.len(), "kept": 0, "removed": 0, "errors": errors, "connections": added })))
+    Ok(Json(
+        json!({ "added": added.len(), "kept": 0, "removed": 0, "errors": errors, "connections": added }),
+    ))
 }
 
 async fn get_connection(State(core): State<AppState>, Path(id): Path<String>) -> ApiResult<Json<Value>> {
@@ -383,7 +397,9 @@ async fn patch_connection(
     Path(id): Path<String>,
     Json(patch): Json<ConnectionPatch>,
 ) -> ApiResult<Json<Value>> {
-    Ok(Json(serde_json::to_value(core.update_connection(&id, patch, Origin::Api)?).unwrap_or_default()))
+    Ok(Json(
+        serde_json::to_value(core.update_connection(&id, patch, Origin::Api)?).unwrap_or_default(),
+    ))
 }
 
 async fn delete_connection(State(core): State<AppState>, Path(id): Path<String>) -> ApiResult<Json<Value>> {
@@ -408,7 +424,11 @@ async fn delete_many(State(core): State<AppState>, Json(body): Json<IdsBody>) ->
 async fn duplicate_connection(State(core): State<AppState>, Path(id): Path<String>) -> ApiResult<Json<Value>> {
     let c = core.connection(&id)?;
     let item = NewConnection {
-        name: Some(if c.name.is_empty() { format!("{} copy", c.host) } else { format!("{} copy", c.name) }),
+        name: Some(if c.name.is_empty() {
+            format!("{} copy", c.host)
+        } else {
+            format!("{} copy", c.name)
+        }),
         host: c.host,
         port: Some(c.port),
         username: c.username,
@@ -456,7 +476,9 @@ struct CreateGroupBody {
 }
 
 async fn create_group(State(core): State<AppState>, Json(body): Json<CreateGroupBody>) -> ApiResult<Json<Value>> {
-    Ok(Json(serde_json::to_value(core.create_group(&body.name, body.gateway, Origin::Api)?).unwrap_or_default()))
+    Ok(Json(
+        serde_json::to_value(core.create_group(&body.name, body.gateway, Origin::Api)?).unwrap_or_default(),
+    ))
 }
 
 #[derive(Deserialize)]
@@ -523,7 +545,9 @@ async fn replace_group(
         (None, None) => return Err(bad("send \"text\" (bulk lines) or \"connections\"")),
     };
     let r = core.replace_group(&id, items, Origin::Api)?;
-    Ok(Json(json!({ "kept": r.kept, "added": r.added, "removed": r.removed, "errors": errors })))
+    Ok(Json(
+        json!({ "kept": r.kept, "added": r.added, "removed": r.removed, "errors": errors }),
+    ))
 }
 
 #[derive(Deserialize)]
@@ -628,7 +652,12 @@ async fn reconnect_one(
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
         let s = core.wait_settled(std::slice::from_ref(&id), q.timeout()).await;
-        return Ok(Json(s.into_iter().next().map(|s| serde_json::to_value(s).unwrap_or_default()).unwrap_or(Value::Null)));
+        return Ok(Json(
+            s.into_iter()
+                .next()
+                .map(|s| serde_json::to_value(s).unwrap_or_default())
+                .unwrap_or(Value::Null),
+        ));
     }
     Ok(Json(serde_json::to_value(core.session(&id)?).unwrap_or_default()))
 }
@@ -653,7 +682,11 @@ async fn screenshot(
     let png = tokio::task::spawn_blocking(move || encode_png(shot, q.max_width))
         .await
         .map_err(|e| bad(e.to_string()))??;
-    Ok(([(header::CONTENT_TYPE, "image/png"), (header::CACHE_CONTROL, "no-store")], png).into_response())
+    Ok((
+        [(header::CONTENT_TYPE, "image/png"), (header::CACHE_CONTROL, "no-store")],
+        png,
+    )
+        .into_response())
 }
 
 fn encode_png(shot: rdp_engine::Screenshot, max_width: Option<u32>) -> anyhow::Result<Vec<u8>> {
@@ -702,7 +735,11 @@ struct KeysBody {
     delay_ms: Option<u64>,
 }
 
-async fn keys(State(core): State<AppState>, Path(id): Path<String>, Json(body): Json<KeysBody>) -> ApiResult<Json<Value>> {
+async fn keys(
+    State(core): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<KeysBody>,
+) -> ApiResult<Json<Value>> {
     core.connection(&id)?;
     let combos: Vec<String> = match body.keys {
         Value::String(s) => vec![s],
@@ -729,7 +766,11 @@ struct TypeBody {
     text: String,
 }
 
-async fn type_text(State(core): State<AppState>, Path(id): Path<String>, Json(body): Json<TypeBody>) -> ApiResult<Json<Value>> {
+async fn type_text(
+    State(core): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<TypeBody>,
+) -> ApiResult<Json<Value>> {
     core.connection(&id)?;
     core.engine.input(&id, crate::keys::text(&body.text));
     Ok(ok())
@@ -750,7 +791,11 @@ struct MouseBody {
     horizontal: bool,
 }
 
-async fn mouse(State(core): State<AppState>, Path(id): Path<String>, Json(body): Json<MouseBody>) -> ApiResult<Json<Value>> {
+async fn mouse(
+    State(core): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<MouseBody>,
+) -> ApiResult<Json<Value>> {
     core.connection(&id)?;
     let button = match body.button.as_deref().unwrap_or("left") {
         "left" => 0,
@@ -801,7 +846,11 @@ struct RawInputBody {
     events: Vec<InputEvent>,
 }
 
-async fn raw_input(State(core): State<AppState>, Path(id): Path<String>, Json(body): Json<RawInputBody>) -> ApiResult<Json<Value>> {
+async fn raw_input(
+    State(core): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<RawInputBody>,
+) -> ApiResult<Json<Value>> {
     core.connection(&id)?;
     core.engine.input(&id, body.events);
     Ok(ok())
@@ -948,7 +997,9 @@ fn import_args(body: ImportBody) -> ApiResult<(ImportSource, ImportOptions)> {
 
 async fn import_preview(State(core): State<AppState>, Json(body): Json<ImportBody>) -> ApiResult<Json<Value>> {
     let (source, options) = import_args(body)?;
-    Ok(Json(serde_json::to_value(core.preview_import(&source, &options)?).unwrap_or_default()))
+    Ok(Json(
+        serde_json::to_value(core.preview_import(&source, &options)?).unwrap_or_default(),
+    ))
 }
 
 async fn import(State(core): State<AppState>, Json(body): Json<ImportBody>) -> ApiResult<Json<Value>> {

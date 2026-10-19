@@ -8,8 +8,8 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use ironrdp_cliprdr::backend::CliprdrBackendFactory;
-use rdp_clipboard::WinClipboard;
 use parking_lot::Mutex;
+use rdp_clipboard::WinClipboard;
 use rdp_engine::{ClipboardHost, SessionClipboard};
 use tauri::AppHandle;
 use tracing::warn;

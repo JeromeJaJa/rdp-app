@@ -83,7 +83,11 @@ fn export_data(state: State<'_, AppState>, options: ExportOptions) -> CmdResult<
 }
 
 #[tauri::command]
-fn preview_import(state: State<'_, AppState>, source: ImportSource, options: ImportOptions) -> CmdResult<ImportPreview> {
+fn preview_import(
+    state: State<'_, AppState>,
+    source: ImportSource,
+    options: ImportOptions,
+) -> CmdResult<ImportPreview> {
     state.core.preview_import(&source, &options).map_err(err)
 }
 
@@ -171,8 +175,16 @@ fn engine_input(state: State<'_, AppState>, id: String, events: Vec<InputEvent>)
 /// Sends a key combination (scancodes pressed in order, released in reverse).
 #[tauri::command]
 fn engine_send_keys(state: State<'_, AppState>, id: String, scancodes: Vec<u16>) {
-    let mut events: Vec<InputEvent> = scancodes.iter().map(|&code| InputEvent::Key { code, down: true }).collect();
-    events.extend(scancodes.iter().rev().map(|&code| InputEvent::Key { code, down: false }));
+    let mut events: Vec<InputEvent> = scancodes
+        .iter()
+        .map(|&code| InputEvent::Key { code, down: true })
+        .collect();
+    events.extend(
+        scancodes
+            .iter()
+            .rev()
+            .map(|&code| InputEvent::Key { code, down: false }),
+    );
     state.core.engine.input(&id, events);
 }
 

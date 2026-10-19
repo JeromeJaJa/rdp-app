@@ -271,7 +271,13 @@ impl GfxClient {
                     reset.width.clamp(1, MAX_DIM) as u16,
                     reset.height.clamp(1, MAX_DIM) as u16,
                 );
-                debug!(w, h, surfaces = self.surfaces.len(), cached = self.cache.len(), "graphics reset");
+                debug!(
+                    w,
+                    h,
+                    surfaces = self.surfaces.len(),
+                    cached = self.cache.len(),
+                    "graphics reset"
+                );
                 // The reset only resizes the output buffer (MS-RDPEGFX 2.2.2.14): surfaces,
                 // the bitmap cache and codec state live on until the server deletes them —
                 // Windows keeps placing cached tiles after a resize.
@@ -287,7 +293,17 @@ impl GfxClient {
                     .surfaces
                     .iter()
                     .filter(|(_, s)| s.mapping.is_some())
-                    .map(|(id, s)| (*id, Rect { x: 0, y: 0, w: s.w, h: s.h }))
+                    .map(|(id, s)| {
+                        (
+                            *id,
+                            Rect {
+                                x: 0,
+                                y: 0,
+                                w: s.w,
+                                h: s.h,
+                            },
+                        )
+                    })
                     .collect();
                 self.dirty.extend(mapped);
             }
@@ -956,7 +972,12 @@ fn capture_progressive(surface: u16, context: u32, w: u16, h: u16, data: &[u8]) 
     static FILE: std::sync::OnceLock<Option<parking_lot::Mutex<std::fs::File>>> = std::sync::OnceLock::new();
     let file = FILE.get_or_init(|| {
         let path = std::env::var_os("RDP_CAPTURE_PROGRESSIVE")?;
-        std::fs::OpenOptions::new().create(true).append(true).open(path).ok().map(parking_lot::Mutex::new)
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .ok()
+            .map(parking_lot::Mutex::new)
     });
     if let Some(file) = file {
         let mut f = file.lock();
@@ -972,9 +993,13 @@ fn capture_progressive(surface: u16, context: u32, w: u16, h: u16, data: &[u8]) 
 /// Tallies progressive tile kinds (diagnostics: are quality upgrades arriving?).
 fn count_progressive_tiles(stats: &GfxStats, data: &[u8]) {
     use ironrdp_pdu::codecs::rfx::progressive::{ProgressiveBlock, ProgressiveTile, decode_progressive_stream};
-    let Ok(blocks) = decode_progressive_stream(data) else { return };
+    let Ok(blocks) = decode_progressive_stream(data) else {
+        return;
+    };
     for block in blocks {
-        let ProgressiveBlock::Region(region) = block else { continue };
+        let ProgressiveBlock::Region(region) = block else {
+            continue;
+        };
         let mut qualities: Vec<u8> = region
             .tiles
             .iter()
@@ -1016,17 +1041,15 @@ fn decode_failed(stats: &GfxStats, e: &anyhow::Error) {
 
 /// The surface rectangles an H.264 (sub)frame updates: its region rects, clipped to the
 /// picture and the surface, or the destination rectangle when it lists none.
-fn avc_rects(
-    regions: &[ExclusiveRectangle],
-    dest: Rect,
-    (pw, ph): (usize, usize),
-    (sw, sh): (u16, u16),
-) -> Vec<Rect> {
+fn avc_rects(regions: &[ExclusiveRectangle], dest: Rect, (pw, ph): (usize, usize), (sw, sh): (u16, u16)) -> Vec<Rect> {
     let (cw, ch) = (pw.min(usize::from(sw)) as u16, ph.min(usize::from(sh)) as u16);
     if regions.is_empty() {
         return dest.clip(cw, ch).into_iter().collect();
     }
-    regions.iter().filter_map(|r| Rect::from_exclusive(r).clip(cw, ch)).collect()
+    regions
+        .iter()
+        .filter_map(|r| Rect::from_exclusive(r).clip(cw, ch))
+        .collect()
 }
 
 #[cfg(test)]
@@ -1478,8 +1501,14 @@ mod tests {
                 height: h as u32,
             };
             let mut out = vec![0; w * h * 4];
-            yuv::yuv444_to_rgba(&img, &mut out, (w * 4) as u32, yuv::YuvRange::Full, yuv::YuvStandardMatrix::Bt709)
-                .unwrap();
+            yuv::yuv444_to_rgba(
+                &img,
+                &mut out,
+                (w * 4) as u32,
+                yuv::YuvRange::Full,
+                yuv::YuvStandardMatrix::Bt709,
+            )
+            .unwrap();
             out
         }
 
@@ -1493,7 +1522,11 @@ mod tests {
 
             // Both views in one PDU (LC 0).
             let (mut c, out) = client_with_decoder();
-            run(&mut c, &out, vec![avc444(codec, Encoding::LUMA_AND_CHROMA, &main_bits, Some(&aux_bits))]);
+            run(
+                &mut c,
+                &out,
+                vec![avc444(codec, Encoding::LUMA_AND_CHROMA, &main_bits, Some(&aux_bits))],
+            );
             let full = detail_error(&out, &expected);
 
             // Luma first (LC 1: looks like 4:2:0), then chroma alone (LC 2) completes it.
@@ -1513,7 +1546,10 @@ mod tests {
             assert!(plain > 40.0, "4:2:0 should lose the detail ({plain:.2})");
             assert!(luma_only > 40.0, "luma-only update converts as 4:2:0 ({luma_only:.2})");
             assert!(full < 6.0, "AVC444 should keep single-pixel chroma ({full:.2})");
-            assert!((split - full).abs() < 0.01, "LC1 + LC2 must equal LC0 ({split:.2} vs {full:.2})");
+            assert!(
+                (split - full).abs() < 0.01,
+                "LC1 + LC2 must equal LC0 ({split:.2} vs {full:.2})"
+            );
             assert_eq!(c.stats.avc444.load(Ordering::Relaxed), 0);
         }
 

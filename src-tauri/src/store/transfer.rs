@@ -14,7 +14,7 @@ use base64::engine::general_purpose::STANDARD as B64;
 use rand::RngCore as _;
 use serde::{Deserialize, Serialize};
 
-use super::{DEFAULT_GROUP, GatewayInput, NewConnection, StoredGateway, Store, now_ms};
+use super::{DEFAULT_GROUP, GatewayInput, NewConnection, Store, StoredGateway, now_ms};
 use crate::{bulk, dpapi};
 
 const FORMAT: &str = "rdp-app/export";
@@ -245,7 +245,13 @@ impl Store {
                     out.push_str(&format!("# Group: {}\n", g.name));
                     for c in self.data.connections.iter().filter(|c| c.group() == g.id) {
                         let pw = reveal(&c.password)?;
-                        out.push_str(&bulk::format_line(&c.host, c.port, &c.username, &c.domain, pw.as_deref()));
+                        out.push_str(&bulk::format_line(
+                            &c.host,
+                            c.port,
+                            &c.username,
+                            &c.domain,
+                            pw.as_deref(),
+                        ));
                         out.push('\n');
                     }
                     out.push('\n');
@@ -372,7 +378,11 @@ fn parse_source(source: &ImportSource) -> anyhow::Result<Parsed> {
         let needs_passphrase = encrypted && key.is_none();
         let reveal = |p: Option<String>| -> Option<String> {
             let p = p.filter(|p| !p.is_empty())?;
-            if encrypted { key.as_ref().and_then(|k| k.open(&p).ok()) } else { Some(p) }
+            if encrypted {
+                key.as_ref().and_then(|k| k.open(&p).ok())
+            } else {
+                Some(p)
+            }
         };
         let gateway = |g: DocGateway| GatewayInput {
             enabled: g.enabled,
@@ -617,7 +627,11 @@ impl Store {
 }
 
 fn entry_key(e: &NewConnection) -> String {
-    bulk::key(e.host.trim(), e.port.filter(|p| *p != 0).unwrap_or(3389), e.username.trim())
+    bulk::key(
+        e.host.trim(),
+        e.port.filter(|p| *p != 0).unwrap_or(3389),
+        e.username.trim(),
+    )
 }
 
 /// `2026-10-19T07:00:00Z` from Unix milliseconds (UTC).
@@ -648,7 +662,12 @@ mod tests {
     use super::super::tests::{nc, temp_store};
     use super::*;
 
-    fn opts(format: Format, passwords: PasswordMode, passphrase: Option<&str>, groups: Option<Vec<String>>) -> ExportOptions {
+    fn opts(
+        format: Format,
+        passwords: PasswordMode,
+        passphrase: Option<&str>,
+        groups: Option<Vec<String>>,
+    ) -> ExportOptions {
         ExportOptions {
             group_ids: groups,
             format,
@@ -667,11 +686,15 @@ mod tests {
     fn json_round_trip_with_encrypted_passwords() {
         let (mut src, d1) = temp_store();
         let g = src.create_group("Prod", None).unwrap();
-        src.add(vec![nc("a", "admin", "p:1", Some(&g.id)), nc("b", "root", "p2", None)]).unwrap();
+        src.add(vec![nc("a", "admin", "p:1", Some(&g.id)), nc("b", "root", "p2", None)])
+            .unwrap();
         let json = src
             .export(&opts(Format::Json, PasswordMode::Encrypted, Some("hunter2"), None))
             .unwrap();
-        assert!(!json.contains("p:1") && !json.contains("p2"), "passwords must be encrypted");
+        assert!(
+            !json.contains("p:1") && !json.contains("p2"),
+            "passwords must be encrypted"
+        );
 
         let (mut dst, d2) = temp_store();
         let by_name = ImportOptions {
@@ -717,14 +740,18 @@ mod tests {
     fn text_export_import_and_replace_into_group() {
         let (mut store, dir) = temp_store();
         let g = store.create_group("Lab", None).unwrap();
-        store.add(vec![nc("x", "u", "old", Some(&g.id)), nc("y", "u", "p", Some(&g.id))]).unwrap();
+        store
+            .add(vec![nc("x", "u", "old", Some(&g.id)), nc("y", "u", "p", Some(&g.id))])
+            .unwrap();
         let text = store
             .export(&opts(Format::Text, PasswordMode::Plain, None, Some(vec![g.id.clone()])))
             .unwrap();
         assert_eq!(text, "# Group: Lab\nx:3389:u:old\ny:3389:u:p\n\n");
-        assert!(store
-            .export(&opts(Format::Text, PasswordMode::Encrypted, Some("x"), None))
-            .is_err());
+        assert!(
+            store
+                .export(&opts(Format::Text, PasswordMode::Encrypted, Some("x"), None))
+                .is_err()
+        );
 
         let replace = ImportOptions {
             mode: ImportMode::Replace,
@@ -735,7 +762,10 @@ mod tests {
             passphrase: None,
         };
         let preview = store.preview_import(&source, &replace).unwrap();
-        assert_eq!((preview.total, preview.groups[0].duplicates, preview.errors.len()), (2, 1, 1));
+        assert_eq!(
+            (preview.total, preview.groups[0].duplicates, preview.errors.len()),
+            (2, 1, 1)
+        );
         let result = store.apply_import(&source, &replace).unwrap();
         assert_eq!((result.added, result.updated, result.removed.len()), (1, 1, 1));
         let lib = store.library();

@@ -109,11 +109,23 @@ pub const ENDPOINTS: &[Endpoint] = &[
         description: "In display order. Filter by group, by a search string (name/host/user) or by session status.",
         params: &[
             p("group", "query", "string", "Group id"),
-            p("q", "query", "string", "Case-insensitive search in name, host and username"),
-            p("status", "query", "string", "idle | queued | connecting | connected | reconnecting | error"),
+            p(
+                "q",
+                "query",
+                "string",
+                "Case-insensitive search in name, host and username",
+            ),
+            p(
+                "status",
+                "query",
+                "string",
+                "idle | queued | connecting | connected | reconnecting | error",
+            ),
         ],
         body: None,
-        response: Some(r#"[{"id":"9f1c…","name":"web-01","host":"10.0.0.5","port":3389,"username":"admin","domain":"","hasPassword":true,"groupId":"all","notes":"","createdAt":1760857200000,"gateway":null}]"#),
+        response: Some(
+            r#"[{"id":"9f1c…","name":"web-01","host":"10.0.0.5","port":3389,"username":"admin","domain":"","hasPassword":true,"groupId":"all","notes":"","createdAt":1760857200000,"gateway":null}]"#,
+        ),
         auth: true,
     },
     Endpoint {
@@ -123,7 +135,9 @@ pub const ENDPOINTS: &[Endpoint] = &[
         summary: "Add one or many connections",
         description: "Body is one object or an array. Only host and username are required; port defaults to 3389 and groupId to \"all\". Nothing connects until you ask.",
         params: &[],
-        body: Some(r#"[{"name":"web-01","host":"10.0.0.5","port":3389,"username":"admin","domain":"CORP","password":"secret","groupId":"all","notes":"","gateway":null}]"#),
+        body: Some(
+            r#"[{"name":"web-01","host":"10.0.0.5","port":3389,"username":"admin","domain":"CORP","password":"secret","groupId":"all","notes":"","gateway":null}]"#,
+        ),
         response: Some(r#"[{"id":"9f1c…","name":"web-01","host":"10.0.0.5", "…": "…"}]"#),
         auth: true,
     },
@@ -134,8 +148,12 @@ pub const ENDPOINTS: &[Endpoint] = &[
         summary: "Add connections from bulk text",
         description: "One connection per line: host:user:pass, host:port:user:pass, DOMAIN\\user, user@domain, [ipv6]:port:user:pass. Passwords may contain ':'. Lines starting with # are comments. mode \"replace\" makes the group contain exactly these connections (matching host+port+user keep their identity and sessions).",
         params: &[],
-        body: Some(r#"{"text": "10.0.0.5:admin:secret\n10.0.0.6:3390:CORP\\jdoe:p@ss", "groupId": "all", "mode": "append"}"#),
-        response: Some(r#"{"added": 2, "kept": 0, "removed": 0, "errors": [{"line": 3, "error": "Missing username"}]}"#),
+        body: Some(
+            r#"{"text": "10.0.0.5:admin:secret\n10.0.0.6:3390:CORP\\jdoe:p@ss", "groupId": "all", "mode": "append"}"#,
+        ),
+        response: Some(
+            r#"{"added": 2, "kept": 0, "removed": 0, "errors": [{"line": 3, "error": "Missing username"}]}"#,
+        ),
         auth: true,
     },
     Endpoint {
@@ -146,7 +164,9 @@ pub const ENDPOINTS: &[Endpoint] = &[
         description: "",
         params: &[ID],
         body: None,
-        response: Some(r#"{"id":"9f1c…","name":"web-01","host":"10.0.0.5","port":3389,"username":"admin","domain":"","hasPassword":true,"groupId":"all","notes":"","createdAt":1760857200000,"gateway":null}"#),
+        response: Some(
+            r#"{"id":"9f1c…","name":"web-01","host":"10.0.0.5","port":3389,"username":"admin","domain":"","hasPassword":true,"groupId":"all","notes":"","createdAt":1760857200000,"gateway":null}"#,
+        ),
         auth: true,
     },
     Endpoint {
@@ -156,7 +176,9 @@ pub const ENDPOINTS: &[Endpoint] = &[
         summary: "Update a connection",
         description: "Only the fields you send change. password: \"\" clears it. gateway: null means \"use the group's gateway\"; {\"enabled\": false} forces a direct connection.",
         params: &[ID],
-        body: Some(r#"{"name":"web-01 (new)","password":"new-secret","groupId":"<group id>","gateway":{"enabled":true,"host":"rdg.example.com","sameCredentials":true,"username":"","domain":""}}"#),
+        body: Some(
+            r#"{"name":"web-01 (new)","password":"new-secret","groupId":"<group id>","gateway":{"enabled":true,"host":"rdg.example.com","sameCredentials":true,"username":"","domain":""}}"#,
+        ),
         response: Some(r#"{"id":"9f1c…", "…": "…"}"#),
         auth: true,
     },
@@ -213,7 +235,9 @@ pub const ENDPOINTS: &[Endpoint] = &[
         description: "In display order; the built-in \"All\" group (id \"all\") is always first. Each group includes its connection count.",
         params: &[],
         body: None,
-        response: Some(r#"[{"id":"all","name":"All","collapsed":false,"builtin":true,"gateway":null,"connections":12}]"#),
+        response: Some(
+            r#"[{"id":"all","name":"All","collapsed":false,"builtin":true,"gateway":null,"connections":12}]"#,
+        ),
         auth: true,
     },
     Endpoint {
@@ -223,8 +247,12 @@ pub const ENDPOINTS: &[Endpoint] = &[
         summary: "Create a group",
         description: "Optionally with an RD Gateway used by its connections.",
         params: &[],
-        body: Some(r#"{"name":"Production","gateway":{"enabled":true,"host":"rdg.example.com","sameCredentials":false,"username":"gwuser","domain":"CORP","password":"gw-secret"}}"#),
-        response: Some(r#"{"id":"<group id>","name":"Production","collapsed":false,"builtin":false,"gateway":{"enabled":true,"host":"rdg.example.com","sameCredentials":false,"username":"gwuser","domain":"CORP","hasPassword":true}}"#),
+        body: Some(
+            r#"{"name":"Production","gateway":{"enabled":true,"host":"rdg.example.com","sameCredentials":false,"username":"gwuser","domain":"CORP","password":"gw-secret"}}"#,
+        ),
+        response: Some(
+            r#"{"id":"<group id>","name":"Production","collapsed":false,"builtin":false,"gateway":{"enabled":true,"host":"rdg.example.com","sameCredentials":false,"username":"gwuser","domain":"CORP","hasPassword":true}}"#,
+        ),
         auth: true,
     },
     Endpoint {
@@ -277,7 +305,11 @@ pub const ENDPOINTS: &[Endpoint] = &[
         tag: "Groups",
         summary: "Connect every connection in a group",
         description: "Queued through the parallel-connect limit. ?wait=true blocks until all are connected or failed.",
-        params: &[GID, p("wait", "query", "boolean", "Block until settled"), p("timeout", "query", "number", "Seconds (default 30)")],
+        params: &[
+            GID,
+            p("wait", "query", "boolean", "Block until settled"),
+            p("timeout", "query", "number", "Seconds (default 30)"),
+        ],
         body: None,
         response: Some(r#"{"sessions": [{"id":"9f1c…","status":"connected"}]}"#),
         auth: true,
@@ -318,7 +350,9 @@ pub const ENDPOINTS: &[Endpoint] = &[
         description: "One entry per connection. status: idle | queued | connecting | connected | reconnecting | error (message explains).",
         params: &[],
         body: None,
-        response: Some(r#"[{"id":"9f1c…","status":"connected","width":1920,"height":1080,"codec":"H.264 · AVC420"},{"id":"2b7a…","status":"error","message":"Authentication failed — check username and password"}]"#),
+        response: Some(
+            r#"[{"id":"9f1c…","status":"connected","width":1920,"height":1080,"codec":"H.264 · AVC420"},{"id":"2b7a…","status":"error","message":"Authentication failed — check username and password"}]"#,
+        ),
         auth: true,
     },
     Endpoint {
@@ -338,9 +372,14 @@ pub const ENDPOINTS: &[Endpoint] = &[
         tag: "Sessions",
         summary: "Connect many (or all)",
         description: "Body: {\"ids\": [...]} or {\"all\": true}. ?wait=true blocks until settled.",
-        params: &[p("wait", "query", "boolean", "Block until settled"), p("timeout", "query", "number", "Seconds (default 30)")],
+        params: &[
+            p("wait", "query", "boolean", "Block until settled"),
+            p("timeout", "query", "number", "Seconds (default 30)"),
+        ],
         body: Some(r#"{"ids": ["9f1c…", "2b7a…"]}"#),
-        response: Some(r#"{"sessions": [{"id":"9f1c…","status":"connected"},{"id":"2b7a…","status":"error","message":"…"}]}"#),
+        response: Some(
+            r#"{"sessions": [{"id":"9f1c…","status":"connected"},{"id":"2b7a…","status":"error","message":"…"}]}"#,
+        ),
         auth: true,
     },
     Endpoint {
@@ -360,7 +399,11 @@ pub const ENDPOINTS: &[Endpoint] = &[
         tag: "Sessions",
         summary: "Connect a session",
         description: "?wait=true blocks until connected or failed and returns the final state. If it fails with a certificate event, trust it via POST /certificates/trust and connect again.",
-        params: &[ID, p("wait", "query", "boolean", "Block until settled"), p("timeout", "query", "number", "Seconds (default 30)")],
+        params: &[
+            ID,
+            p("wait", "query", "boolean", "Block until settled"),
+            p("timeout", "query", "number", "Seconds (default 30)"),
+        ],
         body: None,
         response: Some(r#"{"id":"9f1c…","status":"connected","width":1920,"height":1080,"codec":"H.264 · AVC420"}"#),
         auth: true,
@@ -382,7 +425,11 @@ pub const ENDPOINTS: &[Endpoint] = &[
         tag: "Sessions",
         summary: "Reconnect a session",
         description: "",
-        params: &[ID, p("wait", "query", "boolean", "Block until settled"), p("timeout", "query", "number", "Seconds (default 30)")],
+        params: &[
+            ID,
+            p("wait", "query", "boolean", "Block until settled"),
+            p("timeout", "query", "number", "Seconds (default 30)"),
+        ],
         body: None,
         response: Some(r#"{"id":"9f1c…","status":"connected"}"#),
         auth: true,
@@ -438,7 +485,9 @@ pub const ENDPOINTS: &[Endpoint] = &[
         summary: "Raw input events",
         description: "Low-level events in order. t: key (code = set-1 scancode, extended keys | 0xE000, down) | unicode (ch, down) | move (x, y) | button (button 0 left 1 middle 2 right, down) | wheel (delta, horizontal) | releaseAll | sync (caps, num, scroll: lock key states).",
         params: &[ID],
-        body: Some(r#"{"events": [{"t":"move","x":100,"y":100},{"t":"button","button":0,"down":true},{"t":"button","button":0,"down":false},{"t":"key","code":57373,"down":true}]}"#),
+        body: Some(
+            r#"{"events": [{"t":"move","x":100,"y":100},{"t":"button","button":0,"down":true},{"t":"button","button":0,"down":false},{"t":"key","code":57373,"down":true}]}"#,
+        ),
         response: Some(r#"{"ok": true}"#),
         auth: true,
     },
@@ -462,7 +511,9 @@ pub const ENDPOINTS: &[Endpoint] = &[
         description: "",
         params: &[],
         body: None,
-        response: Some(r#"[{"endpoint":"10.0.0.5:3389","fingerprint":"AB:CD:…","subject":"CN=web-01","firstSeen":1760857200000}]"#),
+        response: Some(
+            r#"[{"endpoint":"10.0.0.5:3389","fingerprint":"AB:CD:…","subject":"CN=web-01","firstSeen":1760857200000}]"#,
+        ),
         auth: true,
     },
     Endpoint {
@@ -496,7 +547,9 @@ pub const ENDPOINTS: &[Endpoint] = &[
         description: "Keys: theme (dark|light|system), tabPlacement (top|left), connectOnSelect, maxConcurrentConnects (1-32), pauseHiddenSessions, codec (auto|h264|remotefx), h264Quality (balanced|sharp: 4:4:4 when the host offers it), videoDecoder (auto|hardware|software), autoReconnect, clipboardSync, audio (off|active|all), microphone, driveRedirection (none|all|custom), drivePaths, printerRedirection, smartcardRedirection, certificatePolicy (tofu|prompt|ignore), apiEnabled, apiPort, plus UI layout values.",
         params: &[],
         body: None,
-        response: Some(r#"{"theme":"dark","tabPlacement":"left","codec":"auto","audio":"active","certificatePolicy":"tofu","apiEnabled":true,"apiPort":47123, "…": "…"}"#),
+        response: Some(
+            r#"{"theme":"dark","tabPlacement":"left","codec":"auto","audio":"active","certificatePolicy":"tofu","apiEnabled":true,"apiPort":47123, "…": "…"}"#,
+        ),
         auth: true,
     },
     Endpoint {
@@ -518,13 +571,20 @@ pub const ENDPOINTS: &[Endpoint] = &[
         summary: "Export groups and connections",
         description: "format json keeps everything (groups, gateways, notes); text is bulk lines with \"# Group: name\" headers. passwords: none | plain | encrypted (AES-256-GCM, key from passphrase via PBKDF2). Also available as POST with the same fields in a JSON body (keeps the passphrase out of URLs).",
         params: &[
-            p("groups", "query", "string", "Comma-separated group ids (default: all groups)"),
+            p(
+                "groups",
+                "query",
+                "string",
+                "Comma-separated group ids (default: all groups)",
+            ),
             p("format", "query", "string", "json (default) | text"),
             p("passwords", "query", "string", "none (default) | plain | encrypted"),
             p("passphrase", "query", "string", "Required for passwords=encrypted"),
         ],
         body: None,
-        response: Some(r#"{"format":"rdp-app/export","version":1,"exportedAt":"2026-10-19T07:00:00Z","passwords":"none","groups":[{"name":"Production","connections":[{"name":"","host":"10.0.0.5","port":3389,"username":"admin","domain":""}]}]}"#),
+        response: Some(
+            r#"{"format":"rdp-app/export","version":1,"exportedAt":"2026-10-19T07:00:00Z","passwords":"none","groups":[{"name":"Production","connections":[{"name":"","host":"10.0.0.5","port":3389,"username":"admin","domain":""}]}]}"#,
+        ),
         auth: true,
     },
     Endpoint {
@@ -535,7 +595,9 @@ pub const ENDPOINTS: &[Endpoint] = &[
         description: "text is an export document or bulk text. target: \"byName\" (into groups with matching names, creating missing ones) or a group id. needsPassphrase is true when passwords are encrypted and the passphrase is missing or wrong.",
         params: &[],
         body: Some(r#"{"text": "…", "passphrase": null, "mode": "merge", "target": "byName"}"#),
-        response: Some(r#"{"format":"json","groups":[{"name":"Production","connections":12,"existingGroupId":null,"duplicates":0}],"total":12,"needsPassphrase":false,"errors":[]}"#),
+        response: Some(
+            r#"{"format":"json","groups":[{"name":"Production","connections":12,"existingGroupId":null,"duplicates":0}],"total":12,"needsPassphrase":false,"errors":[]}"#,
+        ),
         auth: true,
     },
     Endpoint {

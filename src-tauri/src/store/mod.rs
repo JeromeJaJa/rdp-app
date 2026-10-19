@@ -683,16 +683,21 @@ impl Store {
         }
         let now = now_ms();
         let first_index = self.data.connections.iter().position(|c| c.group() == group_id);
-        let (mut existing, others): (Vec<StoredConnection>, Vec<StoredConnection>) = std::mem::take(&mut self.data.connections)
-            .into_iter()
-            .partition(|c| c.group() == group_id);
+        let (mut existing, others): (Vec<StoredConnection>, Vec<StoredConnection>) =
+            std::mem::take(&mut self.data.connections)
+                .into_iter()
+                .partition(|c| c.group() == group_id);
         self.data.connections = others;
 
         let mut outcome = ReplaceOutcome::default();
         let mut next = Vec::with_capacity(items.len());
         for mut item in items {
             item.group_id = Some(group_id.to_owned());
-            let key = bulk::key(item.host.trim(), item.port.filter(|p| *p != 0).unwrap_or(3389), item.username.trim());
+            let key = bulk::key(
+                item.host.trim(),
+                item.port.filter(|p| *p != 0).unwrap_or(3389),
+                item.username.trim(),
+            );
             if let Some(pos) = existing.iter().position(|c| c.key() == key) {
                 let mut c = existing.remove(pos);
                 if let Some(name) = item.name.filter(|n| !n.trim().is_empty()) {
@@ -720,7 +725,9 @@ impl Store {
         outcome.removed = existing.into_iter().map(|c| c.id).collect();
 
         // The group's connections take the place of its first member (or the end).
-        let at = first_index.unwrap_or(self.data.connections.len()).min(self.data.connections.len());
+        let at = first_index
+            .unwrap_or(self.data.connections.len())
+            .min(self.data.connections.len());
         self.data.connections.splice(at..at, next);
         Ok(outcome)
     }
@@ -844,7 +851,12 @@ pub(crate) mod tests {
     #[test]
     fn add_update_reorder_round_trip() {
         let (mut store, dir) = temp_store();
-        let added = store.add(vec![nc("10.0.0.1", "admin", "s:e:c", None), nc("10.0.0.2", r"bob", "", None)]).unwrap();
+        let added = store
+            .add(vec![
+                nc("10.0.0.1", "admin", "s:e:c", None),
+                nc("10.0.0.2", r"bob", "", None),
+            ])
+            .unwrap();
         assert_eq!(added.len(), 2);
         assert!(added[0].has_password && !added[1].has_password);
         assert_eq!(added[0].group_id, DEFAULT_GROUP);
@@ -915,8 +927,15 @@ pub(crate) mod tests {
         assert_eq!(outcome.removed, vec![before[2].id.clone()]);
 
         let lib = store.library();
-        let hosts: Vec<_> = lib.connections.iter().map(|c| (c.host.as_str(), c.group_id.as_str())).collect();
-        assert_eq!(hosts, vec![("other", "all"), ("c", g.id.as_str()), ("a", g.id.as_str())]);
+        let hosts: Vec<_> = lib
+            .connections
+            .iter()
+            .map(|c| (c.host.as_str(), c.group_id.as_str()))
+            .collect();
+        assert_eq!(
+            hosts,
+            vec![("other", "all"), ("c", g.id.as_str()), ("a", g.id.as_str())]
+        );
         // The kept connection keeps its id and gets the new password.
         assert_eq!(lib.connections[2].id, before[1].id);
         assert_eq!(store.credentials(&before[1].id).unwrap().password, "new");
@@ -940,10 +959,15 @@ pub(crate) mod tests {
             )
             .unwrap();
         assert!(g.gateway.as_ref().unwrap().has_password);
-        let added = store.add(vec![nc("a", "u", "p", Some(&g.id)), nc("b", "u2", "p2", Some(&g.id))]).unwrap();
+        let added = store
+            .add(vec![nc("a", "u", "p", Some(&g.id)), nc("b", "u2", "p2", Some(&g.id))])
+            .unwrap();
         let creds = store.credentials(&added[0].id).unwrap();
         let gw = creds.gateway.unwrap();
-        assert_eq!((gw.host.as_str(), gw.username.as_str(), gw.password.as_str()), ("rdg.example.com", "gwuser", "gwpass"));
+        assert_eq!(
+            (gw.host.as_str(), gw.username.as_str(), gw.password.as_str()),
+            ("rdg.example.com", "gwuser", "gwpass")
+        );
 
         // A connection can opt out, or reuse its own credentials.
         store
@@ -961,7 +985,10 @@ pub(crate) mod tests {
             )
             .unwrap();
         let gw = store.credentials(&added[1].id).unwrap().gateway.unwrap();
-        assert_eq!((gw.host.as_str(), gw.username.as_str(), gw.password.as_str()), ("other-gw", "u2", "p2"));
+        assert_eq!(
+            (gw.host.as_str(), gw.username.as_str(), gw.password.as_str()),
+            ("other-gw", "u2", "p2")
+        );
         store
             .update(
                 &added[1].id,
@@ -971,7 +998,10 @@ pub(crate) mod tests {
                 },
             )
             .unwrap();
-        assert!(store.credentials(&added[1].id).unwrap().gateway.is_none(), "disabled = direct");
+        assert!(
+            store.credentials(&added[1].id).unwrap().gateway.is_none(),
+            "disabled = direct"
+        );
         let _ = std::fs::remove_dir_all(dir);
     }
 }

@@ -101,7 +101,10 @@ pub(crate) struct ConnectContext {
 type Erased = Box<dyn AsyncReadWrite + Unpin + Send + Sync>;
 
 /// Opens the transport: direct TCP, or a tunnel through an RD Gateway.
-async fn open_transport(params: &ConnectParams, ctx: &ConnectContext) -> anyhow::Result<(Erased, std::net::SocketAddr)> {
+async fn open_transport(
+    params: &ConnectParams,
+    ctx: &ConnectContext,
+) -> anyhow::Result<(Erased, std::net::SocketAddr)> {
     if let Some(gw) = &params.gateway {
         let endpoint = if gw.host.contains(':') && !gw.host.starts_with('[') {
             gw.host.clone()
@@ -124,7 +127,10 @@ async fn open_transport(params: &ConnectParams, ctx: &ConnectContext) -> anyhow:
                 ironrdp_tls::CertificateValidation::Strict,
                 Some(certs::callback(Arc::clone(store), policy, Arc::clone(&ctx.cert_issue))),
             ),
-            _ => (ironrdp_tls::CertificateValidation::DangerouslyAcceptInvalidCertificate, None),
+            _ => (
+                ironrdp_tls::CertificateValidation::DangerouslyAcceptInvalidCertificate,
+                None,
+            ),
         };
         let (stream, client_addr) = tokio::time::timeout(
             Duration::from_secs(30),
@@ -152,7 +158,11 @@ async fn open_transport(params: &ConnectParams, ctx: &ConnectContext) -> anyhow:
     Ok((Box::new(stream), client_addr))
 }
 
-pub(crate) async fn connect(params: &ConnectParams, viewport: Viewport, ctx: ConnectContext) -> anyhow::Result<Connected> {
+pub(crate) async fn connect(
+    params: &ConnectParams,
+    viewport: Viewport,
+    ctx: ConnectContext,
+) -> anyhow::Result<Connected> {
     let (stream, client_addr) = open_transport(params, &ctx).await?;
 
     let mut drdynvc = DrdynvcClient::new().with_dynamic_channel(DisplayControlClient::new(|_| Ok(Vec::new())));

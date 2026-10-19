@@ -1228,7 +1228,11 @@ mod input_order_tests {
             InputEvent::Button { button: 0, down: true },
             InputEvent::ReleaseAll,
             InputEvent::Move { x: 5, y: 6 },
-            InputEvent::Sync { caps: true, num: false, scroll: false },
+            InputEvent::Sync {
+                caps: true,
+                num: false,
+                scroll: false,
+            },
             InputEvent::Button { button: 0, down: false },
         ]);
         let shape: Vec<&str> = steps

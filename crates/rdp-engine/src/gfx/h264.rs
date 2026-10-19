@@ -359,7 +359,10 @@ fn rows(data: &[u8], start: usize, stride: usize, n: usize) -> anyhow::Result<&[
 fn tight(data: &[u8], stride: usize, w: usize, n: usize) -> anyhow::Result<Vec<u8>> {
     let mut out = Vec::with_capacity(w * n);
     for row in 0..n {
-        out.extend_from_slice(data.get(row * stride..row * stride + w).context("region outside picture")?);
+        out.extend_from_slice(
+            data.get(row * stride..row * stride + w)
+                .context("region outside picture")?,
+        );
     }
     Ok(out)
 }

@@ -57,7 +57,11 @@ impl GfxStats {
         let progressive = self.progressive.load(Ordering::Relaxed);
         let clear = self.clear.load(Ordering::Relaxed);
         let planar = self.planar.load(Ordering::Relaxed);
-        let gpu = if self.hardware.load(Ordering::Relaxed) { " · GPU" } else { "" };
+        let gpu = if self.hardware.load(Ordering::Relaxed) {
+            " · GPU"
+        } else {
+            ""
+        };
         if avc444 > 0 {
             Some(format!("H.264 · AVC444{gpu}"))
         } else if avc > 0 {
@@ -133,7 +137,9 @@ pub(crate) fn avc_support(caps: &CapabilitySet) -> (bool, bool) {
     let avc = match caps {
         CapabilitySet::V8 { .. } => return (false, false),
         CapabilitySet::V8_1 { flags } => return (flags.contains(CapabilitiesV81Flags::AVC420_ENABLED), false),
-        CapabilitySet::V10 { flags } | CapabilitySet::V10_2 { flags } => !flags.contains(CapabilitiesV10Flags::AVC_DISABLED),
+        CapabilitySet::V10 { flags } | CapabilitySet::V10_2 { flags } => {
+            !flags.contains(CapabilitiesV10Flags::AVC_DISABLED)
+        }
         CapabilitySet::V10_1 => true,
         CapabilitySet::V10_3 { flags } => !flags.contains(CapabilitiesV103Flags::AVC_DISABLED),
         CapabilitySet::V10_4 { flags }

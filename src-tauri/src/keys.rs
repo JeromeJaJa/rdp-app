@@ -152,11 +152,17 @@ pub fn text(s: &str) -> Vec<InputEvent> {
             '\r' => {}
             '\n' => {
                 events.push(InputEvent::Key { code: 0x1c, down: true });
-                events.push(InputEvent::Key { code: 0x1c, down: false });
+                events.push(InputEvent::Key {
+                    code: 0x1c,
+                    down: false,
+                });
             }
             '\t' => {
                 events.push(InputEvent::Key { code: 0x0f, down: true });
-                events.push(InputEvent::Key { code: 0x0f, down: false });
+                events.push(InputEvent::Key {
+                    code: 0x0f,
+                    down: false,
+                });
             }
             ch => {
                 events.push(InputEvent::Unicode { ch, down: true });
@@ -185,7 +191,14 @@ mod tests {
     fn parses_combos() {
         assert_eq!(
             codes(&combo("Ctrl+Alt+Del").unwrap()),
-            vec![(0x1d, true), (0x38, true), (0xe053, true), (0xe053, false), (0x38, false), (0x1d, false)]
+            vec![
+                (0x1d, true),
+                (0x38, true),
+                (0xe053, true),
+                (0xe053, false),
+                (0x38, false),
+                (0x1d, false)
+            ]
         );
         assert_eq!(codes(&combo("win+r").unwrap())[0], (0xe05b, true));
         assert!(combo("ctrl+nope").is_err());
