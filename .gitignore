@@ -1,0 +1,46 @@
+# Dependencies / build output
+node_modules
+dist
+target
+src-tauri/gen
+
+# Logs, traces, captures
+*.log
+*.cap
+*.pcap
+*.pcapng
+*.etl
+*.profraw
+perf.data*
+
+# Local secrets — never commit
+test-hosts*.txt
+hosts*.txt
+*-hosts*.txt
+*.local
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+*.p12
+api-token*
+
+# App data and exports (exports contain passwords in plain text)
+library.json
+library.corrupt-*.json
+certs.json
+rdp-*.json
+rdp-*.txt
+rdp-*.csv
+
+# Tool state
+.claude/settings.local.json
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+Thumbs.db

@@ -1,0 +1,51 @@
+[workspace]
+resolver = "2"
+members = ["src-tauri", "crates/*"]
+exclude = ["third_party/ironrdp-graphics"]
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+license = "MIT"
+
+[workspace.dependencies]
+# IronRDP is pinned to a git revision: crates.io releases lag behind important
+# EGFX/AVC420 fixes on master.
+ironrdp-connector = { git = "https://github.com/Devolutions/IronRDP", rev = "62246b364a0282bab85087f658a81fe4207b6b31" }
+ironrdp-session = { git = "https://github.com/Devolutions/IronRDP", rev = "62246b364a0282bab85087f658a81fe4207b6b31" }
+ironrdp-pdu = { git = "https://github.com/Devolutions/IronRDP", rev = "62246b364a0282bab85087f658a81fe4207b6b31" }
+ironrdp-core = { git = "https://github.com/Devolutions/IronRDP", rev = "62246b364a0282bab85087f658a81fe4207b6b31" }
+ironrdp-graphics = { git = "https://github.com/Devolutions/IronRDP", rev = "62246b364a0282bab85087f658a81fe4207b6b31" }
+ironrdp-dvc = { git = "https://github.com/Devolutions/IronRDP", rev = "62246b364a0282bab85087f658a81fe4207b6b31" }
+ironrdp-svc = { git = "https://github.com/Devolutions/IronRDP", rev = "62246b364a0282bab85087f658a81fe4207b6b31" }
+ironrdp-egfx = { git = "https://github.com/Devolutions/IronRDP", rev = "62246b364a0282bab85087f658a81fe4207b6b31" }
+ironrdp-displaycontrol = { git = "https://github.com/Devolutions/IronRDP", rev = "62246b364a0282bab85087f658a81fe4207b6b31" }
+ironrdp-tokio = { git = "https://github.com/Devolutions/IronRDP", rev = "62246b364a0282bab85087f658a81fe4207b6b31" }
+ironrdp-tls = { git = "https://github.com/Devolutions/IronRDP", rev = "62246b364a0282bab85087f658a81fe4207b6b31" }
+ironrdp-input = { git = "https://github.com/Devolutions/IronRDP", rev = "62246b364a0282bab85087f658a81fe4207b6b31" }
+ironrdp-cliprdr = { git = "https://github.com/Devolutions/IronRDP", rev = "62246b364a0282bab85087f658a81fe4207b6b31" }
+ironrdp-rdpsnd = { git = "https://github.com/Devolutions/IronRDP", rev = "62246b364a0282bab85087f658a81fe4207b6b31" }
+ironrdp-rdpsnd-native = { git = "https://github.com/Devolutions/IronRDP", rev = "62246b364a0282bab85087f658a81fe4207b6b31" }
+ironrdp-rdpdr = { git = "https://github.com/Devolutions/IronRDP", rev = "62246b364a0282bab85087f658a81fe4207b6b31" }
+ironrdp-rdpdr-native = { git = "https://github.com/Devolutions/IronRDP", rev = "62246b364a0282bab85087f658a81fe4207b6b31" }
+ironrdp-rdpeai = { git = "https://github.com/Devolutions/IronRDP", rev = "62246b364a0282bab85087f658a81fe4207b6b31" }
+ironrdp-mstsgu = { git = "https://github.com/Devolutions/IronRDP", rev = "62246b364a0282bab85087f658a81fe4207b6b31" }
+ironrdp-server = { git = "https://github.com/Devolutions/IronRDP", rev = "62246b364a0282bab85087f658a81fe4207b6b31" }
+
+[profile.dev]
+# Codecs are unusably slow unoptimized; keep our own code debuggable.
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+codegen-units = 1
+lto = "fat"
+opt-level = 3
+panic = "unwind" # sessions are isolated with catch_unwind
+strip = true
+
+# IronRDP's graphics crate with fixes not yet upstream (see third_party/README.md).
+[patch."https://github.com/Devolutions/IronRDP"]
+ironrdp-graphics = { path = "third_party/ironrdp-graphics" }

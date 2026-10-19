@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark light" />
+    <title>RDP App</title>
+    <script>
+      // Apply the cached theme before first paint so there is never a flash.
+      (function () {
+        try {
+          var pref = localStorage.getItem("rdp-app:theme") || "dark";
+          var dark = pref === "system" ? matchMedia("(prefers-color-scheme: dark)").matches : pref !== "light";
+          document.documentElement.dataset.theme = dark ? "dark" : "light";
+        } catch (e) {
+          document.documentElement.dataset.theme = "dark";
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

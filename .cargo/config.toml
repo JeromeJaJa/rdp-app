@@ -1,0 +1,3 @@
+[net]
+# Use the git CLI (respects the user's credential/insteadOf setup) for git dependencies.
+git-fetch-with-cli = true
