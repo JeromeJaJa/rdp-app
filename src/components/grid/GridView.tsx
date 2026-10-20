@@ -1,4 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { DndContext, DragOverlay, useDroppable } from "@dnd-kit/core";
 import { SortableContext, rectSortingStrategy } from "@dnd-kit/sortable";
 import { connectAll, updateSettings } from "../../state/actions";
@@ -168,9 +169,13 @@ function GridViewInner() {
               ))
             )}
           </TileObserverContext.Provider>
-          <DragOverlay dropAnimation={{ duration: 180, easing: "cubic-bezier(0.16, 1, 0.3, 1)" }}>
-            {activeId ? <GridTileOverlay id={activeId} /> : null}
-          </DragOverlay>
+          {/* In <body>: the main area's CSS containment would otherwise offset the fixed-position copy. */}
+          {createPortal(
+            <DragOverlay dropAnimation={{ duration: 180, easing: "cubic-bezier(0.16, 1, 0.3, 1)" }}>
+              {activeId ? <GridTileOverlay id={activeId} /> : null}
+            </DragOverlay>,
+            document.body,
+          )}
         </DndContext>
       </div>
     </div>

@@ -1,4 +1,5 @@
 import { memo, useCallback, useMemo, useRef } from "react";
+import { createPortal } from "react-dom";
 import { DndContext, DragOverlay, useDroppable, type Modifier } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { FolderPlus, Search, X } from "lucide-react";
@@ -87,9 +88,13 @@ function SidebarList() {
           </div>
         );
       })}
-      <DragOverlay dropAnimation={{ duration: 160, easing: "cubic-bezier(0.16, 1, 0.3, 1)" }}>
-        {activeId ? <TabOverlay id={activeId} variant="side" /> : null}
-      </DragOverlay>
+      {/* In <body>: the sidebar's container query (layout containment) would offset the copy. */}
+      {createPortal(
+        <DragOverlay dropAnimation={{ duration: 160, easing: "cubic-bezier(0.16, 1, 0.3, 1)" }}>
+          {activeId ? <TabOverlay id={activeId} variant="side" /> : null}
+        </DragOverlay>,
+        document.body,
+      )}
     </DndContext>
   );
 }
