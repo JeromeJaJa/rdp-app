@@ -9,6 +9,7 @@ use anyhow::{Context as _, bail};
 use serde::{Deserialize, Serialize};
 
 use super::{DEFAULT_GROUP, GatewayInput, NewConnection, Store, StoredGateway, now_ms};
+use crate::profile::Overrides;
 use crate::{bulk, dpapi};
 
 const FORMAT: &str = "rdp-app/export";
@@ -117,6 +118,8 @@ struct DocGroup {
     name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     gateway: Option<DocGateway>,
+    #[serde(default, skip_serializing_if = "Overrides::is_empty")]
+    settings: Overrides,
     #[serde(default)]
     connections: Vec<DocConnection>,
 }
@@ -139,7 +142,10 @@ struct DocConnection {
     notes: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     gateway: Option<DocGateway>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Overrides::is_empty")]
+    settings: Overrides,
+    /// Written by an earlier build; read into `settings`.
+    #[serde(default, skip_serializing)]
     audio: Option<String>,
 }
 
@@ -218,12 +224,14 @@ impl Store {
                             password: reveal(&c.password)?,
                             notes: c.notes.clone(),
                             gateway: c.gateway.as_ref().map(gateway).transpose()?,
-                            audio: c.audio.clone(),
+                            settings: c.settings.clone(),
+                            audio: None,
                         });
                     }
                     doc_groups.push(DocGroup {
                         name: g.name.clone(),
                         gateway: g.gateway.as_ref().map(gateway).transpose()?,
+                        settings: g.settings.clone(),
                         connections,
                     });
                 }
@@ -246,6 +254,7 @@ impl Store {
 struct ImportGroup {
     name: Option<String>,
     gateway: Option<GatewayInput>,
+    settings: Overrides,
     entries: Vec<NewConnection>,
 }
 
@@ -285,6 +294,8 @@ fn parse_source(source: &ImportSource) -> anyhow::Result<Parsed> {
             .map(|g| ImportGroup {
                 name: Some(g.name),
                 gateway: g.gateway.map(gateway),
+                // Invalid overrides (from a newer or edited file) are dropped, not fatal.
+                settings: crate::profile::clean(g.settings).unwrap_or_default(),
                 entries: g
                     .connections
                     .into_iter()
@@ -297,7 +308,13 @@ fn parse_source(source: &ImportSource) -> anyhow::Result<Parsed> {
                         password: reveal(c.password),
                         notes: Some(c.notes).filter(|n| !n.is_empty()),
                         gateway: c.gateway.map(gateway),
-                        audio: c.audio.filter(|a| super::AUDIO_MODES.contains(&a.as_str())),
+                        settings: {
+                            let mut settings = c.settings;
+                            if let Some(audio) = c.audio {
+                                settings.entry("audio").or_insert(serde_json::Value::String(audio));
+                            }
+                            crate::profile::clean(settings).ok().filter(|s| !s.is_empty())
+                        },
                         ..Default::default()
                     })
                     .collect(),
@@ -319,6 +336,7 @@ fn parse_source(source: &ImportSource) -> anyhow::Result<Parsed> {
             _ => groups.push(ImportGroup {
                 name,
                 gateway: None,
+                settings: Overrides::new(),
                 entries: vec![item],
             }),
         }
@@ -439,6 +457,7 @@ impl Store {
                         name,
                         collapsed: false,
                         gateway: g.gateway.map(|gw| StoredGateway::from_input(None, gw)).transpose()?,
+                        settings: g.settings,
                     });
                     result.groups_created += 1;
                     id

@@ -50,6 +50,10 @@ Conventions:
 - JSON in, JSON out (camelCase). Errors: {"error": "message"} with a 4xx/5xx status.
 - Connection ids double as session ids. The built-in group id is "all".
 - Passwords are write-only: the only way to read them back is an export, which always includes them in plain text.
+- Connection settings are layered: the app settings (/settings), overridden by a group's "settings", overridden by a
+  connection's "settings". Overridable keys: audio, microphone, clipboardSync, driveRedirection (none|all|custom),
+  drivePaths (folders shared when custom), printerRedirection, smartcardRedirection, autoReconnect, codec,
+  h264Quality, videoDecoder. A "settings" object holds only the overrides; {} inherits everything.
 - Connecting is asynchronous. Add ?wait=true to block until sessions are connected or failed (timeout ?timeout=30 s),
   or follow GET /api/v1/events (Server-Sent Events).
 - Coordinates for mouse input are remote desktop pixels; GET /sessions/{id} reports the current width/height.
@@ -85,7 +89,7 @@ pub const ENDPOINTS: &[Endpoint] = &[
         params: &[],
         body: None,
         response: Some(
-            r#"{"library": {"groups": [{"id":"all","name":"All","collapsed":false,"builtin":true,"gateway":null}], "connections": [{"id":"9f1c…","name":"","host":"10.0.0.5","port":3389,"username":"admin","domain":"","hasPassword":true,"groupId":"all","notes":"","createdAt":1760857200000,"gateway":null,"audio":null}], "settings": {…}}, "sessions": [{"id":"9f1c…","status":"connected","width":1920,"height":1080,"codec":"H.264 · AVC420"}], "ui": {"selectedId":"9f1c…","view":"session","fullscreen":false}}"#,
+            r#"{"library": {"groups": [{"id":"all","name":"All","collapsed":false,"builtin":true,"gateway":null,"settings":{}}], "connections": [{"id":"9f1c…","name":"","host":"10.0.0.5","port":3389,"username":"admin","domain":"","hasPassword":true,"groupId":"all","notes":"","createdAt":1760857200000,"gateway":null,"settings":{}}], "settings": {…}}, "sessions": [{"id":"9f1c…","status":"connected","width":1920,"height":1080,"codec":"H.264 · AVC420"}], "ui": {"selectedId":"9f1c…","view":"session","fullscreen":false}}"#,
         ),
         auth: true,
     },
@@ -124,7 +128,7 @@ pub const ENDPOINTS: &[Endpoint] = &[
         ],
         body: None,
         response: Some(
-            r#"[{"id":"9f1c…","name":"web-01","host":"10.0.0.5","port":3389,"username":"admin","domain":"","hasPassword":true,"groupId":"all","notes":"","createdAt":1760857200000,"gateway":null,"audio":null}]"#,
+            r#"[{"id":"9f1c…","name":"web-01","host":"10.0.0.5","port":3389,"username":"admin","domain":"","hasPassword":true,"groupId":"all","notes":"","createdAt":1760857200000,"gateway":null,"settings":{}}]"#,
         ),
         auth: true,
     },
@@ -165,7 +169,7 @@ pub const ENDPOINTS: &[Endpoint] = &[
         params: &[ID],
         body: None,
         response: Some(
-            r#"{"id":"9f1c…","name":"web-01","host":"10.0.0.5","port":3389,"username":"admin","domain":"","hasPassword":true,"groupId":"all","notes":"","createdAt":1760857200000,"gateway":null,"audio":null}"#,
+            r#"{"id":"9f1c…","name":"web-01","host":"10.0.0.5","port":3389,"username":"admin","domain":"","hasPassword":true,"groupId":"all","notes":"","createdAt":1760857200000,"gateway":null,"settings":{}}"#,
         ),
         auth: true,
     },
@@ -174,7 +178,7 @@ pub const ENDPOINTS: &[Endpoint] = &[
         path: "/api/v1/connections/{id}",
         tag: "Connections",
         summary: "Update a connection",
-        description: "Only the fields you send change. password: \"\" clears it. gateway: null means \"use the group's gateway\"; {\"enabled\": false} forces a direct connection. audio: \"off\" | \"active\" (only while on screen) | \"all\", or null to follow the app setting; it applies to a running session immediately unless that session connected with sound off (then from its next connection).",
+        description: "Only the fields you send change. password: \"\" clears it. gateway: null means \"use the group's gateway\"; {\"enabled\": false} forces a direct connection. settings: the connection's complete set of setting overrides (see Connection settings); send {} to follow its group and the app.",
         params: &[ID],
         body: Some(
             r#"{"name":"web-01 (new)","password":"new-secret","groupId":"<group id>","gateway":{"enabled":true,"host":"rdg.example.com","sameCredentials":true,"username":"","domain":""}}"#,
@@ -259,10 +263,12 @@ pub const ENDPOINTS: &[Endpoint] = &[
         method: "PATCH",
         path: "/api/v1/groups/{id}",
         tag: "Groups",
-        summary: "Rename / collapse / set gateway",
-        description: "gateway: null removes the group's gateway. The built-in group cannot be renamed.",
+        summary: "Rename / collapse / set gateway or setting overrides",
+        description: "gateway: null removes the group's gateway. settings replaces the group's overrides for its connections ({} clears them). The built-in group cannot be renamed.",
         params: &[GID],
-        body: Some(r#"{"name":"Prod","collapsed":true,"gateway":null}"#),
+        body: Some(
+            r#"{"name":"Prod","collapsed":true,"settings":{"driveRedirection":"custom","drivePaths":["D:\Shared"]}}"#,
+        ),
         response: Some(r#"{"id":"<group id>","name":"Prod", "…": "…"}"#),
         auth: true,
     },

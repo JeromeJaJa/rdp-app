@@ -12,7 +12,6 @@ import {
   type ExportOptions,
   type GatewayInput,
   type GatewaySettings,
-  type AudioMode,
   type Group,
   type GroupId,
   type GroupInput,
@@ -23,6 +22,7 @@ import {
   type Library,
   type NewConnection,
   type ReplaceResult,
+  type SettingOverrides,
   type SessionEvent,
   type SessionStatus,
   type Settings,
@@ -345,12 +345,20 @@ export class MockBackend implements Backend {
     return structuredClone(c);
   }
 
-  async setConnectionAudio(id: ConnectionId, audio: AudioMode | null): Promise<boolean> {
+  async setConnectionSettings(id: ConnectionId, settings: SettingOverrides): Promise<boolean> {
     const c = this.lib.connections.find((x) => x.id === id);
     if (!c) throw new Error("Connection not found");
-    c.audio = audio;
+    c.settings = { ...settings };
     this.persist();
     return true;
+  }
+
+  async setGroupSettings(id: GroupId, settings: SettingOverrides): Promise<Group> {
+    const g = this.lib.groups.find((x) => x.id === id);
+    if (!g) throw new Error("Group not found");
+    g.settings = { ...settings };
+    this.persist();
+    return structuredClone(g);
   }
 
   async deleteConnections(ids: ConnectionId[]): Promise<void> {
@@ -613,6 +621,11 @@ export class MockBackend implements Backend {
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     return true;
+  }
+
+  async pickFolder(): Promise<string | null> {
+    const path = window.prompt("Folder to share (browser preview)", "D:\Shared");
+    return path?.trim() || null;
   }
 
   openFile(): Promise<{ name: string; text: string } | null> {

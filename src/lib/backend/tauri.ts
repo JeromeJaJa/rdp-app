@@ -7,9 +7,9 @@ import {
   type ApiInfo,
   type Connection,
   type ConnectionId,
-  type AudioMode,
   type ConnectionPatch,
   type ExportOptions,
+  type Group,
   type GroupId,
   type GroupInput,
   type ImportOptions,
@@ -19,6 +19,7 @@ import {
   type Library,
   type NewConnection,
   type ReplaceResult,
+  type SettingOverrides,
   type SessionEvent,
   type Settings,
   type TrustedCertificate,
@@ -70,8 +71,12 @@ export class TauriBackend implements Backend {
     return invoke("update_connection", { id, patch });
   }
 
-  setConnectionAudio(id: ConnectionId, audio: AudioMode | null): Promise<boolean> {
-    return invoke("set_connection_audio", { id, audio });
+  setConnectionSettings(id: ConnectionId, settings: SettingOverrides): Promise<boolean> {
+    return invoke("set_connection_settings", { id, settings });
+  }
+
+  setGroupSettings(id: GroupId, settings: SettingOverrides): Promise<Group> {
+    return invoke("set_group_settings", { id, settings });
   }
 
   deleteConnections(ids: ConnectionId[]): Promise<void> {
@@ -125,6 +130,11 @@ export class TauriBackend implements Backend {
     if (!path) return false;
     await invoke("write_text_file", { path, content });
     return true;
+  }
+
+  async pickFolder(): Promise<string | null> {
+    const path = await open({ multiple: false, directory: true });
+    return typeof path === "string" ? path : null;
   }
 
   async openFile(): Promise<{ name: string; text: string } | null> {

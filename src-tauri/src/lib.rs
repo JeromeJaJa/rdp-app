@@ -8,6 +8,7 @@ mod dpapi;
 #[cfg(windows)]
 mod frames;
 mod keys;
+mod profile;
 mod store;
 
 use std::sync::Arc;
@@ -53,8 +54,24 @@ fn update_connection(state: State<'_, AppState>, id: String, patch: ConnectionPa
 }
 
 #[tauri::command]
-fn set_connection_audio(state: State<'_, AppState>, id: String, audio: Option<String>) -> CmdResult<bool> {
-    state.core.set_connection_audio(&id, audio, Origin::Ui).map_err(err)
+fn set_connection_settings(
+    state: State<'_, AppState>,
+    id: String,
+    settings: serde_json::Map<String, Value>,
+) -> CmdResult<bool> {
+    state
+        .core
+        .set_connection_settings(&id, settings, Origin::Ui)
+        .map_err(err)
+}
+
+#[tauri::command]
+fn set_group_settings(
+    state: State<'_, AppState>,
+    id: String,
+    settings: serde_json::Map<String, Value>,
+) -> CmdResult<store::Group> {
+    state.core.set_group_settings(&id, settings, Origin::Ui).map_err(err)
 }
 
 #[tauri::command]
@@ -351,7 +368,8 @@ pub fn run() {
             load_library,
             add_connections,
             update_connection,
-            set_connection_audio,
+            set_connection_settings,
+            set_group_settings,
             delete_connections,
             reorder_connections,
             save_groups,

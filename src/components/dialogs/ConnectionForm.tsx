@@ -3,9 +3,10 @@ import { ChevronRight, Eye, EyeOff, Trash2 } from "lucide-react";
 import { parseBulk } from "../../lib/bulkParse";
 import { FEATURES } from "../../lib/features";
 import { describeGateway } from "../../lib/gateway";
-import { DEFAULT_GROUP_ID, type AudioMode, type Connection, type GatewayInput, type GroupId } from "../../lib/types";
+import { DEFAULT_GROUP_ID, type Connection, type GatewayInput, type GroupId, type SettingOverrides } from "../../lib/types";
 import { useStore } from "../../state/store";
-import { Button, Field, Segmented, Select, TextInput } from "../ui/ui";
+import { Button, Field, Segmented, TextInput } from "../ui/ui";
+import { OverridesEditor, overrideCount } from "./OverridesEditor";
 import { GATEWAY_HOST_RE, GatewayFields, draftFromGateway, draftToInput, type GatewayDraft } from "./GatewayFields";
 import { GroupSelect, NEW_GROUP } from "./GroupSelect";
 
@@ -26,11 +27,9 @@ export interface ConnectionFormValues {
   notes: string;
   /** null = use the group's gateway; undefined = unchanged (edit mode). */
   gateway: GatewayInput | null | undefined;
-  /** null = follow Settings → Audio. */
-  audio: AudioMode | null;
+  /** The connection's setting overrides (over its group and the app). */
+  settings: SettingOverrides;
 }
-
-const AUDIO_LABEL: Record<AudioMode, string> = { off: "Off", active: "Only when on screen", all: "Always" };
 
 /** Without a Domain field, the domain is shown and edited as `DOMAIN\user`. */
 const joinUser = (domain: string, user: string) => (domain && !FEATURES.domainField ? `${domain}\\${user}` : user);
@@ -79,8 +78,14 @@ export function ConnectionForm({
   const groupGateway = useStore((s) => (group === NEW_GROUP ? null : (s.groups.find((g) => g.id === group)?.gateway ?? null)));
   const [newGroupName, setNewGroupName] = useState("");
   const [notes, setNotes] = useState(initial?.notes ?? "");
-  const [audio, setAudio] = useState<AudioMode | "default">(initial?.audio ?? "default");
-  const globalAudio = useStore((s) => s.settings.audio);
+  const [overrides, setOverrides] = useState<SettingOverrides>(initial?.settings ?? {});
+  const [overridesOpen, setOverridesOpen] = useState(false);
+  const appSettings = useStore((s) => s.settings);
+  const groupOverrides = useStore((s) =>
+    group === NEW_GROUP ? undefined : s.groups.find((g) => g.id === group)?.settings,
+  );
+  const inherited = useMemo(() => ({ ...appSettings, ...groupOverrides }), [appSettings, groupOverrides]);
+  const groupHasOverrides = overrideCount(groupOverrides) > 0;
   const [submitted, setSubmitted] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -149,7 +154,7 @@ export function ConnectionForm({
         group,
         newGroupName: newGroupName.trim(),
         notes,
-        audio: audio === "default" ? null : audio,
+        settings: overrides,
         gateway: !FEATURES.gateway
           ? editing
             ? undefined
@@ -324,18 +329,33 @@ export function ConnectionForm({
           )}
         </div>
         )}
-        <Field label="Sound" className="span-2">
-          <Select<AudioMode | "default">
-            value={audio}
-            onChange={setAudio}
-            options={[
-              { value: "default", label: `Default (${AUDIO_LABEL[globalAudio].toLowerCase()})` },
-              { value: "off", label: AUDIO_LABEL.off },
-              { value: "active", label: AUDIO_LABEL.active },
-              { value: "all", label: AUDIO_LABEL.all },
-            ]}
-          />
-        </Field>
+        <div className="span-2 disclosure">
+          <button
+            type="button"
+            className={`disclosure__head ${overridesOpen ? "is-open" : ""}`}
+            onClick={() => setOverridesOpen((o) => !o)}
+          >
+            <ChevronRight size={13} className="disclosure__chevron" />
+            <span className="disclosure__title">Settings</span>
+            <span className="disclosure__summary">
+              {overrideCount(overrides)
+                ? `${overrideCount(overrides)} changed for this connection`
+                : groupHasOverrides
+                  ? "Same as its group"
+                  : "Same as the app"}
+            </span>
+          </button>
+          {overridesOpen && (
+            <div className="disclosure__body">
+              <OverridesEditor
+                value={overrides}
+                onChange={setOverrides}
+                inherited={inherited}
+                inheritedFrom={groupHasOverrides ? "the group" : "the app settings"}
+              />
+            </div>
+          )}
+        </div>
         <Field label="Notes" className="span-2">
           <textarea
             className="textarea"

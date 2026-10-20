@@ -154,6 +154,8 @@ pub struct ConnectParams {
     pub h264_444: bool,
     pub decoder: DecoderPreference,
     pub auto_reconnect: bool,
+    /// Share the clipboard with this session (when the app has a clipboard host).
+    pub clipboard: bool,
     pub gateway: Option<GatewayParams>,
     pub cert_policy: CertPolicy,
     pub audio: AudioMode,
@@ -174,6 +176,7 @@ impl ConnectParams {
             h264_444: true,
             decoder: DecoderPreference::Auto,
             auto_reconnect: true,
+            clipboard: true,
             gateway: None,
             cert_policy: CertPolicy::Ignore,
             audio: AudioMode::Off,

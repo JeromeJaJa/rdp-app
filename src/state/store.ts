@@ -7,6 +7,7 @@ import {
   type Group,
   type GroupId,
   type SessionStatus,
+  type OverridableKey,
   type Settings,
 } from "../lib/types";
 
@@ -30,6 +31,7 @@ export type DialogState =
   | { kind: "import"; groupId?: GroupId }
   | { kind: "export"; groupIds?: GroupId[] }
   | { kind: "gateway"; groupId: GroupId }
+  | { kind: "groupSettings"; groupId: GroupId }
   | { kind: "deleteGroup"; groupId: GroupId }
   | {
       kind: "confirm";
@@ -163,6 +165,16 @@ export function useBulkActions(ids: ConnectionId[]): { canConnect: boolean; canD
 }
 
 /** Name, or the address when unnamed (with the port when it is not the default). */
+/** A connection's effective setting: its own override, its group's, or the app's. */
+export function resolveSetting<K extends OverridableKey>(s: AppState, id: ConnectionId, key: K): Settings[K] {
+  const c = s.connById[id];
+  const own = c?.settings?.[key];
+  if (own !== undefined) return own as Settings[K];
+  const fromGroup = c ? s.groups.find((g) => g.id === c.groupId)?.settings?.[key] : undefined;
+  if (fromGroup !== undefined) return fromGroup as Settings[K];
+  return s.settings[key];
+}
+
 export function displayName(c: Pick<Connection, "name" | "host"> & { port?: number }): string {
   const name = c.name.trim();
   if (name) return name;

@@ -1,10 +1,10 @@
 import type {
   ApiInfo,
-  AudioMode,
   Connection,
   ConnectionId,
   ConnectionPatch,
   ExportOptions,
+  Group,
   GroupId,
   GroupInput,
   ImportOptions,
@@ -14,6 +14,7 @@ import type {
   Library,
   NewConnection,
   ReplaceResult,
+  SettingOverrides,
   SessionEvent,
   Settings,
   TrustedCertificate,
@@ -40,10 +41,12 @@ export interface Backend {
   addConnections(items: NewConnection[]): Promise<Connection[]>;
   updateConnection(id: ConnectionId, patch: ConnectionPatch): Promise<Connection>;
   /**
-   * Sets a connection's sound (null = follow the app setting) and applies it to its
-   * session. Resolves false when the session has to reconnect before it can be heard.
+   * Replaces a connection's setting overrides and applies what can change live. Resolves
+   * false when its session has to reconnect before it can be heard (it connected muted).
    */
-  setConnectionAudio(id: ConnectionId, audio: AudioMode | null): Promise<boolean>;
+  setConnectionSettings(id: ConnectionId, settings: SettingOverrides): Promise<boolean>;
+  /** Replaces a group's setting overrides for its connections. */
+  setGroupSettings(id: GroupId, settings: SettingOverrides): Promise<Group>;
   deleteConnections(ids: ConnectionId[]): Promise<void>;
   /** Full new display order + group membership of every connection. */
   reorderConnections(order: { id: ConnectionId; groupId: GroupId }[]): Promise<void>;
@@ -71,6 +74,8 @@ export interface Backend {
   saveFile(content: string, suggestedName: string, kind: "json" | "text"): Promise<boolean>;
   /** Opens a file picker. Resolves null if cancelled. */
   openFile(): Promise<{ name: string; text: string } | null>;
+  /** Opens a folder picker. Resolves the chosen folder's path, or null if cancelled. */
+  pickFolder(): Promise<string | null>;
 
   /**
    * Starts connecting. Resolves once the request is queued, not when connected —

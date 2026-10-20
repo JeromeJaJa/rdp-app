@@ -1031,3 +1031,58 @@
   background: var(--accent-soft);
   vertical-align: 1px;
 }
+
+/* ── Setting overrides (group / connection) ─────────────────────────────── */
+.overrides {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.overrides__title {
+  margin-bottom: 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.override {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px 12px;
+  padding: 3px 0;
+}
+.override__label {
+  color: var(--text-2);
+  white-space: nowrap;
+}
+/* A changed row: its label is brighter and carries a dot. */
+.override.is-set .override__label {
+  color: var(--text);
+  font-weight: 550;
+}
+.override.is-set .override__label::after {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-left: 7px;
+  border-radius: 50%;
+  vertical-align: middle;
+  background: var(--accent);
+}
+.override__extra {
+  grid-column: 2;
+  min-width: 0;
+}
+.override__inherited {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.override .select {
+  width: 100%;
+}

@@ -487,6 +487,8 @@ struct PatchGroupBody {
     collapsed: Option<bool>,
     #[serde(default, deserialize_with = "double_option")]
     gateway: Option<Option<GatewayInput>>,
+    /// The group's complete set of connection-setting overrides.
+    settings: Option<serde_json::Map<String, Value>>,
 }
 
 fn double_option<'de, D, T>(d: D) -> Result<Option<Option<T>>, D::Error>
@@ -502,7 +504,10 @@ async fn patch_group(
     Path(id): Path<String>,
     Json(body): Json<PatchGroupBody>,
 ) -> ApiResult<Json<Value>> {
-    let g = core.update_group(&id, body.name, body.collapsed, body.gateway, Origin::Api)?;
+    let mut g = core.update_group(&id, body.name, body.collapsed, body.gateway, Origin::Api)?;
+    if let Some(settings) = body.settings {
+        g = core.set_group_settings(&id, settings, Origin::Api)?;
+    }
     Ok(Json(serde_json::to_value(g).unwrap_or_default()))
 }
 

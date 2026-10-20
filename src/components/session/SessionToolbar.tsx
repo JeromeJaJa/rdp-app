@@ -3,7 +3,7 @@ import { Keyboard, Maximize2, Minimize2, RotateCw, Volume2, VolumeX, X } from "l
 import { DisconnectIcon } from "../common/SessionIcons";
 import { engine } from "../../engine";
 import { disconnect, reconnect, setFullscreen, toggleConnectionMute } from "../../state/actions";
-import { useSession, useStore } from "../../state/store";
+import { resolveSetting, useSession, useStore } from "../../state/store";
 
 const WIN = 0xe05b;
 const CTRL = 0x1d;
@@ -39,7 +39,7 @@ const COMBOS: { label: string; keys: string; codes: number[] }[] = [
 export function SessionToolbar({ id }: { id: string }) {
   const { codec, width, height } = useSession(id);
   const fullscreen = useStore((s) => s.fullscreen);
-  const muted = useStore((s) => (s.connById[id]?.audio ?? s.settings.audio) === "off");
+  const muted = useStore((s) => resolveSetting(s, id, "audio") === "off");
   const [keysOpen, setKeysOpen] = useState(false);
   const [visible, setVisible] = useState(false);
   const zoneRef = useRef<HTMLDivElement>(null);

@@ -16,13 +16,13 @@ import {
   SlidersHorizontal,
   Speaker,
   Trash2,
-  X,
 } from "lucide-react";
 import type { ApiInfo, TrustedCertificate } from "../../lib/types";
 import { be, errorText, toast, updateSettings } from "../../state/actions";
 import { useStore, type SettingsSection } from "../../state/store";
 import { Button, Segmented, Select, Spinner, Switch, TextInput } from "../ui/ui";
 import { Dialog } from "./Dialog";
+import { FolderList } from "./FolderList";
 
 function Row({ title, desc, children, stack }: { title: string; desc?: ReactNode; children: ReactNode; stack?: boolean }) {
   return (
@@ -208,51 +208,7 @@ function Graphics() {
 
 function DrivePaths() {
   const paths = useStore((st) => st.settings.drivePaths);
-  const [draft, setDraft] = useState("");
-  const add = () => {
-    const p = draft.trim().replace(/\//g, "\\");
-    if (!p) return;
-    if (!paths.some((x) => x.toLowerCase() === p.toLowerCase())) updateSettings({ drivePaths: [...paths, p] });
-    setDraft("");
-  };
-  return (
-    <div className="paths">
-      {paths.length > 0 && (
-        <ul className="paths__list">
-          {paths.map((p) => (
-            <li key={p} className="paths__item">
-              <span className="mono paths__path">{p}</span>
-              <button
-                className="paths__remove"
-                aria-label={`Stop sharing ${p}`}
-                onClick={() => updateSettings({ drivePaths: paths.filter((x) => x !== p) })}
-              >
-                <X size={12} />
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      <div className="paths__add">
-        <TextInput
-          mono
-          value={draft}
-          placeholder="D:\Work or C:\"
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              add();
-            }
-          }}
-        />
-        <Button size="sm" variant="secondary" icon={<Plus size={12} />} disabled={!draft.trim()} onClick={add}>
-          Add
-        </Button>
-      </div>
-      {paths.length === 0 && <div className="paths__empty">No folders shared yet.</div>}
-    </div>
-  );
+  return <FolderList value={paths} onChange={(drivePaths) => updateSettings({ drivePaths })} />;
 }
 
 function Devices() {
@@ -278,8 +234,8 @@ function Devices() {
 
       <h3 className="settings__heading">Devices</h3>
       <Row
-        title="Drives"
-        desc={`Local drives and folders appear in the remote session's File Explorer. ${NOTE_NEW}`}
+        title="Shared folders"
+        desc={`Local folders (or whole drives) appear in the remote session's File Explorer, under their own names. Groups and connections can override this. ${NOTE_NEW}`}
         stack={s.driveRedirection === "custom"}
       >
         <Segmented
@@ -289,7 +245,7 @@ function Devices() {
           options={[
             { value: "none", label: "None" },
             { value: "all", label: "All drives" },
-            { value: "custom", label: "Choose…" },
+            { value: "custom", label: "Chosen folders" },
           ]}
         />
       </Row>

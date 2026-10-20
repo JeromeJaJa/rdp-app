@@ -53,9 +53,27 @@ export interface Connection {
   createdAt: number;
   /** null = use the group's gateway (if any). */
   gateway: GatewaySettings | null;
-  /** Sound for this connection; null/absent = follow Settings → Audio. */
-  audio?: AudioMode | null;
+  /** Connection settings this connection overrides (over its group and the app). */
+  settings?: SettingOverrides;
 }
+
+/** Settings a group or a connection can override: app → group → connection. */
+export const OVERRIDABLE = [
+  "audio",
+  "microphone",
+  "clipboardSync",
+  "driveRedirection",
+  "drivePaths",
+  "printerRedirection",
+  "smartcardRedirection",
+  "autoReconnect",
+  "codec",
+  "h264Quality",
+  "videoDecoder",
+] as const;
+export type OverridableKey = (typeof OVERRIDABLE)[number];
+/** Only the overridden settings; anything absent is inherited. */
+export type SettingOverrides = Partial<Pick<Settings, OverridableKey>>;
 
 /** Remote audio playback: off, only the session on screen, or always. */
 export type AudioMode = "off" | "active" | "all";
@@ -73,7 +91,7 @@ export interface NewConnection {
   /** Duplicate support: copy the stored password of this existing connection (ignored if `password` is set). */
   copyPasswordFrom?: ConnectionId;
   gateway?: GatewayInput | null;
-  audio?: AudioMode | null;
+  settings?: SettingOverrides;
 }
 
 export interface ConnectionPatch {
@@ -88,8 +106,8 @@ export interface ConnectionPatch {
   notes?: string;
   /** undefined = unchanged, null = inherit from group. */
   gateway?: GatewayInput | null;
-  /** undefined = unchanged, null = follow the app setting. */
-  audio?: AudioMode | null;
+  /** undefined = unchanged; otherwise the complete set of overrides. */
+  settings?: SettingOverrides;
 }
 
 export interface Group {
@@ -100,6 +118,8 @@ export interface Group {
   builtin: boolean;
   /** Gateway used by connections in this group that don't set their own. */
   gateway: GatewaySettings | null;
+  /** Connection settings overridden for this group's connections. */
+  settings?: SettingOverrides;
 }
 
 /** Group fields written by the UI (gateway password write-only). */

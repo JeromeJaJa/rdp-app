@@ -442,7 +442,10 @@ async fn run(
                     connect::ConnectContext {
                         gfx_stats: Arc::clone(&stats),
                         gfx_output: Arc::clone(&gfx_out),
-                        clipboard: clipboard_backend(&shared, &s.id, &init_clipboard),
+                        clipboard: params
+                            .clipboard
+                            .then(|| clipboard_backend(&shared, &s.id, &init_clipboard))
+                            .flatten(),
                         audible: Arc::clone(&s.audible),
                         commands: init_commands.clone(),
                         cert_store: shared.certificates.lock().clone(),

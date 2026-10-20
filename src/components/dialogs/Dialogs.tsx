@@ -7,6 +7,7 @@ import { Dialog } from "./Dialog";
 import { EditDialog } from "./EditDialog";
 import { ExportDialog } from "./ExportDialog";
 import { GatewayDialog } from "./GatewayDialog";
+import { GroupSettingsDialog } from "./GroupSettingsDialog";
 import { ImportDialog } from "./ImportDialog";
 import { ReplaceDialog } from "./ReplaceDialog";
 import { SettingsDialog } from "./SettingsDialog";
@@ -29,6 +30,8 @@ export function Dialogs() {
       return <ExportDialog groupIds={dialog.groupIds} />;
     case "gateway":
       return <GatewayDialog key={dialog.groupId} groupId={dialog.groupId} />;
+    case "groupSettings":
+      return <GroupSettingsDialog key={dialog.groupId} groupId={dialog.groupId} />;
     case "deleteGroup":
       return <DeleteGroupDialog groupId={dialog.groupId} />;
     case "confirm":

@@ -14,6 +14,7 @@ import {
   type ReplaceResult,
   type SessionEvent,
   type Settings,
+  type SettingOverrides,
   type Theme,
   type UiCommand,
 } from "../lib/types";
@@ -26,6 +27,7 @@ import {
   getState,
   isBusy,
   isLive,
+  resolveSetting,
   sessionOf,
   setState,
   useStore,
@@ -452,21 +454,21 @@ export async function addConnections(items: NewConnection[]): Promise<Connection
   return created;
 }
 
-/** The sound a connection plays with: its own choice, or Settings → Audio. */
+/** The sound a connection plays with (its own choice, its group's, or the app's). */
 export function effectiveAudio(id: ConnectionId): AudioMode {
-  const s = getState();
-  return s.connById[id]?.audio ?? s.settings.audio;
+  return resolveSetting(getState(), id, "audio");
 }
 
-/** Sets a connection's sound (null = follow the app setting), live where possible. */
-export async function setConnectionAudio(id: ConnectionId, audio: AudioMode | null): Promise<void> {
+/** Replaces a connection's setting overrides; sound changes apply live where possible. */
+export async function setConnectionSettings(id: ConnectionId, settings: SettingOverrides): Promise<void> {
   const s = getState();
   const prev = s.connById[id];
   if (!prev) return;
-  setState({ connById: { ...s.connById, [id]: { ...prev, audio } } });
+  const wasAudible = effectiveAudio(id) !== "off";
+  setState({ connById: { ...s.connById, [id]: { ...prev, settings } } });
   try {
-    const live = await be().setConnectionAudio(id, audio);
-    if (!live && isLive(sessionOf(id).status)) {
+    const live = await be().setConnectionSettings(id, settings);
+    if (!live && !wasAudible && effectiveAudio(id) !== "off" && isLive(sessionOf(id).status)) {
       toast("info", "Reconnect to hear this session", "It connected with sound off.", {
         label: "Reconnect",
         run: () => reconnect(id),
@@ -474,15 +476,32 @@ export async function setConnectionAudio(id: ConnectionId, audio: AudioMode | nu
     }
   } catch (err) {
     setState({ connById: { ...getState().connById, [id]: prev } });
-    toast("error", "Could not change sound", errorText(err));
+    toast("error", "Could not save the connection's settings", errorText(err));
   }
 }
 
-/** Mutes the connection, or unmutes it (back to the app setting when that plays sound). */
+/** Replaces a group's setting overrides for its connections. */
+export async function setGroupSettings(id: GroupId, settings: SettingOverrides): Promise<void> {
+  const prev = getState().groups;
+  setState({ groups: prev.map((g) => (g.id === id ? { ...g, settings } : g)) });
+  try {
+    const saved = await be().setGroupSettings(id, settings);
+    setState({ groups: getState().groups.map((g) => (g.id === id ? saved : g)) });
+  } catch (err) {
+    setState({ groups: prev });
+    toast("error", "Could not save the group's settings", errorText(err));
+  }
+}
+
+/** Mutes the connection, or unmutes it (back to what it inherits when that plays sound). */
 export function toggleConnectionMute(id: ConnectionId) {
+  const s = getState();
+  const conn = s.connById[id];
+  if (!conn) return;
+  const { audio: _own, ...rest } = conn.settings ?? {};
+  const inherited = s.groups.find((g) => g.id === conn.groupId)?.settings?.audio ?? s.settings.audio;
   const muted = effectiveAudio(id) === "off";
-  const global = getState().settings.audio;
-  void setConnectionAudio(id, muted ? (global === "off" ? "active" : null) : "off");
+  void setConnectionSettings(id, muted ? (inherited === "off" ? { ...rest, audio: "active" } : rest) : { ...rest, audio: "off" });
 }
 
 export async function updateConnection(id: ConnectionId, patch: ConnectionPatch): Promise<void> {
@@ -519,7 +538,7 @@ export async function duplicateConnection(id: ConnectionId) {
       groupId: c.groupId,
       notes: c.notes,
       copyPasswordFrom: c.hasPassword ? c.id : undefined,
-      audio: c.audio ?? undefined,
+      settings: c.settings,
     },
   ]);
   if (copy) {

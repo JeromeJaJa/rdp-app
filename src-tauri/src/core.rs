@@ -16,6 +16,7 @@ use tauri::{AppHandle, Emitter as _};
 use tokio::sync::broadcast;
 
 use crate::certs::CertStore;
+use crate::profile::Overrides;
 use crate::store::{
     self, Connection, ConnectionPatch, ExportOptions, GatewayInput, Group, GroupInput, ImportOptions, ImportPreview,
     ImportSource, Library, NewConnection, OrderEntry, Store,
@@ -245,7 +246,7 @@ impl Core {
     }
 
     pub fn update_connection(&self, id: &str, patch: ConnectionPatch, origin: Origin) -> anyhow::Result<Connection> {
-        let audio_changed = patch.audio.is_some();
+        let audio_changed = patch.settings.is_some() || patch.group_id.is_some();
         let c = self.store.lock().update(id, patch)?;
         if audio_changed {
             self.apply_audio(id);
@@ -254,14 +255,14 @@ impl Core {
         Ok(c)
     }
 
-    /// Sets a connection's sound (`None` = follow the app setting) and applies it to its
-    /// session. Returns false when the session must reconnect to hear it (it connected
-    /// with sound off, so has no audio channel).
-    pub fn set_connection_audio(&self, id: &str, audio: Option<String>, origin: Origin) -> anyhow::Result<bool> {
+    /// Replaces a connection's setting overrides and applies what can change live (sound).
+    /// Returns false when its session must reconnect to hear it (it connected with sound
+    /// off, so has no audio channel).
+    pub fn set_connection_settings(&self, id: &str, settings: Overrides, origin: Origin) -> anyhow::Result<bool> {
         self.store.lock().update(
             id,
             ConnectionPatch {
-                audio: Some(audio),
+                settings: Some(settings),
                 ..Default::default()
             },
         )?;
@@ -270,18 +271,30 @@ impl Core {
         Ok(live)
     }
 
-    /// The audio mode a connection should use: its override, or the app setting.
+    /// Replaces a group's setting overrides; running sessions pick up what can change live.
+    pub fn set_group_settings(&self, id: &str, settings: Overrides, origin: Origin) -> anyhow::Result<Group> {
+        let group = self.store.lock().set_group_settings(id, settings)?;
+        for session in self.engine.running() {
+            self.apply_audio(&session);
+        }
+        self.changed(origin);
+        Ok(group)
+    }
+
+    /// A connection's settings: the app's, overridden by its group's, then its own.
+    pub fn effective_settings(&self, id: &str) -> Map<String, Value> {
+        let app = self.settings();
+        match self.store.lock().layers(id) {
+            Some((group, conn)) => crate::profile::resolve(&app, &[&group, &conn]),
+            None => app,
+        }
+    }
+
+    /// The audio mode a connection should use.
     fn audio_mode(&self, id: &str) -> AudioMode {
-        let fallback = self
-            .settings()
-            .get("audio")
-            .and_then(Value::as_str)
-            .unwrap_or("active")
-            .to_owned();
-        let mode = self.store.lock().audio_override(id).unwrap_or(fallback);
-        match mode.as_str() {
-            "off" => AudioMode::Off,
-            "all" => AudioMode::All,
+        match self.effective_settings(id).get("audio").and_then(Value::as_str) {
+            Some("off") => AudioMode::Off,
+            Some("all") => AudioMode::All,
             _ => AudioMode::Active,
         }
     }
@@ -349,6 +362,7 @@ impl Core {
                             name: name.clone().unwrap_or_else(|| g.name.clone()),
                             collapsed: collapsed.unwrap_or(g.collapsed),
                             gateway: gateway.clone(),
+                            settings: None,
                         }
                     } else {
                         GroupInput {
@@ -356,6 +370,7 @@ impl Core {
                             name: g.name.clone(),
                             collapsed: g.collapsed,
                             gateway: None,
+                            settings: None,
                         }
                     }
                 })
@@ -394,6 +409,7 @@ impl Core {
                     name: g.name.clone(),
                     collapsed: g.collapsed,
                     gateway: None,
+                    settings: None,
                 })
                 .collect();
             store.save_groups(inputs)?;
@@ -421,6 +437,7 @@ impl Core {
                 name: g.name.clone(),
                 collapsed: g.collapsed,
                 gateway: None,
+                settings: None,
             })
             .collect();
         self.save_groups(inputs, origin)
@@ -556,8 +573,8 @@ impl Core {
     // ── Sessions ────────────────────────────────────────────────────────────
 
     fn connect_params(&self, id: &str) -> anyhow::Result<ConnectParams> {
-        let s = self.settings();
         let creds = self.store.lock().credentials(id)?;
+        let s = crate::profile::resolve(&self.settings(), &[&creds.group_settings, &creds.settings]);
         let str_of = |k: &str| s.get(k).and_then(Value::as_str).unwrap_or("").to_owned();
         let bool_of = |k: &str, d: bool| s.get(k).and_then(Value::as_bool).unwrap_or(d);
 
@@ -605,7 +622,8 @@ impl Core {
                 "ignore" => CertPolicy::Ignore,
                 _ => CertPolicy::TrustOnFirstUse,
             },
-            audio: match creds.audio.unwrap_or_else(|| str_of("audio")).as_str() {
+            clipboard: bool_of("clipboardSync", true),
+            audio: match str_of("audio").as_str() {
                 "off" => AudioMode::Off,
                 "all" => AudioMode::All,
                 _ => AudioMode::Active,

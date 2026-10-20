@@ -12,6 +12,7 @@ import {
   Pencil,
   Plus,
   RotateCw,
+  SlidersHorizontal,
   Trash2,
   Volume2,
   VolumeX,
@@ -34,7 +35,7 @@ import {
   toggleConnectionMute,
 } from "../../state/actions";
 import { FEATURES } from "../../lib/features";
-import { displayName, isBusy, isLive, useBulkActions, useStore, type MenuState } from "../../state/store";
+import { displayName, isBusy, isLive, type MenuState, resolveSetting, useBulkActions, useStore } from "../../state/store";
 import { ConnectIcon, DisconnectIcon } from "../common/SessionIcons";
 import "./menu.css";
 
@@ -94,7 +95,7 @@ function ConnectionMenu({ id }: { id: string }) {
   const conn = useStore((s) => s.connById[id]);
   const status = useStore((s) => s.sessions[id]?.status ?? "idle");
   const groups = useStore((s) => s.groups);
-  const muted = useStore((s) => (s.connById[id]?.audio ?? s.settings.audio) === "off");
+  const muted = useStore((s) => resolveSetting(s, id, "audio") === "off");
   if (!conn) return null;
   const active = isLive(status) || isBusy(status);
 
@@ -178,7 +179,13 @@ function GroupMenu({ id }: { id: string }) {
       <Item icon={<ListRestart size={14} />} label="Replace connections…" onSelect={() => openDialog({ kind: "replace", groupId: id })} />
       <Item icon={<ArrowDownToLine size={14} />} label="Import into group…" onSelect={() => openDialog({ kind: "import", groupId: id })} />
       <Item icon={<ArrowUpFromLine size={14} />} label="Export group…" onSelect={() => openDialog({ kind: "export", groupIds: [id] })} />
-      {(FEATURES.gateway || !group.builtin) && <Sep />}
+      <Sep />
+      <Item
+        icon={<SlidersHorizontal size={14} />}
+        label="Group settings…"
+        hint={Object.keys(group.settings ?? {}).filter((k) => k !== "drivePaths").length ? "Changed" : undefined}
+        onSelect={() => openDialog({ kind: "groupSettings", groupId: id })}
+      />
       {FEATURES.gateway && (
         <Item
           icon={<Network size={14} />}

@@ -19,6 +19,7 @@ use serde_json::{Map, Value};
 
 use crate::bulk;
 use crate::dpapi;
+use crate::profile::{self, Overrides};
 
 pub use transfer::{ExportOptions, ImportOptions, ImportPreview, ImportSource};
 
@@ -112,6 +113,9 @@ struct StoredGroup {
     collapsed: bool,
     #[serde(default)]
     gateway: Option<StoredGateway>,
+    /// Connection settings this group overrides for its connections.
+    #[serde(default, skip_serializing_if = "Map::is_empty")]
+    settings: Overrides,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -122,6 +126,8 @@ pub struct Group {
     pub collapsed: bool,
     pub builtin: bool,
     pub gateway: Option<Gateway>,
+    /// Connection settings overridden for this group's connections.
+    pub settings: Overrides,
 }
 
 impl From<&StoredGroup> for Group {
@@ -132,6 +138,7 @@ impl From<&StoredGroup> for Group {
             collapsed: g.collapsed,
             builtin: g.id == DEFAULT_GROUP,
             gateway: g.gateway.as_ref().map(StoredGateway::view),
+            settings: g.settings.clone(),
         }
     }
 }
@@ -146,6 +153,9 @@ pub struct GroupInput {
     /// Absent = keep, `null` = remove.
     #[serde(default, deserialize_with = "double_option")]
     pub gateway: Option<Option<GatewayInput>>,
+    /// Absent = keep; otherwise the group's complete set of overrides.
+    #[serde(default)]
+    pub settings: Option<Overrides>,
 }
 
 // ── Connections ─────────────────────────────────────────────────────────────
@@ -176,8 +186,11 @@ struct StoredConnection {
     created_at: u64,
     #[serde(default)]
     gateway: Option<StoredGateway>,
-    /// Sound for this connection ("off" | "active" | "all"); absent = the app setting.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Connection settings this connection overrides (over its group and the app).
+    #[serde(default, skip_serializing_if = "Map::is_empty")]
+    settings: Overrides,
+    /// Older files kept the sound choice here; moved into `settings` on load.
+    #[serde(default, skip_serializing)]
     audio: Option<String>,
 }
 
@@ -210,8 +223,8 @@ pub struct Connection {
     pub notes: String,
     pub created_at: u64,
     pub gateway: Option<Gateway>,
-    /// `null` = follow the app's audio setting.
-    pub audio: Option<String>,
+    /// Connection settings overridden for this connection.
+    pub settings: Overrides,
 }
 
 impl From<&StoredConnection> for Connection {
@@ -228,7 +241,7 @@ impl From<&StoredConnection> for Connection {
             notes: c.notes.clone(),
             created_at: c.created_at,
             gateway: c.gateway.as_ref().map(StoredGateway::view),
-            audio: c.audio.clone(),
+            settings: c.settings.clone(),
         }
     }
 }
@@ -256,9 +269,9 @@ pub struct NewConnection {
     pub copy_password_from: Option<String>,
     #[serde(default)]
     pub gateway: Option<GatewayInput>,
-    /// "off" | "active" | "all"; absent = follow the app setting.
+    /// Connection settings this connection overrides.
     #[serde(default)]
-    pub audio: Option<String>,
+    pub settings: Option<Overrides>,
 }
 
 impl NewConnection {
@@ -290,13 +303,10 @@ pub struct ConnectionPatch {
     /// Absent = unchanged; `null` = inherit the group's gateway.
     #[serde(default, deserialize_with = "double_option")]
     pub gateway: Option<Option<GatewayInput>>,
-    /// Absent = unchanged; `null` = follow the app setting; otherwise "off" | "active" | "all".
-    #[serde(default, deserialize_with = "double_option")]
-    pub audio: Option<Option<String>>,
+    /// Absent = unchanged; otherwise the connection's complete set of overrides.
+    #[serde(default)]
+    pub settings: Option<Overrides>,
 }
-
-/// Valid per-connection audio values.
-pub const AUDIO_MODES: [&str; 3] = ["off", "active", "all"];
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -359,8 +369,9 @@ pub struct Credentials {
     pub domain: String,
     pub password: String,
     pub gateway: Option<GatewayCredentials>,
-    /// Per-connection audio override.
-    pub audio: Option<String>,
+    /// The group's, then the connection's, setting overrides.
+    pub group_settings: Overrides,
+    pub settings: Overrides,
 }
 
 pub struct Store {
@@ -412,6 +423,7 @@ impl Store {
                         name: DEFAULT_GROUP_NAME.into(),
                         collapsed: false,
                         gateway: None,
+                        settings: Overrides::new(),
                     },
                 );
                 changed = true;
@@ -423,6 +435,11 @@ impl Store {
         }
         let ids: Vec<String> = self.data.groups.iter().map(|g| g.id.clone()).collect();
         for c in &mut self.data.connections {
+            // Older libraries kept the per-connection sound choice in its own field.
+            if let Some(audio) = c.audio.take() {
+                c.settings.entry("audio").or_insert(Value::String(audio));
+                changed = true;
+            }
             let valid = c.group_id.as_ref().is_some_and(|g| ids.contains(g));
             if !valid {
                 c.group_id = Some(DEFAULT_GROUP.into());
@@ -512,9 +529,7 @@ impl Store {
             _ => String::new(),
         };
         let gateway = item.gateway.map(|g| StoredGateway::from_input(None, g)).transpose()?;
-        if let Some(mode) = item.audio.as_deref().filter(|m| !AUDIO_MODES.contains(m)) {
-            bail!("audio must be off, active or all (got {mode:?})");
-        }
+        let settings = profile::clean(item.settings.unwrap_or_default())?;
         Ok(Some(StoredConnection {
             id: uuid::Uuid::new_v4().to_string(),
             name: item.name.unwrap_or_default().trim().to_owned(),
@@ -527,7 +542,8 @@ impl Store {
             notes: item.notes.unwrap_or_default(),
             created_at: now,
             gateway,
-            audio: item.audio,
+            settings,
+            audio: None,
         }))
     }
 
@@ -586,11 +602,8 @@ impl Store {
                 Some(input) => Some(StoredGateway::from_input(c.gateway.as_ref(), input)?),
             };
         }
-        if let Some(audio) = patch.audio {
-            if let Some(mode) = audio.as_deref().filter(|m| !AUDIO_MODES.contains(m)) {
-                bail!("audio must be off, active, all or null (got {mode:?})");
-            }
-            c.audio = audio;
+        if let Some(settings) = patch.settings {
+            c.settings = profile::clean(settings)?;
         }
         let out = Connection::from(&*c);
         self.save()?;
@@ -647,11 +660,16 @@ impl Store {
                     .filter(|n| !n.is_empty())
                     .unwrap_or_else(|| "Untitled".into())
             };
+            let settings = match input.settings {
+                None => previous.map(|g| g.settings.clone()).unwrap_or_default(),
+                Some(settings) => profile::clean(settings)?,
+            };
             next.push(StoredGroup {
                 id,
                 name,
                 collapsed: input.collapsed,
                 gateway,
+                settings,
             });
         }
         if !next.iter().any(|g| g.id == DEFAULT_GROUP) {
@@ -680,6 +698,7 @@ impl Store {
             name: name.to_owned(),
             collapsed: false,
             gateway: gateway.map(|g| StoredGateway::from_input(None, g)).transpose()?,
+            settings: Overrides::new(),
         };
         let view = Group::from(&group);
         self.data.groups.push(group);
@@ -814,13 +833,40 @@ impl Store {
             domain: c.domain.clone(),
             password,
             gateway,
-            audio: c.audio.clone(),
+            group_settings: self
+                .data
+                .groups
+                .iter()
+                .find(|g| g.id == c.group())
+                .map(|g| g.settings.clone())
+                .unwrap_or_default(),
+            settings: c.settings.clone(),
         })
     }
 
-    /// The connection's audio override (`None` = follow the app setting).
-    pub fn audio_override(&self, id: &str) -> Option<String> {
-        self.data.connections.iter().find(|c| c.id == id)?.audio.clone()
+    /// The overrides that apply to a connection: its group's, then its own.
+    pub fn layers(&self, id: &str) -> Option<(Overrides, Overrides)> {
+        let c = self.data.connections.iter().find(|c| c.id == id)?;
+        let group = self.data.groups.iter().find(|g| g.id == c.group());
+        Some((
+            group.map(|g| g.settings.clone()).unwrap_or_default(),
+            c.settings.clone(),
+        ))
+    }
+
+    /// Replaces a group's setting overrides.
+    pub fn set_group_settings(&mut self, id: &str, settings: Overrides) -> anyhow::Result<Group> {
+        let settings = profile::clean(settings)?;
+        let g = self
+            .data
+            .groups
+            .iter_mut()
+            .find(|g| g.id == id)
+            .context("group not found")?;
+        g.settings = settings;
+        let out = Group::from(&*g);
+        self.save()?;
+        Ok(out)
     }
 }
 
@@ -929,6 +975,7 @@ pub(crate) mod tests {
                 name: "renamed".into(),
                 collapsed: true,
                 gateway: None,
+                settings: None,
             }])
             .unwrap();
         let lib = store.library();
@@ -976,20 +1023,60 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn audio_override_is_validated_and_clearable() {
+    fn group_and_connection_overrides_are_validated_and_layered() {
         let (mut store, dir) = temp_store();
-        let id = store.add(vec![nc("h", "u", "p", None)]).unwrap()[0].id.clone();
-        assert_eq!(store.audio_override(&id), None);
-        let patch = |audio: Option<&str>| ConnectionPatch {
-            audio: Some(audio.map(Into::into)),
+        let g = store.create_group("Lab", None).unwrap();
+        let id = store.add(vec![nc("h", "u", "p", Some(&g.id))]).unwrap()[0].id.clone();
+        let obj = |v: serde_json::Value| v.as_object().cloned().unwrap();
+        let patch = |settings: serde_json::Value| ConnectionPatch {
+            settings: Some(obj(settings)),
             ..Default::default()
         };
-        store.update(&id, patch(Some("off"))).unwrap();
-        assert_eq!(store.audio_override(&id).as_deref(), Some("off"));
-        assert_eq!(store.credentials(&id).unwrap().audio.as_deref(), Some("off"));
-        assert!(store.update(&id, patch(Some("loud"))).is_err());
-        store.update(&id, patch(None)).unwrap();
-        assert_eq!(store.audio_override(&id), None);
+
+        store
+            .set_group_settings(
+                &g.id,
+                obj(serde_json::json!({"audio": "off", "printerRedirection": true})),
+            )
+            .unwrap();
+        store.update(&id, patch(serde_json::json!({"audio": "all"}))).unwrap();
+        let (group, conn) = store.layers(&id).unwrap();
+        assert_eq!(
+            (group["audio"].as_str(), conn["audio"].as_str()),
+            (Some("off"), Some("all"))
+        );
+        assert_eq!(
+            store.credentials(&id).unwrap().group_settings["printerRedirection"],
+            true
+        );
+
+        assert!(store.update(&id, patch(serde_json::json!({"audio": "loud"}))).is_err());
+        assert!(
+            store
+                .set_group_settings(&g.id, obj(serde_json::json!({"theme": "light"})))
+                .is_err()
+        );
+        store.update(&id, patch(serde_json::json!({}))).unwrap();
+        assert!(store.layers(&id).unwrap().1.is_empty(), "cleared");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn legacy_connection_audio_moves_into_settings() {
+        let dir = std::env::temp_dir().join(format!("rdp-app-store-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("library.json"),
+            r#"{"version":2,"groups":[{"id":"all","name":"All"}],"connections":[{"id":"c1","host":"h","groupId":"all","audio":"off"}]}"#,
+        )
+        .unwrap();
+        let store = Store::open(&dir).unwrap();
+        assert_eq!(store.layers("c1").unwrap().1["audio"], "off");
+        let saved: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join("library.json")).unwrap()).unwrap();
+        let conn = &saved["connections"][0];
+        assert!(conn.get("audio").is_none(), "the old field is gone from disk");
+        assert_eq!(conn["settings"]["audio"], "off");
         let _ = std::fs::remove_dir_all(dir);
     }
 

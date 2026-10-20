@@ -31,7 +31,7 @@ export function AddDialog({ mode: initialMode, groupId }: { mode: "single" | "bu
         groupId: gid,
         notes: v.notes,
         gateway: v.gateway,
-        audio: v.audio ?? undefined,
+        settings: v.settings,
       },
     ]);
     closeDialog();

@@ -1,4 +1,4 @@
-import { closeDialog, confirm, deleteConnections, setConnectionAudio, toast, updateConnection } from "../../state/actions";
+import { closeDialog, confirm, deleteConnections, setConnectionSettings, toast, updateConnection } from "../../state/actions";
 import { displayName, useConnection } from "../../state/store";
 import { resolveGroup } from "./AddDialog";
 import { ConnectionForm, type ConnectionFormValues } from "./ConnectionForm";
@@ -22,7 +22,7 @@ export function EditDialog({ id }: { id: string }) {
         notes: v.notes,
         gateway: v.gateway,
       });
-      if (v.audio !== (conn.audio ?? null)) await setConnectionAudio(id, v.audio);
+      if (JSON.stringify(v.settings) !== JSON.stringify(conn.settings ?? {})) await setConnectionSettings(id, v.settings);
       closeDialog();
     } catch (err) {
       toast("error", "Could not save", err instanceof Error ? err.message : String(err));
