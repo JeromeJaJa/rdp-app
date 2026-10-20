@@ -20,12 +20,13 @@ A fast, minimal Windows Remote Desktop client for managing many connections at o
 
 | Action | How |
 | --- | --- |
+| Jump to a connection or run a command | `Ctrl+K`, or **Search** in the title bar |
 | Add one / many | `Ctrl+N` / `Ctrl+Shift+N`, or **+ New** (top of the sidebar; title bar when tabs are on top) |
 | Connect a tab | Double-click it, or select and press `Enter` |
 | Group actions (connect, replace list, import/export, rename) | Right-click the group header |
 | Grid view | `Ctrl+G` or the grid toggle (bottom of the sidebar; title bar when tabs are on top) — click a tile to open it, drag to reorder |
 | Switch within a group | With tabs on the left, click the connection name in the title bar |
-| Next / previous tab | `Ctrl+Tab` / `Ctrl+Shift+Tab`, or `Ctrl+1…9` |
+| Next / previous tab | `Ctrl+Tab` / `Ctrl+Shift+Tab`, `Ctrl+1…9`, or `Shift`+scroll over the top tabs |
 | Session toolbar (send keys, mute, reconnect, fullscreen) | Rest the pointer on the top edge of a session; its X hides it until you move away |
 | Send Win, Win+R, Alt+Tab, Task Manager… | Session toolbar → keyboard button |
 | Release keyboard from a session | Click outside it, or `Ctrl+Alt+Home` |
