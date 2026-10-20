@@ -7,7 +7,7 @@ import {
   setFullscreen,
   toggleGrid,
 } from "./actions";
-import { getState, isLive, useStore } from "./store";
+import { getState, isLive, setState, useStore } from "./store";
 
 /** App-level keyboard shortcuts. Suspended while a RemoteSurface has focus. */
 export function useShortcuts() {
@@ -34,6 +34,11 @@ export function useShortcuts() {
         return;
       }
       if (s.dialog) return;
+      if (key === "k") {
+        e.preventDefault();
+        setState({ paletteOpen: !s.paletteOpen, menu: null });
+        return;
+      }
       if (key === "g" && !typing) {
         e.preventDefault();
         toggleGrid();

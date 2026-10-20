@@ -319,3 +319,47 @@
     display: block;
   }
 }
+
+/* ── Title bar search pill (opens the command palette) ─────────────────────── */
+.tb-search {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 26px;
+  margin-right: 8px;
+  padding: 0 6px 0 9px;
+  border-radius: 8px;
+  color: var(--text-3);
+  background: var(--hover);
+  box-shadow: inset 0 0 0 1px var(--border);
+  transition: color var(--t-fast) ease, box-shadow var(--t-fast) ease, background-color var(--t-fast) ease;
+}
+.tb-search:hover {
+  color: var(--text-2);
+  background: var(--active);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+.tb-search__label {
+  min-width: 72px;
+  text-align: left;
+  font-size: 12px;
+}
+.tb-search__kbd {
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-family: var(--font-sans);
+  font-size: 10px;
+  color: var(--text-3);
+  background: var(--hover);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+@container titlebar (max-width: 900px) {
+  .tb-search__label,
+  .tb-search__kbd {
+    display: none;
+  }
+  .tb-search {
+    padding: 0 7px;
+  }
+}

@@ -1,5 +1,6 @@
 import { memo } from "react";
-import { Moon, PanelLeft, PanelTop, Settings, Sun } from "lucide-react";
+import { Moon, PanelLeft, PanelTop, Search, Settings, Sun } from "lucide-react";
+import { openPalette } from "../palette/CommandPalette";
 import { cycleTheme, openDialog, updateSettings } from "../../state/actions";
 import { useStore } from "../../state/store";
 import { IconButton } from "../ui/ui";
@@ -82,6 +83,11 @@ function TitlebarInner() {
       <div className="titlebar__spacer" data-tauri-drag-region />
 
       <div className="titlebar__actions">
+        <button className="tb-search" onClick={openPalette} aria-label="Search connections and commands (Ctrl+K)">
+          <Search size={13} />
+          <span className="tb-search__label">Search</span>
+          <kbd className="tb-search__kbd">Ctrl K</kbd>
+        </button>
         {/* With tabs on the left these live in the sidebar, next to the list they act on. */}
         {placement === "top" && (
           <>

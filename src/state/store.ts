@@ -80,6 +80,8 @@ export interface AppState {
   view: View;
   dialog: DialogState;
   menu: MenuState | null;
+  /** The command palette (Ctrl+K) is open. */
+  paletteOpen: boolean;
   toasts: Toast[];
   fullscreen: boolean;
   /** Keyboard focus is inside a RemoteSurface: app shortcuts are suspended. */
@@ -106,6 +108,7 @@ export const useStore = create<AppState>(() => ({
   view: "session",
   dialog: null,
   menu: null,
+  paletteOpen: false,
   toasts: [],
   fullscreen: false,
   remoteFocused: false,
