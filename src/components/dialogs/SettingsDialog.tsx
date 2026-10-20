@@ -160,6 +160,12 @@ function Connections() {
       <Row title="Share clipboard" desc={`Copy and paste between this PC and remote sessions. ${NOTE_NEW}`}>
         <Switch checked={s.clipboardSync} onChange={(clipboardSync) => updateSettings({ clipboardSync })} />
       </Row>
+      <Row
+        title="Companion"
+        desc="Experimental: let a companion running inside the remote session attach for deeper integration (faster transfers, native drag). Does nothing until a companion is present."
+      >
+        <Switch checked={s.companion} onChange={(companion) => updateSettings({ companion })} />
+      </Row>
     </>
   );
 }

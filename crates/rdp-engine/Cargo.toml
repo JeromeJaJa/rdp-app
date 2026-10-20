@@ -17,6 +17,7 @@ ironrdp-pdu.workspace = true
 ironrdp-core.workspace = true
 ironrdp-graphics.workspace = true
 ironrdp-dvc.workspace = true
+rdp-companion-proto = { path = "../rdp-companion-proto" }
 ironrdp-svc.workspace = true
 ironrdp-egfx.workspace = true
 ironrdp-displaycontrol.workspace = true

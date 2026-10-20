@@ -1,0 +1,11 @@
+[package]
+name = "rdp-companion-proto"
+description = "Wire protocol shared by the RDP App client and the remote-side companion."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+rmp-serde = "1"

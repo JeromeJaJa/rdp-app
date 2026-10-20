@@ -4734,6 +4734,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "rdp-companion"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "rdp-companion-proto",
+ "tracing",
+ "tracing-subscriber",
+ "windows",
+]
+
+[[package]]
 name = "rdp-companion-proto"
 version = "0.1.0"
 dependencies = [
@@ -4769,6 +4780,7 @@ dependencies = [
  "openh264",
  "parking_lot",
  "png 0.17.16",
+ "rdp-companion-proto",
  "rustls",
  "serde",
  "sha2 0.10.9",

@@ -18,6 +18,8 @@ export interface SessionInfo {
   width?: number;
   height?: number;
   codec?: string;
+  /** Set while a companion on the remote is attached (its version and host name). */
+  companion?: { version: string; host: string };
 }
 
 export type View = "session" | "grid";

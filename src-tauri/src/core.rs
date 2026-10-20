@@ -117,6 +117,7 @@ pub fn default_settings() -> Map<String, Value> {
         "h264Quality": "sharp",
         "videoDecoder": "auto",
         "autoReconnect": true,
+        "companion": false,
         "clipboardSync": true,
         "audio": "active",
         "microphone": false,
@@ -632,6 +633,7 @@ impl Core {
                 _ => AudioMode::Active,
             },
             microphone: bool_of("microphone", false),
+            companion: bool_of("companion", false),
             devices: DeviceRedirection {
                 drives,
                 printer: bool_of("printerRedirection", false),

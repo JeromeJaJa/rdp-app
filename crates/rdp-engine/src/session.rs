@@ -189,6 +189,7 @@ impl Session {
             | Command::CtrlAltDel
             | Command::Clipboard(_)
             | Command::SendDvc(_)
+            | Command::Companion(_)
             | Command::Disconnect => {}
         }
     }
@@ -958,6 +959,17 @@ async fn active(
                         Command::SendDvc(messages) => {
                             let frame = live.stage.encode_dvc_messages(messages).context("encode DVC messages")?;
                             live.send(&frame).await?;
+                        }
+                        Command::Companion(update) => {
+                            let event = match update {
+                                crate::companion::Update::Connected { version, host } => {
+                                    EngineEvent::CompanionConnected { id: s.id.clone(), version, host }
+                                }
+                                crate::companion::Update::Disconnected => {
+                                    EngineEvent::CompanionDisconnected { id: s.id.clone() }
+                                }
+                            };
+                            s.shared.emit(event);
                         }
                         Command::Screenshot(reply) => {
                             if live.suppressed {

@@ -13,6 +13,7 @@ mod audio;
 mod autodetect;
 pub mod certs;
 mod clipboard;
+mod companion;
 mod connect;
 mod cursor;
 mod devices;
@@ -70,6 +71,17 @@ pub enum EngineEvent {
         id: SessionId,
         cursor: String,
     },
+    /// The remote-side companion connected over its channel (deeper integration is on).
+    #[serde(rename_all = "camelCase")]
+    CompanionConnected {
+        id: SessionId,
+        /// The companion binary's version.
+        version: String,
+        /// The remote machine's name it reported.
+        host: String,
+    },
+    /// The companion channel closed (its process exited, or the session dropped it).
+    CompanionDisconnected { id: SessionId },
     /// A server certificate needs a decision; the connection attempt was refused.
     #[serde(rename_all = "camelCase")]
     Certificate {
@@ -161,6 +173,8 @@ pub struct ConnectParams {
     pub audio: AudioMode,
     pub microphone: bool,
     pub devices: DeviceRedirection,
+    /// Register the companion channel, so a companion running on the remote can attach.
+    pub companion: bool,
 }
 
 impl ConnectParams {
@@ -182,6 +196,7 @@ impl ConnectParams {
             audio: AudioMode::Off,
             microphone: false,
             devices: DeviceRedirection::default(),
+            companion: false,
         }
     }
 }
@@ -297,6 +312,8 @@ pub(crate) enum Command {
     Audio(AudioMode),
     /// Encoded DVC messages produced off-thread (microphone).
     SendDvc(Vec<ironrdp_svc::SvcMessage>),
+    /// The companion channel's presence changed (from its DVC processor).
+    Companion(crate::companion::Update),
     Screenshot(tokio::sync::oneshot::Sender<anyhow::Result<Screenshot>>),
     Disconnect,
 }
@@ -350,8 +367,10 @@ impl Shared {
                 }
                 EngineEvent::Codec { id, .. } => snap.entry(id.clone()).or_default().codec = Some(event.clone()),
                 EngineEvent::Cursor { id, .. } => snap.entry(id.clone()).or_default().cursor = Some(event.clone()),
-                // One-off prompts are not part of a session's lasting state.
-                EngineEvent::Certificate { .. } => {}
+                // One-off prompts and companion presence are not part of the snapshot.
+                EngineEvent::Certificate { .. }
+                | EngineEvent::CompanionConnected { .. }
+                | EngineEvent::CompanionDisconnected { .. } => {}
             }
         }
         (self.events)(event);

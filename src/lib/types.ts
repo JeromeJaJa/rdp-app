@@ -70,6 +70,7 @@ export const OVERRIDABLE = [
   "codec",
   "h264Quality",
   "videoDecoder",
+  "companion",
 ] as const;
 export type OverridableKey = (typeof OVERRIDABLE)[number];
 /** Only the overridden settings; anything absent is inherited. */
@@ -160,6 +161,8 @@ export interface Settings {
   videoDecoder: "auto" | "hardware" | "software";
   /** Automatically reconnect after a network drop. */
   autoReconnect: boolean;
+  /** Let a companion running on the remote attach for deeper integration (experimental). */
+  companion: boolean;
   /** Share the clipboard (text, images, files) with remote sessions. */
   clipboardSync: boolean;
   /** Remote audio playback: off, only the session on screen, or every session. */
@@ -198,6 +201,7 @@ export const DEFAULT_SETTINGS: Settings = {
   h264Quality: "sharp",
   videoDecoder: "auto",
   autoReconnect: true,
+  companion: false,
   clipboardSync: true,
   audio: "active",
   microphone: false,
@@ -235,6 +239,9 @@ export type SessionEvent =
   | { type: "resolution"; id: ConnectionId; width: number; height: number }
   /** Codec actually negotiated, e.g. "H.264 · AVC444", "RemoteFX". */
   | { type: "codec"; id: ConnectionId; codec: string }
+  /** A companion running on the remote attached to this session. */
+  | { type: "companionConnected"; id: ConnectionId; version: string; host: string }
+  | { type: "companionDisconnected"; id: ConnectionId }
   /**
    * The server presented a certificate that needs a decision: never seen before
    * (policy "prompt") or different from the one trusted earlier. The connection

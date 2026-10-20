@@ -20,6 +20,7 @@ const CHOICES: { [K in OverridableKey]?: Choice<Settings[K]>[] } = {
   ],
   microphone: ON_OFF,
   clipboardSync: ON_OFF,
+  companion: ON_OFF,
   driveRedirection: [
     { value: "none", label: "None" },
     { value: "all", label: "All drives" },
@@ -60,6 +61,7 @@ const SECTIONS: { title: string; rows: { key: OverridableKey; label: string }[] 
     title: "Connection",
     rows: [
       { key: "autoReconnect", label: "Auto-reconnect" },
+      { key: "companion", label: "Companion (experimental)" },
       { key: "codec", label: "Graphics codec" },
       { key: "h264Quality", label: "H.264 colour" },
       { key: "videoDecoder", label: "Video decoder" },

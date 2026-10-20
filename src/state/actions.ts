@@ -249,6 +249,12 @@ function flushSessionEvents() {
       case "codec":
         sessions[e.id] = { ...prev, codec: e.codec };
         break;
+      case "companionConnected":
+        sessions[e.id] = { ...prev, companion: { version: e.version, host: e.host } };
+        break;
+      case "companionDisconnected":
+        sessions[e.id] = { ...prev, companion: undefined };
+        break;
       case "certificate": {
         if (!mine) break;
         const prompt: CertPrompt = {

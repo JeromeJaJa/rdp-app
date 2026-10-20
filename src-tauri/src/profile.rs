@@ -18,6 +18,7 @@ pub const OVERRIDABLE: &[&str] = &[
     "codec",
     "h264Quality",
     "videoDecoder",
+    "companion",
 ];
 
 /// A group's or connection's overrides (only overridable keys).

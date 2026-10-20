@@ -248,6 +248,9 @@ pub(crate) async fn connect(
             tx: ctx.commands.clone(),
         });
     }
+    if params.companion {
+        drdynvc = drdynvc.with_listener(crate::companion::CompanionListener::new(ctx.commands.clone()));
+    }
 
     let config = connector_config(params, viewport);
     let mut connector = ironrdp_connector::ClientConnector::new(config, client_addr).with_static_channel(drdynvc);
