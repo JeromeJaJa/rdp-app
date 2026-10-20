@@ -97,11 +97,45 @@ mod windows_impl {
         }
     }
 
+    /// Stays resident for the life of the session, (re)attaching whenever the client is
+    /// connected. The channel only exists while an RDP connection is up, so a disconnect
+    /// ends an attach and a reconnect starts a new one — without re-launching, since the
+    /// process survives a disconnect. The OS kills it at logoff; the logon autostart
+    /// brings it back next time.
+    const RETRY: std::time::Duration = std::time::Duration::from_secs(5);
+    /// Give up if the channel never opens for this long (the client doesn't want us).
+    const GIVE_UP_AFTER: std::time::Duration = std::time::Duration::from_secs(120);
+
     pub(super) fn run() -> anyhow::Result<()> {
-        let channel = Channel::open()?;
+        // Persist first (best-effort), so this host auto-starts the companion on every
+        // future connection without any delivery step. Then attach for this session.
+        install::ensure();
+        let started = std::time::Instant::now();
+        let mut ever_attached = false;
+        loop {
+            match Channel::open() {
+                Ok(channel) => {
+                    ever_attached = true;
+                    if let Err(error) = serve(&channel) {
+                        tracing::warn!(%error, "attach ended");
+                    }
+                }
+                Err(error) => {
+                    // Not connected, or companion disabled on the client: wait and retry.
+                    if !ever_attached && started.elapsed() >= GIVE_UP_AFTER {
+                        return Err(error).context("companion channel never became available");
+                    }
+                }
+            }
+            std::thread::sleep(RETRY);
+        }
+    }
+
+    /// One attach: handshake, then relay until the channel closes or the client says bye.
+    fn serve(channel: &Channel) -> anyhow::Result<()> {
         let host = computer_name();
         let session = current_session();
-        tracing::info!(%host, session, "companion starting, saying hello");
+        tracing::info!(%host, session, "attached, saying hello");
         channel.write(&encode(&Message::Hello {
             protocol: PROTOCOL_VERSION,
             version: env!("CARGO_PKG_VERSION").to_owned(),
@@ -113,7 +147,7 @@ mod windows_impl {
         let mut buffer = vec![0u8; 16 * 1024];
         loop {
             let Some(chunk) = channel.read(&mut buffer)? else {
-                tracing::info!("channel closed by the client");
+                tracing::info!("channel closed (client disconnected)");
                 return Ok(());
             };
             if chunk.is_empty() {
@@ -123,7 +157,7 @@ mod windows_impl {
             loop {
                 match decoder.next_message() {
                     Ok(Some(message)) => {
-                        if handle(&channel, message)? {
+                        if handle(channel, message)? {
                             return Ok(());
                         }
                     }
@@ -179,5 +213,81 @@ mod windows_impl {
         // SAFETY: writes this process's session id into `session`.
         let ok = unsafe { ProcessIdToSessionId(GetCurrentProcessId(), &mut session) };
         ok.map(|()| session).unwrap_or(0)
+    }
+
+    /// Installs the companion so it starts on every future logon, once per server.
+    ///
+    /// The first run may be from anywhere (a redirected drive, a download). It copies
+    /// itself to a stable per-user location and registers a logon scheduled task for the
+    /// current user, which runs in their interactive session — no admin, no service, no
+    /// delivery step on later connects. Idempotent and best-effort: a failure here never
+    /// stops the companion attaching for this session.
+    mod install {
+        use std::os::windows::process::CommandExt as _;
+        use std::path::{Path, PathBuf};
+        use std::process::Command;
+
+        /// Scheduled-task name; also what an uninstall would remove.
+        const TASK: &str = "RdpAppCompanion";
+        /// So schtasks doesn't flash a console window.
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+        pub(super) fn ensure() {
+            if let Err(error) = try_ensure() {
+                tracing::warn!(%error, "companion self-install skipped");
+            }
+        }
+
+        fn try_ensure() -> anyhow::Result<()> {
+            let target = target_path()?;
+            let current = std::env::current_exe()?;
+            if !same_file(&current, &target) {
+                if let Some(dir) = target.parent() {
+                    std::fs::create_dir_all(dir)?;
+                }
+                // If the target is in use (already installed and running), keep it.
+                if let Err(error) = std::fs::copy(&current, &target) {
+                    tracing::debug!(%error, "keeping the existing installed companion");
+                }
+            }
+            register_logon_task(&target)
+        }
+
+        fn target_path() -> anyhow::Result<PathBuf> {
+            let base = std::env::var_os("LOCALAPPDATA")
+                .ok_or_else(|| anyhow::anyhow!("LOCALAPPDATA is not set"))?;
+            Ok(PathBuf::from(base).join("RdpApp").join("rdp-companion.exe"))
+        }
+
+        fn same_file(a: &Path, b: &Path) -> bool {
+            match (a.canonicalize(), b.canonicalize()) {
+                (Ok(a), Ok(b)) => a == b,
+                _ => false,
+            }
+        }
+
+        /// Adds a per-user autostart entry so `exe` runs at logon. HKCU needs no admin
+        /// (a logon scheduled task would); reconnects without a fresh logon are covered
+        /// by the companion staying resident and re-opening its channel.
+        fn register_logon_task(exe: &Path) -> anyhow::Result<()> {
+            let value = format!("\"{}\"", exe.display());
+            let status = Command::new("reg")
+                .args([
+                    "add",
+                    r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
+                    "/v",
+                    TASK,
+                    "/t",
+                    "REG_SZ",
+                    "/d",
+                    &value,
+                    "/f",
+                ])
+                .creation_flags(CREATE_NO_WINDOW)
+                .status()?;
+            anyhow::ensure!(status.success(), "reg add exited with {status}");
+            tracing::info!("companion registered to start on logon");
+            Ok(())
+        }
     }
 }
