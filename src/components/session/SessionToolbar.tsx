@@ -19,7 +19,7 @@ const HIDE_MS = 250;
  * the title bar above it, so overshooting the edge while moving up still counts.
  */
 const TRIGGER_TOP = -10;
-const TRIGGER_PX = 6;
+const TRIGGER_PX = 20;
 /** Height of the area the toolbar lives in; a dismissal lasts while the pointer stays inside it. */
 const AREA_PX = 64;
 
