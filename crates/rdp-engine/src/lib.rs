@@ -362,7 +362,10 @@ struct State {
     sessions: HashMap<SessionId, SessionHandle>,
     viewport: Viewport,
     settings: EngineSettings,
-    active: Option<SessionId>,
+    /// Sessions shown full size (one per window that shows a session).
+    active: Vec<SessionId>,
+    /// Sessions sized to their own window instead of the main view.
+    session_viewports: HashMap<SessionId, Viewport>,
     thumbnails: Vec<SessionId>,
     next_generation: u64,
     /// Sessions to start again as soon as their current thread has exited (reconnect).
@@ -394,7 +397,8 @@ impl Engine {
                 sessions: HashMap::new(),
                 viewport: Viewport::default(),
                 settings,
-                active: None,
+                active: Vec::new(),
+                session_viewports: HashMap::new(),
                 thumbnails: Vec::new(),
                 restarts: HashMap::new(),
                 next_generation: 1,
@@ -501,18 +505,44 @@ impl Engine {
     }
 
     /// New main-area size: new connections use it and running sessions resize to it.
+    /// Size of the main view; sessions without their own size follow it.
     pub fn set_viewport(&self, viewport: Viewport) {
         let mut state = self.state.lock();
         if state.viewport == viewport {
             return;
         }
         state.viewport = viewport;
-        for handle in state.sessions.values() {
-            let _ = handle.tx.send(Command::Resize(viewport));
+        for (id, handle) in &state.sessions {
+            if !state.session_viewports.contains_key(id) {
+                let _ = handle.tx.send(Command::Resize(viewport));
+            }
         }
     }
 
-    pub fn set_visibility(&self, active: Option<String>, thumbnails: Vec<SessionId>) {
+    /// Gives a session its own size (it lives in a window of its own), or `None` to
+    /// follow the main view again.
+    pub fn set_session_viewport(&self, id: &str, viewport: Option<Viewport>) {
+        let mut state = self.state.lock();
+        let next = match viewport {
+            Some(vp) => {
+                if state.session_viewports.insert(id.to_owned(), vp) == Some(vp) {
+                    return;
+                }
+                vp
+            }
+            None => {
+                if state.session_viewports.remove(id).is_none() {
+                    return;
+                }
+                state.viewport
+            }
+        };
+        if let Some(handle) = state.sessions.get(id) {
+            let _ = handle.tx.send(Command::Resize(next));
+        }
+    }
+
+    pub fn set_visibility(&self, active: Vec<SessionId>, thumbnails: Vec<SessionId>) {
         let mut state = self.state.lock();
         let before: HashMap<SessionId, ViewState> = state
             .sessions
@@ -613,7 +643,7 @@ fn start(shared: &Arc<Shared>, state_lock: &Arc<Mutex<State>>, id: &str, params:
         commands: tx.clone(),
         generation,
         params,
-        viewport: state.viewport,
+        viewport: state.session_viewports.get(id).copied().unwrap_or(state.viewport),
         settings: state.settings,
         view,
         audio_channel: Arc::clone(&audio_channel),
@@ -656,7 +686,7 @@ fn cleanup(shared: &Arc<Shared>, state: &Arc<Mutex<State>>) -> Cleanup {
 
 fn view_for(state: &State, id: &str) -> ViewState {
     ViewState {
-        full: state.active.as_deref() == Some(id),
+        full: state.active.iter().any(|a| a == id),
         thumb: state.thumbnails.iter().any(|t| t == id),
     }
 }

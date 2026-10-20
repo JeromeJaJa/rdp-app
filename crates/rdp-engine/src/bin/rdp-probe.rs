@@ -191,7 +191,7 @@ fn main() -> anyhow::Result<()> {
     });
 
     let ids: Vec<String> = (0..args.count).map(|i| format!("s{i}")).collect();
-    engine.set_visibility(Some(ids[0].clone()), ids.iter().skip(1).cloned().collect());
+    engine.set_visibility(vec![ids[0].clone()], ids.iter().skip(1).cloned().collect());
     println!("connecting {} session(s) to {host}:{port} as {user}", args.count);
     for (i, id) in ids.iter().enumerate() {
         let (host, port, user, pass) = host_for(i);
