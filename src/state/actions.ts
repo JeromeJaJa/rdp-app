@@ -357,7 +357,12 @@ function resolveTheme(theme: Theme): "dark" | "light" {
 /** Solid, or the system acrylic backdrop showing through translucent surfaces (experimental). */
 export function applyMaterial(material: WindowMaterial) {
   document.documentElement.dataset.material = material;
-  if (isTauri()) bg(be().setWindowMaterial(material === "acrylic"), "change the window material");
+  if (isTauri()) {
+    const dark = document.documentElement.dataset.theme !== "light";
+    be()
+      .setWindowMaterial(material === "acrylic", dark)
+      .catch(() => {});
+  }
 }
 
 export function applyTheme(theme: Theme, animate = true) {
@@ -384,6 +389,8 @@ export function applyTheme(theme: Theme, animate = true) {
       if (getState().settings.theme === "system") applyTheme("system");
     });
   }
+  // Acrylic's tint follows the theme, so re-apply it when the theme changes.
+  if (getState().settings.windowMaterial === "acrylic") applyMaterial("acrylic");
 }
 
 export function cycleTheme() {

@@ -252,8 +252,8 @@ export class TauriBackend implements Backend {
     return invoke("window_drag");
   }
 
-  setWindowMaterial(acrylic: boolean): Promise<void> {
-    return invoke("window_set_material", { acrylic });
+  setWindowMaterial(acrylic: boolean, dark: boolean): Promise<void> {
+    return invoke("window_set_material", { acrylic, dark });
   }
 
   setTabArea(rects: number[][]): Promise<void> {

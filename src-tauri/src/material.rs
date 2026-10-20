@@ -7,9 +7,10 @@
 //! default looks and performs like an ordinary opaque window; acrylic turns the page's
 //! backgrounds translucent and lets the system draw the blur behind them.
 //!
-//! The backdrop itself is `window-vibrancy` (a tauri dependency); this module only
-//! chooses it and keeps the webview's own background in step. Cosmetic: a failure is
-//! logged, never surfaced.
+//! On Windows 11 the acrylic tint follows the window's immersive dark-mode flag, so we
+//! set it to match the app theme — otherwise the system draws a light-gray acrylic that
+//! reads gray under our dark surfaces. The blur itself is `window-vibrancy` (a tauri
+//! dependency). Cosmetic: a failure is logged, never surfaced.
 //!
 //! Revert by removing this module, its command, the `windowMaterial` setting, the
 //! `data-material` CSS, and the windows' `transparent` flag.
@@ -17,17 +18,31 @@
 use tauri::WebviewWindow;
 use tauri::window::Color;
 use window_vibrancy::{apply_acrylic, clear_acrylic};
+use windows::Win32::Foundation::HWND;
+use windows::Win32::Graphics::Dwm::{DWMWA_USE_IMMERSIVE_DARK_MODE, DwmSetWindowAttribute};
 
 /// The opaque page background in solid mode (matches `--bg`, `backgroundColor` in config).
 const SOLID: Color = Color(9, 9, 11, 255);
 
-pub fn apply(window: &WebviewWindow, acrylic: bool) {
-    if let Err(error) = try_apply(window, acrylic) {
+pub fn apply(window: &WebviewWindow, acrylic: bool, dark: bool) {
+    if let Err(error) = try_apply(window, acrylic, dark) {
         tracing::warn!(window = window.label(), %error, "window material not applied");
     }
 }
 
-fn try_apply(window: &WebviewWindow, acrylic: bool) -> anyhow::Result<()> {
+fn try_apply(window: &WebviewWindow, acrylic: bool, dark: bool) -> anyhow::Result<()> {
+    // The acrylic tint follows this: without it the system backdrop is light-gray.
+    // The attribute is a 4-byte BOOL (0/1).
+    let immersive_dark: u32 = dark.into();
+    // SAFETY: a DWM attribute set on our own window handle; the value outlives the call.
+    unsafe {
+        let _ = DwmSetWindowAttribute(
+            HWND(window.hwnd()?.0),
+            DWMWA_USE_IMMERSIVE_DARK_MODE,
+            (&raw const immersive_dark).cast(),
+            size_of::<u32>() as u32,
+        );
+    }
     if acrylic {
         apply_acrylic(window, None)?;
     } else {

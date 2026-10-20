@@ -124,8 +124,8 @@ export interface Backend {
   tearTab(id: ConnectionId): Promise<string>;
   /** Drags this (detached) window by its only tab, the same way. */
   dragWindow(): Promise<string>;
-  /** This window's material: solid, or the acrylic backdrop (experimental). */
-  setWindowMaterial(acrylic: boolean): Promise<void>;
+  /** This window's material: solid, or the acrylic backdrop (experimental). `dark` tints it. */
+  setWindowMaterial(acrylic: boolean, dark: boolean): Promise<void>;
   /** Where this window shows its tabs, as [x, y, width, height] rects in CSS px. */
   setTabArea(rects: number[][]): Promise<void>;
   /** Opens a new window holding the tab, next to this one. */

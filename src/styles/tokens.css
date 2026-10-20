@@ -109,14 +109,16 @@
    backdrop behind the window and the app's own surfaces become tints over it. Remove
    this block and src-tauri/src/material.rs to drop the experiment. */
 :root[data-material="acrylic"][data-theme="dark"] {
-  --bg: rgba(9, 9, 11, 0.5);
-  --panel: rgba(14, 14, 17, 0.42);
-  --thumb-bg: rgba(5, 5, 6, 0.6);
+  /* Deep, mostly-opaque dark tint: the OS acrylic is a light-gray frost, so a thin
+     tint reads gray. These let the blur through while keeping the glass dark. */
+  --bg: rgba(10, 10, 13, 0.72);
+  --panel: rgba(16, 16, 20, 0.64);
+  --thumb-bg: rgba(5, 5, 6, 0.72);
 }
 :root[data-material="acrylic"][data-theme="light"] {
-  --bg: rgba(247, 247, 248, 0.55);
-  --panel: rgba(251, 251, 252, 0.45);
-  --thumb-bg: rgba(233, 233, 236, 0.6);
+  --bg: rgba(246, 246, 248, 0.68);
+  --panel: rgba(250, 250, 252, 0.6);
+  --thumb-bg: rgba(233, 233, 236, 0.7);
 }
 /* Only the leaf surfaces paint; stacked translucent layers would turn opaque. */
 :root[data-material="acrylic"] body,
