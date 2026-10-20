@@ -114,9 +114,21 @@ export interface Backend {
   onSelectTab(cb: (id: ConnectionId) => void): Unsubscribe;
   /** Moves a tab into "main" or a detached window (at `index`, or the end). */
   moveTab(id: ConnectionId, target: string, index?: number): Promise<void>;
-  /** The tab was dropped outside this window: into the window under the pointer, or a new one. */
-  dropTab(id: ConnectionId): Promise<string>;
-  /** Opens a new window holding the tab. */
+  /** A tab is being dragged out of its strip: get a window ready in case it's torn off. */
+  prepareWindow(): Promise<void>;
+  /**
+   * Tears the tab out of this window mid-drag: its new window follows the pointer until
+   * the button is released (and joins another window's tabs if dropped on them).
+   * Resolves with the window the tab ends up in.
+   */
+  tearTab(id: ConnectionId): Promise<string>;
+  /** Drags this (detached) window by its only tab, the same way. */
+  dragWindow(): Promise<string>;
+  /** This window's material: solid, or the acrylic backdrop (experimental). */
+  setWindowMaterial(acrylic: boolean): Promise<void>;
+  /** Where this window shows its tabs, as [x, y, width, height] rects in CSS px. */
+  setTabArea(rects: number[][]): Promise<void>;
+  /** Opens a new window holding the tab, next to this one. */
   detachTab(id: ConnectionId): Promise<string>;
   /** New tab order for this (detached) window. */
   reorderWindowTabs(tabs: ConnectionId[]): Promise<void>;

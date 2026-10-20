@@ -4,19 +4,41 @@
 //! or a detached window. A session's full-size frames go to the window that shows it,
 //! and it is sized to that window. Closing a detached window hands its tabs back to the
 //! main window; their sessions stay connected.
+//!
+//! A tab pulled out of its strip mid-drag gets a window sized so its session area
+//! matches the session (no resize), which then follows the pointer through the system
+//! move loop, like a dragged title bar. Released over another window's tab area, the
+//! tab joins that window. Dragging the only tab of a window moves that window the same
+//! way. Size changes wait for the drop, and a hidden window is prepared when a drag
+//! starts, so tearing a tab off is instant.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{Context as _, bail};
 use parking_lot::Mutex;
 use rdp_engine::{Engine, Viewport};
 use serde::Serialize;
-use tauri::{AppHandle, Emitter as _, Manager as _, PhysicalPosition, WebviewUrl, WebviewWindowBuilder};
+use tauri::{
+    AppHandle, Emitter as _, Manager as _, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow,
+    WebviewWindowBuilder,
+};
 
 use crate::frames::MAIN_WINDOW;
 
 /// Labels of detached windows start with this.
 pub const PREFIX: &str = "win-";
+
+/// A detached window's title bar height in CSS px (`--titlebar-h`).
+const TITLEBAR: f64 = 40.0;
+/// Where the pointer sits in a torn-off window, in CSS px: on its tab, mid title bar.
+const GRAB: (f64, f64) = (110.0, 20.0);
+/// A prepared window that no drag used is closed after this long.
+const SPARE_TTL: Duration = Duration::from_secs(60);
+
+/// A rectangle in CSS px relative to a window's client area: x, y, width, height.
+pub type Rect = [f64; 4];
 
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -41,28 +63,31 @@ struct State {
     thumbnails: Vec<String>,
     /// Each window's session-area size.
     viewports: HashMap<String, Viewport>,
+    /// Windows being dragged: their sessions keep their size until the drop.
+    held: HashSet<String>,
+    /// Where each window shows its tabs (title bar, sidebar): where a dragged tab can join it.
+    tab_areas: HashMap<String, Vec<Rect>>,
+    /// A loaded, hidden window ready for the next tear-off, with the stamp that expires it.
+    spare: Option<(String, u64)>,
+    spare_stamp: u64,
 }
 
 pub struct Tearoff {
     app: AppHandle,
     engine: Engine,
     #[cfg(windows)]
-    surfaces: std::sync::Arc<crate::frames::WebviewSurfaces>,
-    state: Mutex<State>,
+    surfaces: Arc<crate::frames::WebviewSurfaces>,
+    state: Arc<Mutex<State>>,
 }
 
 impl Tearoff {
-    pub fn new(
-        app: AppHandle,
-        engine: Engine,
-        #[cfg(windows)] surfaces: std::sync::Arc<crate::frames::WebviewSurfaces>,
-    ) -> Self {
+    pub fn new(app: AppHandle, engine: Engine, #[cfg(windows)] surfaces: Arc<crate::frames::WebviewSurfaces>) -> Self {
         Self {
             app,
             engine,
             #[cfg(windows)]
             surfaces,
-            state: Mutex::new(State::default()),
+            state: Arc::default(),
         }
     }
 
@@ -72,6 +97,17 @@ impl Tearoff {
 
     fn broadcast(&self) {
         let _ = self.app.emit("window-layout", self.layout());
+    }
+
+    fn tabs_of(&self, label: &str) -> Vec<String> {
+        let state = self.state.lock();
+        state
+            .layout
+            .windows
+            .iter()
+            .find(|w| w.label == label)
+            .map(|w| w.tabs.clone())
+            .unwrap_or_default()
     }
 
     /// Moves a tab into `target` (the main window or a detached one) at `index` (end if
@@ -129,126 +165,230 @@ impl Tearoff {
         self.broadcast();
     }
 
-    /// Opens a new window at the pointer holding `session`'s tab.
-    pub fn detach(&self, session: &str) -> anyhow::Result<String> {
-        let label = format!("{PREFIX}{}", &uuid::Uuid::new_v4().simple().to_string()[..8]);
-        let cursor = self.app.cursor_position().ok();
-        let size = self
-            .app
-            .get_webview_window(MAIN_WINDOW)
-            .and_then(|w| w.inner_size().ok().zip(w.scale_factor().ok()))
-            .map(|(s, scale)| (f64::from(s.width) / scale * 0.8, f64::from(s.height) / scale * 0.8))
-            .unwrap_or((1280.0, 800.0));
-        let window = WebviewWindowBuilder::new(&self.app, &label, WebviewUrl::App("index.html".into()))
+    // ── Opening windows ─────────────────────────────────────────────────────
+
+    /// Has a hidden window ready for a tear-off: a tab drag started. Blocking.
+    pub fn prepare(&self) -> anyhow::Result<()> {
+        let existing = {
+            let mut state = self.state.lock();
+            state.spare_stamp += 1;
+            let stamp = state.spare_stamp;
+            state.spare.as_mut().map(|(label, s)| {
+                *s = stamp;
+                (label.clone(), stamp)
+            })
+        };
+        let (label, stamp) = match existing {
+            Some(spare) => spare,
+            None => {
+                let label = new_label();
+                self.build(&label)?;
+                let mut state = self.state.lock();
+                let stamp = state.spare_stamp;
+                state.spare = Some((label.clone(), stamp));
+                (label, stamp)
+            }
+        };
+        // Closed if no drag uses it.
+        let state = Arc::clone(&self.state);
+        let app = self.app.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(SPARE_TTL).await;
+            let unused = {
+                let mut state = state.lock();
+                let unused = state.spare.as_ref().is_some_and(|(l, s)| *l == label && *s == stamp);
+                if unused {
+                    state.spare = None;
+                }
+                unused
+            };
+            if unused && let Some(window) = app.get_webview_window(&label) {
+                let _ = window.close();
+            }
+        });
+        Ok(())
+    }
+
+    /// A hidden detached window; shown once it holds a tab.
+    fn build(&self, label: &str) -> anyhow::Result<WebviewWindow> {
+        let window = WebviewWindowBuilder::new(&self.app, label, WebviewUrl::App("index.html".into()))
             .title("RDP App")
-            .inner_size(size.0.max(720.0), size.1.max(480.0))
+            .inner_size(1280.0, 800.0)
             .min_inner_size(480.0, 320.0)
             .decorations(false)
             .shadow(true)
             .disable_drag_drop_handler()
             .background_color(tauri::window::Color(9, 9, 11, 255))
-            // Shown by the page after its first paint (no white flash).
             .visible(false)
             .build()
             .context("open window")?;
         #[cfg(windows)]
         crate::configure_webview(&window);
-        // In case the page fails to load.
-        let late = window.clone();
-        std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_secs(4));
-            if !late.is_visible().unwrap_or(true) {
-                let _ = late.show();
+        Ok(window)
+    }
+
+    /// Puts `session`'s tab in a window of its own, sized so the session keeps its size,
+    /// placed by `place`, and shows it. `hold` defers size changes (a drag follows).
+    fn open(
+        &self,
+        session: &str,
+        source: &str,
+        hold: bool,
+        place: impl FnOnce(&WebviewWindow),
+    ) -> anyhow::Result<(String, WebviewWindow)> {
+        let spare = self.state.lock().spare.take().map(|(label, _)| label);
+        let (label, window) = match spare.and_then(|l| Some((l.clone(), self.app.get_webview_window(&l)?))) {
+            Some(ready) => ready,
+            None => {
+                let label = new_label();
+                let window = self.build(&label)?;
+                (label, window)
             }
-        });
-        if let Some(cursor) = cursor {
-            place_at(&window, cursor);
+        };
+        let current = {
+            let mut state = self.state.lock();
+            // Its last size report predates the resize below.
+            state.viewports.remove(&label);
+            if hold {
+                state.held.insert(label.clone());
+            }
+            state.layout.windows.push(WindowTabs {
+                label: label.clone(),
+                tabs: Vec::new(),
+            });
+            state.viewports.get(source).copied()
+        };
+        if let Some(vp) = current {
+            let titlebar = (TITLEBAR * f64::from(vp.scale) / 100.0).round() as u32;
+            let _ = window.set_size(PhysicalSize::new(u32::from(vp.width), u32::from(vp.height) + titlebar));
+            // Pinned to its current size until the window reports its own.
+            self.engine.set_session_viewport(session, Some(vp));
         }
-        self.state.lock().layout.windows.push(WindowTabs {
-            label: label.clone(),
-            tabs: Vec::new(),
-        });
+        place(&window);
         self.move_tab(session, &label, None)?;
+        let _ = window.show();
+        let _ = window.set_focus();
+        Ok((label, window))
+    }
+
+    /// Opens `session`'s tab in a new window next to `source` (menu command). Blocking.
+    pub fn detach(&self, session: &str, source: &str) -> anyhow::Result<String> {
+        let anchor = self
+            .app
+            .get_webview_window(source)
+            .and_then(|w| w.outer_position().ok());
+        let (label, _) = self.open(session, source, false, |w| {
+            if let Some(p) = anchor {
+                let _ = w.set_position(PhysicalPosition::new(p.x + 48, p.y + 48));
+            }
+        })?;
         Ok(label)
     }
 
-    /// A tab was dropped outside `source`: onto another of our windows (moves there) or
-    /// onto empty space (opens a new window there). Returns the tab's window.
-    pub fn drop_tab(&self, session: &str, source: &str) -> anyhow::Result<String> {
+    /// Tears `session`'s tab out of `source` mid-drag: its new window follows the pointer
+    /// until the button is released. Returns the window the tab ends up in. Blocking.
+    pub fn tear(&self, session: &str, source: &str) -> anyhow::Result<String> {
         let cursor = self.app.cursor_position().context("pointer position")?;
-        let layout = self.layout();
-        let mut labels = vec![MAIN_WINDOW.to_owned()];
-        labels.extend(layout.windows.iter().map(|w| w.label.clone()));
-        labels.retain(|l| l != source);
-        if let Some(label) = self.window_at(cursor, &labels) {
-            self.move_tab(session, &label, None)?;
-            self.focus(&label);
-            return Ok(label);
-        }
-        // A window's only tab: move that window rather than open another.
-        let alone = layout
-            .windows
-            .iter()
-            .any(|w| w.label == source && w.tabs.len() == 1 && w.tabs[0] == session);
-        if alone && let Some(window) = self.app.get_webview_window(source) {
-            let _ = window.unmaximize();
-            place_at(&window, cursor);
-            return Ok(source.to_owned());
-        }
-        self.detach(session)
+        let (label, window) = self.open(session, source, true, |w| place_at(w, cursor))?;
+        Ok(self.follow_pointer(&label, &window, cursor))
     }
 
-    /// Which of `labels` is the window under the pointer. Z-order aware: a window
-    /// covering ours there (even another app's) wins, so nothing matches.
-    #[cfg(windows)]
-    fn window_at(&self, cursor: PhysicalPosition<f64>, labels: &[String]) -> Option<String> {
-        use windows::Win32::Foundation::POINT;
-        use windows::Win32::UI::WindowsAndMessaging::{GA_ROOT, GetAncestor, WindowFromPoint};
-        // SAFETY: plain Win32 queries; no pointers are kept.
-        let hit = unsafe {
-            GetAncestor(
-                WindowFromPoint(POINT {
-                    x: cursor.x as i32,
-                    y: cursor.y as i32,
-                }),
-                GA_ROOT,
+    /// Drags a detached window by its only tab. Returns the window the tab ends up in.
+    /// Blocking.
+    pub fn drag(&self, label: &str) -> anyhow::Result<String> {
+        let window = self.app.get_webview_window(label).context("window")?;
+        let cursor = self.app.cursor_position().context("pointer position")?;
+        self.state.lock().held.insert(label.to_owned());
+        Ok(self.follow_pointer(label, &window, cursor))
+    }
+
+    /// Runs the move loop for a held window, then either merges its tabs into the window
+    /// whose tab area it was dropped on, or lets its sessions take its size.
+    fn follow_pointer(&self, label: &str, window: &WebviewWindow, cursor: PhysicalPosition<f64>) -> String {
+        #[cfg(windows)]
+        native::move_with_pointer(&self.app, window, cursor);
+        let _ = cursor;
+        let target = self
+            .app
+            .cursor_position()
+            .ok()
+            .and_then(|at| self.drop_target(label, window, at));
+        let result = match target {
+            Some(target) => {
+                for tab in self.tabs_of(label) {
+                    let _ = self.move_tab(&tab, &target, None);
+                }
+                self.focus(&target);
+                target
+            }
+            None => label.to_owned(),
+        };
+        self.release(label);
+        result
+    }
+
+    /// Ends a hold: the window's sessions take its current size.
+    fn release(&self, label: &str) {
+        let (viewport, tabs) = {
+            let mut state = self.state.lock();
+            state.held.remove(label);
+            (
+                state.viewports.get(label).copied(),
+                state
+                    .layout
+                    .windows
+                    .iter()
+                    .find(|w| w.label == label)
+                    .map(|w| w.tabs.clone()),
             )
         };
-        if hit.is_invalid() {
-            return None;
+        if let (Some(viewport), Some(tabs)) = (viewport, tabs) {
+            for tab in tabs {
+                self.engine.set_session_viewport(&tab, Some(viewport));
+            }
         }
-        labels
-            .iter()
-            .find(|l| {
-                self.app
-                    .get_webview_window(l)
-                    .and_then(|w| w.hwnd().ok())
-                    .is_some_and(|h| std::ptr::eq(h.0, hit.0))
-            })
-            .cloned()
     }
 
-    #[cfg(not(windows))]
-    fn window_at(&self, cursor: PhysicalPosition<f64>, labels: &[String]) -> Option<String> {
-        labels
-            .iter()
-            .find(|l| {
-                let Some(window) = self.app.get_webview_window(l) else {
-                    return false;
-                };
-                if window.is_minimized().unwrap_or(false) {
-                    return false;
-                }
-                let (Ok(pos), Ok(size)) = (window.outer_position(), window.outer_size()) else {
-                    return false;
-                };
-                cursor.x >= f64::from(pos.x)
-                    && cursor.y >= f64::from(pos.y)
-                    && cursor.x < f64::from(pos.x) + f64::from(size.width)
-                    && cursor.y < f64::from(pos.y) + f64::from(size.height)
-            })
-            .cloned()
+    /// The window (other than `dragged`) whose tab area is under the pointer, if it is
+    /// the topmost window there.
+    fn drop_target(&self, dragged: &str, window: &WebviewWindow, at: PhysicalPosition<f64>) -> Option<String> {
+        #[cfg(windows)]
+        let under = native::window_below(window, at)?;
+        let _ = window;
+        let mut labels = vec![MAIN_WINDOW.to_owned()];
+        labels.extend(self.layout().windows.into_iter().map(|w| w.label));
+        labels.into_iter().filter(|l| l != dragged).find(|label| {
+            let Some(candidate) = self.app.get_webview_window(label) else {
+                return false;
+            };
+            #[cfg(windows)]
+            if candidate.hwnd().ok().map(|h| h.0 as isize) != Some(under) {
+                return false;
+            }
+            self.in_tab_area(label, &candidate, at)
+        })
     }
+
+    fn in_tab_area(&self, label: &str, window: &WebviewWindow, at: PhysicalPosition<f64>) -> bool {
+        let (Ok(origin), Ok(scale)) = (window.inner_position(), window.scale_factor()) else {
+            return false;
+        };
+        let state = self.state.lock();
+        state.tab_areas.get(label).is_some_and(|rects| {
+            rects.iter().any(|&[x, y, w, h]| {
+                let left = f64::from(origin.x) + x * scale;
+                let top = f64::from(origin.y) + y * scale;
+                at.x >= left && at.x < left + w * scale && at.y >= top && at.y < top + h * scale
+            })
+        })
+    }
+
+    /// Where a window shows its tabs, in CSS px (empty in fullscreen).
+    pub fn set_tab_area(&self, label: &str, rects: Vec<Rect>) {
+        self.state.lock().tab_areas.insert(label.to_owned(), rects);
+    }
+
+    // ── Closing, visibility, sizes ──────────────────────────────────────────
 
     /// A detached window closed: its tabs go back to the main window.
     pub fn window_closed(&self, label: &str) {
@@ -256,6 +396,11 @@ impl Tearoff {
             let mut state = self.state.lock();
             state.active.remove(label);
             state.viewports.remove(label);
+            state.held.remove(label);
+            state.tab_areas.remove(label);
+            if state.spare.as_ref().is_some_and(|(l, _)| l == label) {
+                state.spare = None;
+            }
             let Some(pos) = state.layout.windows.iter().position(|w| w.label == label) else {
                 return;
             };
@@ -285,6 +430,9 @@ impl Tearoff {
         let tabs = {
             let mut state = self.state.lock();
             state.viewports.insert(label.to_owned(), viewport);
+            if state.held.contains(label) {
+                return;
+            }
             state
                 .layout
                 .windows
@@ -325,17 +473,26 @@ impl Tearoff {
         self.engine.set_visibility(active, thumbnails);
     }
 
+    /// Routes the session's frames to `label` and sizes it for that window: the main
+    /// view's size, or the detached window's (unless that one is held or hasn't
+    /// reported a size yet: the session keeps its size).
     fn apply_host(&self, session: &str, label: &str) {
         #[cfg(windows)]
         self.surfaces.set_host(session, label);
-        let viewport = if label == MAIN_WINDOW {
-            None
-        } else {
-            self.state.lock().viewports.get(label).copied()
+        let viewport = {
+            let state = self.state.lock();
+            if label == MAIN_WINDOW {
+                None
+            } else if state.held.contains(label) {
+                return;
+            } else {
+                match state.viewports.get(label) {
+                    Some(vp) => Some(*vp),
+                    None => return,
+                }
+            }
         };
-        if label == MAIN_WINDOW || viewport.is_some() {
-            self.engine.set_session_viewport(session, viewport);
-        }
+        self.engine.set_session_viewport(session, viewport);
     }
 
     /// Brings the window holding `session`'s tab to the front and selects the tab there.
@@ -363,8 +520,119 @@ impl Tearoff {
     }
 }
 
-/// Moves a window so its tab strip sits under the pointer.
-fn place_at(window: &tauri::WebviewWindow, cursor: PhysicalPosition<f64>) {
+fn new_label() -> String {
+    format!("{PREFIX}{}", &uuid::Uuid::new_v4().simple().to_string()[..8])
+}
+
+/// Moves a window so the pointer is over its tab, mid title bar.
+fn place_at(window: &WebviewWindow, cursor: PhysicalPosition<f64>) {
     let scale = window.scale_factor().unwrap_or(1.0);
-    let _ = window.set_position(PhysicalPosition::new(cursor.x - 140.0 * scale, cursor.y - 18.0 * scale));
+    let _ = window.set_position(PhysicalPosition::new(
+        cursor.x - GRAB.0 * scale,
+        cursor.y - GRAB.1 * scale,
+    ));
+}
+
+#[cfg(windows)]
+mod native {
+    use std::time::Duration;
+
+    use tauri::{AppHandle, PhysicalPosition, WebviewWindow};
+    use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT, WPARAM};
+    use windows::Win32::Graphics::Dwm::{DWMWA_CLOAKED, DwmGetWindowAttribute};
+    use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, ReleaseCapture, VK_LBUTTON, VK_RBUTTON};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GW_HWNDNEXT, GWL_EXSTYLE, GetSystemMetrics, GetWindow, GetWindowLongW, GetWindowRect, IsIconic,
+        IsWindowVisible, SC_MOVE, SM_SWAPBUTTON, SendMessageW, WM_SYSCOMMAND, WS_EX_TRANSPARENT,
+    };
+
+    /// `SC_MOVE | HTCAPTION`: a move driven by the pointer, as from a title bar.
+    const SC_DRAGMOVE: usize = SC_MOVE as usize | 2;
+
+    fn hwnd(window: &WebviewWindow) -> Option<HWND> {
+        window.hwnd().ok().map(|h| HWND(h.0))
+    }
+
+    fn primary_button_down() -> bool {
+        // SAFETY: plain input-state queries.
+        unsafe {
+            let key = if GetSystemMetrics(SM_SWAPBUTTON) != 0 {
+                VK_RBUTTON
+            } else {
+                VK_LBUTTON
+            };
+            (GetAsyncKeyState(i32::from(key.0)) as u16) & 0x8000 != 0
+        }
+    }
+
+    /// Moves `window` with the pointer until the button is released (the system move
+    /// loop, as for a dragged title bar). Blocks until then: call off the UI thread.
+    pub(super) fn move_with_pointer(app: &AppHandle, window: &WebviewWindow, cursor: PhysicalPosition<f64>) {
+        let Some(hwnd) = hwnd(window) else { return };
+        if !primary_button_down() {
+            return;
+        }
+        // The press began in another window (the tab strip), which holds the capture.
+        let (tx, rx) = std::sync::mpsc::channel();
+        let _ = app.run_on_main_thread(move || {
+            // SAFETY: releases this thread's mouse capture.
+            unsafe {
+                let _ = ReleaseCapture();
+            }
+            let _ = tx.send(());
+        });
+        let _ = rx.recv_timeout(Duration::from_secs(1));
+        let x = cursor.x as i32 as i16 as u16 as u32;
+        let y = cursor.y as i32 as i16 as u16 as u32;
+        // SAFETY: a synchronous message to our own window; returns when the move ends.
+        unsafe {
+            SendMessageW(
+                hwnd,
+                WM_SYSCOMMAND,
+                Some(WPARAM(SC_DRAGMOVE)),
+                Some(LPARAM(((y << 16) | x) as isize)),
+            );
+        }
+    }
+
+    /// The topmost window under `at` beneath `window` (which sits under the pointer
+    /// itself), skipping hidden, click-through and cloaked ones.
+    pub(super) fn window_below(window: &WebviewWindow, at: PhysicalPosition<f64>) -> Option<isize> {
+        let point = POINT {
+            x: at.x as i32,
+            y: at.y as i32,
+        };
+        // SAFETY: walks the z-order with plain window queries.
+        unsafe {
+            let mut next = GetWindow(hwnd(window)?, GW_HWNDNEXT).ok()?;
+            loop {
+                if hit(next, point) {
+                    return Some(next.0 as isize);
+                }
+                next = GetWindow(next, GW_HWNDNEXT).ok()?;
+            }
+        }
+    }
+
+    unsafe fn hit(hwnd: HWND, point: POINT) -> bool {
+        // SAFETY: plain window queries on a handle from the z-order walk.
+        unsafe {
+            if !IsWindowVisible(hwnd).as_bool() || IsIconic(hwnd).as_bool() {
+                return false;
+            }
+            if GetWindowLongW(hwnd, GWL_EXSTYLE) as u32 & WS_EX_TRANSPARENT.0 != 0 {
+                return false;
+            }
+            let mut cloaked = 0u32;
+            if DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, (&raw mut cloaked).cast(), 4).is_ok() && cloaked != 0 {
+                return false;
+            }
+            let mut rect = RECT::default();
+            GetWindowRect(hwnd, &mut rect).is_ok()
+                && point.x >= rect.left
+                && point.x < rect.right
+                && point.y >= rect.top
+                && point.y < rect.bottom
+        }
+    }
 }

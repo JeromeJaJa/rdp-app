@@ -17,6 +17,7 @@ import {
   type SettingOverrides,
   type Theme,
   type UiCommand,
+  type WindowMaterial,
   type WindowTabs,
 } from "../lib/types";
 import { gatewayFromInput } from "../lib/gateway";
@@ -81,6 +82,7 @@ export async function initApp(): Promise<void> {
   setState({ ready: true, windows, ...(main ? {} : { view: "session" as const }) });
   if (!main) keepDetachedSelection([]);
   applyTheme(lib.settings.theme, false);
+  applyMaterial(lib.settings.windowMaterial);
   backend.onSessionEvent(onSessionEvent);
   backend.onLibraryChanged((next) => {
     applyLibrary(next);
@@ -157,9 +159,26 @@ function windowOrder(): ConnectionId[] {
   return isMainWindow() ? flatOrder(getState()) : windowTabs(getState(), windowLabel());
 }
 
-/** A tab was dragged out of this window and released: it moves to the window under the pointer, or a new one. */
-export function dropTabOutside(id: ConnectionId) {
-  bg(be().dropTab(id), "move tab");
+/** A tab drag left its strip: a window gets ready in case the tab is torn off. */
+export function prepareTearOff() {
+  be()
+    .prepareWindow()
+    .catch(() => {});
+}
+
+/**
+ * Tears a tab out of this window mid-drag (Chrome-style): this window's drag ends and
+ * the tab's new window follows the pointer.
+ */
+export function tearOff(id: ConnectionId) {
+  // dnd-kit cancels on Escape; the system move loop takes the pointer from here.
+  document.dispatchEvent(new KeyboardEvent("keydown", { code: "Escape", key: "Escape" }));
+  bg(be().tearTab(id), "open a window");
+}
+
+/** Drags this window by its only tab. */
+export function dragWindow() {
+  bg(be().dragWindow(), "move the window");
 }
 
 /**
@@ -188,6 +207,7 @@ export function applyLibrary(lib: Library, opts: { preferSelected?: string | nul
   const themeChanged = s.ready && lib.settings.theme !== s.settings.theme;
   setState({ order, connById, groups, settings: lib.settings, sessions, selectedId });
   if (themeChanged) applyTheme(lib.settings.theme);
+  if (s.ready && lib.settings.windowMaterial !== s.settings.windowMaterial) applyMaterial(lib.settings.windowMaterial);
 }
 
 // Session events arrive in bursts (connect-all can emit hundreds at once), so
@@ -328,6 +348,12 @@ function resolveTheme(theme: Theme): "dark" | "light" {
   return matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
+/** Solid, or the system acrylic backdrop showing through translucent surfaces (experimental). */
+export function applyMaterial(material: WindowMaterial) {
+  document.documentElement.dataset.material = material;
+  if (isTauri()) bg(be().setWindowMaterial(material === "acrylic"), "change the window material");
+}
+
 export function applyTheme(theme: Theme, animate = true) {
   const root = document.documentElement;
   const resolved = resolveTheme(theme);
@@ -368,6 +394,7 @@ export function updateSettings(patch: Partial<Settings>) {
   const settings = { ...getState().settings, ...patch };
   setState({ settings });
   if (patch.theme) applyTheme(patch.theme);
+  if (patch.windowMaterial) applyMaterial(patch.windowMaterial);
   clearTimeout(settingsTimer);
   settingsTimer = setTimeout(() => bg(be().saveSettings(getState().settings), "save settings"), 250);
 }

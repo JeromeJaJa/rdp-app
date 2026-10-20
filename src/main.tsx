@@ -20,7 +20,9 @@ async function boot() {
       {isMainWindow() ? <App /> : <DetachedApp />}
     </React.StrictMode>,
   );
-  if (isTauri()) {
+  // Detached windows are shown by the backend once they hold a tab (one may be prepared
+  // ahead of a tear-off, hidden).
+  if (isTauri() && isMainWindow()) {
     // The window starts hidden; reveal it after the first paint to avoid a white flash.
     requestAnimationFrame(() =>
       requestAnimationFrame(async () => {

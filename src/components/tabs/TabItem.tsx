@@ -1,7 +1,7 @@
 import { forwardRef, memo, useEffect, useRef, type CSSProperties, type HTMLAttributes } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { connect, disconnect, openMenu, select } from "../../state/actions";
+import { connect, disconnect, dragWindow, openMenu, select } from "../../state/actions";
 import { displayName, hostOf, isBusy, isLive, useConnection, useStatus, useStore } from "../../state/store";
 import { isMainWindow } from "../../lib/env";
 import { AppWindow, X } from "lucide-react";
@@ -17,14 +17,12 @@ interface ViewProps extends HTMLAttributes<HTMLDivElement> {
   variant: Variant;
   dragging?: boolean;
   overlay?: boolean;
-  /** The overlay is about to leave the window. */
-  detaching?: boolean;
   /** Shows an × that calls this (detached windows: send the tab back). */
   onClose?: () => void;
 }
 
 const TabView = forwardRef<HTMLDivElement, ViewProps>(function TabView(
-  { id, variant, dragging, overlay, detaching, onClose, style, ...rest },
+  { id, variant, dragging, overlay, onClose, style, ...rest },
   ref,
 ) {
   const conn = useConnection(id);
@@ -44,7 +42,7 @@ const TabView = forwardRef<HTMLDivElement, ViewProps>(function TabView(
       style={style as CSSProperties}
       className={`tab tab--${variant} ${selected ? "is-selected" : ""} ${dragging ? "is-dragging" : ""} ${
         overlay ? "is-overlay" : ""
-      } ${detaching ? "is-detaching" : ""} ${elsewhere ? "is-elsewhere" : ""}`}
+      } ${elsewhere ? "is-elsewhere" : ""}`}
       role="tab"
       aria-selected={selected}
       title={variant === "top" ? `${name} — ${conn.host}` : undefined}
@@ -57,7 +55,6 @@ const TabView = forwardRef<HTMLDivElement, ViewProps>(function TabView(
           <AppWindow size={12} />
         </span>
       )}
-      {detaching && <span className="tab__detach-hint">New window</span>}
       {onClose && !overlay && (
         <button
           className="tab__close"
@@ -135,6 +132,24 @@ function SortableTab({ id, variant, onClose }: { id: ConnectionId; variant: Vari
 
 export const TabItem = memo(SortableTab);
 
-export function TabOverlay({ id, variant, detaching }: { id: ConnectionId; variant: Variant; detaching?: boolean }) {
-  return <TabView id={id} variant={variant} overlay detaching={detaching} />;
+export function TabOverlay({ id, variant }: { id: ConnectionId; variant: Variant }) {
+  return <TabView id={id} variant={variant} overlay />;
+}
+
+/** A detached window's only tab: dragging it moves the window (Chrome-style). */
+export function SoloTab({ id, onClose }: { id: ConnectionId; onClose: () => void }) {
+  return (
+    <TabView
+      id={id}
+      variant="top"
+      onClose={onClose}
+      onPointerDown={(e) => {
+        if (e.button === 0) dragWindow();
+      }}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        openMenu({ x: e.clientX, y: e.clientY, target: { kind: "connection", id } });
+      }}
+    />
+  );
 }

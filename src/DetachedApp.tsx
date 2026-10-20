@@ -7,7 +7,7 @@ import { Dialogs } from "./components/dialogs/Dialogs";
 import { CertificatePrompts } from "./components/dialogs/CertificatePrompt";
 import { ContextMenu } from "./components/menu/ContextMenu";
 import { Toasts } from "./components/toast/Toasts";
-import { useEngineSync, useShortcuts, useViewportReporter } from "./state/hooks";
+import { useEngineSync, useShortcuts, useTabAreaReporter, useViewportReporter } from "./state/hooks";
 import { useStore } from "./state/store";
 import "./app.css";
 
@@ -19,6 +19,7 @@ export function DetachedApp() {
   useShortcuts();
   useEngineSync();
   useViewportReporter(mainRef);
+  useTabAreaReporter();
 
   return (
     <div className={`app app--top app--detached ${fullscreen ? "is-fullscreen" : ""}`}>

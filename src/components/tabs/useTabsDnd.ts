@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   closestCenter,
   PointerSensor,
@@ -12,7 +12,7 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { arrayMove } from "@dnd-kit/sortable";
-import { applyOrder, dropTabOutside, selectRelative } from "../../state/actions";
+import { applyOrder, prepareTearOff, selectRelative, tearOff } from "../../state/actions";
 import { isTauri } from "../../lib/env";
 import { buildSections, useStore, type Section } from "../../state/store";
 import type { GroupId } from "../../lib/types";
@@ -72,14 +72,41 @@ export function dragPointer(e: { activatorEvent: Event | null; delta: { x: numbe
   return { x: (start?.clientX ?? 0) + e.delta.x, y: (start?.clientY ?? 0) + e.delta.y };
 }
 
+/** Measures how far (CSS px) a point is past a tab strip; negative while over it. */
+export type PastStrip = (x: number, y: number) => number;
+
+/** How far below the title bar (and its tab strip) a point is. */
+export const pastTitlebar: PastStrip = (_x, y) => y - (document.querySelector(".titlebar")?.getBoundingClientRect().bottom ?? Infinity);
+
+/** Pulled this far past its strip, a tab tears off into a window of its own. */
+const TEAR_AT = 48;
+
 /**
- * Whether releasing a tab here should take it out of this window: the pointer is
- * outside the window, or `away` (e.g. well below a tab strip) says so.
+ * Chrome-style tear-off while a tab is dragged: a window is prepared once the tab
+ * leaves its strip, and the tab tears off when pulled `TEAR_AT` px away (or out of the
+ * window). Without `past` (the grid) nothing tears off. `onMove` reports whether the drag
+ * was handed off.
  */
-export function wantsDetach(p: { x: number; y: number }, away?: (x: number, y: number) => boolean): boolean {
-  if (!isTauri()) return false;
-  const outside = p.x < 0 || p.y < 0 || p.x >= window.innerWidth || p.y >= window.innerHeight;
-  return outside || !!away?.(p.x, p.y);
+export function useTearOff(past: PastStrip | undefined) {
+  const state = useRef({ prepared: false, torn: false });
+  const onStart = () => {
+    state.current = { prepared: false, torn: false };
+  };
+  const onMove = (id: string, p: { x: number; y: number }): boolean => {
+    if (!past || !isTauri() || state.current.torn) return state.current.torn;
+    const outside = p.x < 0 || p.y < 0 || p.x >= window.innerWidth || p.y >= window.innerHeight;
+    const distance = outside ? Infinity : past(p.x, p.y);
+    if (distance > 0 && !state.current.prepared) {
+      state.current.prepared = true;
+      prepareTearOff();
+    }
+    if (distance >= TEAR_AT) {
+      state.current.torn = true;
+      tearOff(id);
+    }
+    return state.current.torn;
+  };
+  return { onStart, onMove };
 }
 
 /**
@@ -87,12 +114,11 @@ export function wantsDetach(p: { x: number; y: number }, away?: (x: number, y: n
  * While dragging we work on a local draft of the sections so cross-group moves
  * render live; the store is updated once on drop.
  */
-export function useTabsDnd(opts: { away?: (x: number, y: number) => boolean } = {}) {
+export function useTabsDnd(past?: PastStrip) {
   const sections = useSections();
   const [draft, setDraft] = useState<Section[] | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
-  // Released now, the tab would leave this window (Chrome-style tear-off).
-  const [detaching, setDetaching] = useState(false);
+  const tear = useTearOff(past);
   const current = draft ?? sections;
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
@@ -104,13 +130,13 @@ export function useTabsDnd(opts: { away?: (x: number, y: number) => boolean } = 
   };
 
   const onDragStart = (e: DragStartEvent) => {
+    tear.onStart();
     setActiveId(String(e.active.id));
     setDraft(sections.map((s) => ({ ...s, ids: [...s.ids] })));
   };
 
   const onDragMove = (e: DragMoveEvent) => {
-    const next = wantsDetach(dragPointer(e), opts.away);
-    if (next !== detaching) setDetaching(next);
+    tear.onMove(String(e.active.id), dragPointer(e));
   };
 
   const onDragOver = ({ active, over }: DragOverEvent) => {
@@ -140,11 +166,6 @@ export function useTabsDnd(opts: { away?: (x: number, y: number) => boolean } = 
     const secs = draft;
     setActiveId(null);
     setDraft(null);
-    setDetaching(false);
-    if (wantsDetach(dragPointer(e), opts.away)) {
-      dropTabOutside(String(active.id));
-      return;
-    }
     if (!secs || !over) return;
     const a = String(active.id);
     const o = String(over.id);
@@ -165,7 +186,6 @@ export function useTabsDnd(opts: { away?: (x: number, y: number) => boolean } = 
   const onDragCancel = () => {
     setActiveId(null);
     setDraft(null);
-    setDetaching(false);
   };
 
   return {
@@ -173,7 +193,6 @@ export function useTabsDnd(opts: { away?: (x: number, y: number) => boolean } = 
     activeId,
     sensors,
     collisionDetection: collision,
-    detaching,
     handlers: { onDragStart, onDragMove, onDragOver, onDragEnd, onDragCancel },
   };
 }

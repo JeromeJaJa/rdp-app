@@ -5,7 +5,7 @@ import { horizontalListSortingStrategy, SortableContext } from "@dnd-kit/sortabl
 import { useStore } from "../../state/store";
 import type { GroupId } from "../../lib/types";
 import { TabItem, TabOverlay } from "./TabItem";
-import { containerId, stripWheel, useTabsDnd } from "./useTabsDnd";
+import { containerId, pastTitlebar, stripWheel, useTabsDnd } from "./useTabsDnd";
 import "./toptabs.css";
 
 // The tab stays in the strip until it is pulled well away from it (to tear it off).
@@ -26,13 +26,8 @@ function Segment({ groupId, label, ids }: { groupId: GroupId; label?: string; id
 }
 
 function TopTabsInner() {
-  // Dropped well below the tab strip or outside the window: a window of its own.
-  const { sections, activeId, detaching, sensors, collisionDetection, handlers } = useTabsDnd({
-    away: (_x, y) => {
-      const r = document.querySelector(".titlebar")?.getBoundingClientRect();
-      return !!r && y > r.bottom + 48;
-    },
-  });
+  // Pulled down out of the title bar: a window of its own.
+  const { sections, activeId, sensors, collisionDetection, handlers } = useTabsDnd(pastTitlebar);
   const groups = useStore((s) => s.groups);
   const groupName = useMemo(() => new Map(groups.map((g) => [g.id, g.name])), [groups]);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -76,7 +71,7 @@ function TopTabsInner() {
           })}
           {createPortal(
             <DragOverlay dropAnimation={{ duration: 160, easing: "cubic-bezier(0.16, 1, 0.3, 1)" }}>
-              {activeId ? <TabOverlay id={activeId} variant="top" detaching={detaching} /> : null}
+              {activeId ? <TabOverlay id={activeId} variant="top" /> : null}
             </DragOverlay>,
             document.body,
           )}

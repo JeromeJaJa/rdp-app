@@ -42,5 +42,9 @@ windows = { version = "0.62", features = [
     "Win32_System_Memory",
     "Win32_Storage_FileSystem",
     "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_Graphics_Dwm",
+    "Win32_Graphics_Gdi",
+    "Win32_UI_Controls",
 ] }
 windows-core = "0.62"

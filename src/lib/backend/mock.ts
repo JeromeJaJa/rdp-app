@@ -803,9 +803,19 @@ export class MockBackend implements Backend {
 
   async moveTab(): Promise<void> {}
 
-  async dropTab(): Promise<string> {
+  async prepareWindow(): Promise<void> {}
+
+  async tearTab(): Promise<string> {
     return "main";
   }
+
+  async dragWindow(): Promise<string> {
+    return "main";
+  }
+
+  async setTabArea(): Promise<void> {}
+
+  async setWindowMaterial(): Promise<void> {}
 
   async detachTab(): Promise<string> {
     throw new Error("Separate windows need the desktop app");

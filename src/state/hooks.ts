@@ -1,7 +1,8 @@
 import { useEffect } from "react";
 import { engine } from "../engine";
-import { isMainWindow } from "../lib/env";
+import { isMainWindow, isTauri } from "../lib/env";
 import {
+  be,
   moveToMainWindow,
   openDialog,
   selectIndex,
@@ -105,6 +106,52 @@ export function useEngineSync() {
     };
     sync();
     return useStore.subscribe(sync);
+  }, []);
+}
+
+/**
+ * Tells the backend where this window shows its tabs (title bar, sidebar), so a tab
+ * dragged in another window can be dropped onto them. Reported only when it changes.
+ */
+export function useTabAreaReporter() {
+  useEffect(() => {
+    if (!isTauri()) return;
+    let last = "";
+    let frame = 0;
+    const report = () => {
+      frame = 0;
+      const rects = [".titlebar", ".sidebar"].flatMap((selector) => {
+        const r = document.querySelector(selector)?.getBoundingClientRect();
+        return r && r.width > 0 && r.height > 0 ? [[r.x, r.y, r.width, r.height].map(Math.round)] : [];
+      });
+      const key = JSON.stringify(rects);
+      if (key === last) return;
+      last = key;
+      be()
+        .setTabArea(rects)
+        .catch(() => {});
+    };
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(report);
+    };
+    const ro = new ResizeObserver(schedule);
+    ro.observe(document.body);
+    // Layout changes that leave the window's size alone.
+    const unsubscribe = useStore.subscribe((s, prev) => {
+      if (
+        s.settings.tabPlacement !== prev.settings.tabPlacement ||
+        s.settings.sidebarWidth !== prev.settings.sidebarWidth ||
+        s.fullscreen !== prev.fullscreen
+      ) {
+        schedule();
+      }
+    });
+    schedule();
+    return () => {
+      ro.disconnect();
+      unsubscribe();
+      cancelAnimationFrame(frame);
+    };
   }, []);
 }
 

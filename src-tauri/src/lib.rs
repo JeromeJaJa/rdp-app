@@ -8,6 +8,8 @@ mod dpapi;
 #[cfg(windows)]
 mod frames;
 mod keys;
+#[cfg(windows)]
+mod material;
 mod profile;
 mod store;
 mod tearoff;
@@ -201,17 +203,59 @@ fn window_move_tab(state: State<'_, AppState>, id: String, target: String, index
     state.tearoff.move_tab(&id, &target, index).map_err(err)
 }
 
-/// A tab was dropped outside the calling window: moves it to the window under the
-/// pointer, or opens a new window there. Async: windows can't be built on a sync command.
-#[tauri::command]
-async fn window_drop_tab(window: tauri::Window, state: State<'_, AppState>, id: String) -> CmdResult<String> {
-    state.tearoff.drop_tab(&id, window.label()).map_err(err)
+/// Runs a blocking tear-off step off the UI thread and the async workers (building a
+/// window waits on the UI thread; a drag runs until the button is released).
+async fn tearoff_blocking<T: Send + 'static>(
+    app: tauri::AppHandle,
+    f: impl FnOnce(&tearoff::Tearoff) -> anyhow::Result<T> + Send + 'static,
+) -> CmdResult<T> {
+    tauri::async_runtime::spawn_blocking(move || f(&app.state::<AppState>().tearoff))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(err)
 }
 
-/// Opens a new window holding the tab.
+/// A tab drag started: has a window ready in case the tab is torn off.
 #[tauri::command]
-async fn window_detach_tab(state: State<'_, AppState>, id: String) -> CmdResult<String> {
-    state.tearoff.detach(&id).map_err(err)
+async fn window_prepare(app: tauri::AppHandle) -> CmdResult<()> {
+    tearoff_blocking(app, |t| t.prepare()).await
+}
+
+/// Tears a tab out of the calling window mid-drag; its window follows the pointer until
+/// the button is released. Returns the window the tab ends up in.
+#[tauri::command]
+async fn window_tear_tab(app: tauri::AppHandle, window: tauri::Window, id: String) -> CmdResult<String> {
+    let source = window.label().to_owned();
+    tearoff_blocking(app, move |t| t.tear(&id, &source)).await
+}
+
+/// Drags the calling (detached) window by its only tab.
+#[tauri::command]
+async fn window_drag(app: tauri::AppHandle, window: tauri::Window) -> CmdResult<String> {
+    let label = window.label().to_owned();
+    tearoff_blocking(app, move |t| t.drag(&label)).await
+}
+
+/// Opens a new window holding the tab, next to the calling window.
+#[tauri::command]
+async fn window_detach_tab(app: tauri::AppHandle, window: tauri::Window, id: String) -> CmdResult<String> {
+    let source = window.label().to_owned();
+    tearoff_blocking(app, move |t| t.detach(&id, &source)).await
+}
+
+/// The calling window's material: solid, or the acrylic backdrop (experimental).
+#[tauri::command]
+fn window_set_material(window: tauri::WebviewWindow, acrylic: bool) -> CmdResult<()> {
+    #[cfg(windows)]
+    material::apply(&window, acrylic).map_err(err)?;
+    let _ = (window, acrylic);
+    Ok(())
+}
+
+/// Where the calling window shows its tabs (CSS px): where a dragged tab can join it.
+#[tauri::command]
+fn window_set_tab_area(window: tauri::Window, state: State<'_, AppState>, rects: Vec<tearoff::Rect>) {
+    state.tearoff.set_tab_area(window.label(), rects);
 }
 
 #[tauri::command]
@@ -474,8 +518,12 @@ pub fn run() {
             engine_repost_surfaces,
             window_layout,
             window_move_tab,
-            window_drop_tab,
+            window_prepare,
+            window_tear_tab,
+            window_drag,
             window_detach_tab,
+            window_set_tab_area,
+            window_set_material,
             window_reorder_tabs,
             window_focus,
             window_show_tab,

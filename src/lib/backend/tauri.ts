@@ -240,8 +240,24 @@ export class TauriBackend implements Backend {
     return invoke("window_move_tab", { id, target, index: index ?? null });
   }
 
-  dropTab(id: ConnectionId): Promise<string> {
-    return invoke("window_drop_tab", { id });
+  prepareWindow(): Promise<void> {
+    return invoke("window_prepare");
+  }
+
+  tearTab(id: ConnectionId): Promise<string> {
+    return invoke("window_tear_tab", { id });
+  }
+
+  dragWindow(): Promise<string> {
+    return invoke("window_drag");
+  }
+
+  setWindowMaterial(acrylic: boolean): Promise<void> {
+    return invoke("window_set_material", { acrylic });
+  }
+
+  setTabArea(rects: number[][]): Promise<void> {
+    return invoke("window_set_tab_area", { rects });
   }
 
   detachTab(id: ConnectionId): Promise<string> {
