@@ -2,58 +2,39 @@
 //! backdrop (a blur of whatever is behind the window) showing through the page's
 //! translucent surfaces.
 //!
-//! Solid leaves the window exactly as it is created (opaque, no backdrop), so the
-//! experiment costs nothing when it's off. Each window applies its own material when
-//! it loads and whenever the setting changes.
+//! For the backdrop to show, windows are created transparent (see `tauri.conf.json` and
+//! the detached-window builder). Solid fills the page with an opaque `--bg`, so the
+//! default looks and performs like an ordinary opaque window; acrylic turns the page's
+//! backgrounds translucent and lets the system draw the blur behind them.
+//!
+//! The backdrop itself is `window-vibrancy` (a tauri dependency); this module only
+//! chooses it and keeps the webview's own background in step. Cosmetic: a failure is
+//! logged, never surfaced.
+//!
+//! Revert by removing this module, its command, the `windowMaterial` setting, the
+//! `data-material` CSS, and the windows' `transparent` flag.
 
 use tauri::WebviewWindow;
 use tauri::window::Color;
-use windows::Win32::Foundation::HWND;
-use windows::Win32::Graphics::Dwm::{
-    DWM_BB_BLURREGION, DWM_BB_ENABLE, DWM_BLURBEHIND, DWM_SYSTEMBACKDROP_TYPE, DWMSBT_AUTO, DWMSBT_TRANSIENTWINDOW,
-    DWMWA_SYSTEMBACKDROP_TYPE, DwmEnableBlurBehindWindow, DwmExtendFrameIntoClientArea, DwmSetWindowAttribute,
-};
-use windows::Win32::Graphics::Gdi::{CreateRectRgn, DeleteObject};
-use windows::Win32::UI::Controls::MARGINS;
+use window_vibrancy::{apply_acrylic, clear_acrylic};
 
-/// The window background before the page paints (`backgroundColor` in tauri.conf.json).
+/// The opaque page background in solid mode (matches `--bg`, `backgroundColor` in config).
 const SOLID: Color = Color(9, 9, 11, 255);
 
-pub fn apply(window: &WebviewWindow, acrylic: bool) -> anyhow::Result<()> {
-    let hwnd = HWND(window.hwnd()?.0);
-    // SAFETY: DWM attribute calls on our own window handle; the region is freed after use.
-    unsafe {
-        // Honour the page's alpha: transparent pixels show the backdrop. Solid undoes it.
-        let region = CreateRectRgn(0, 0, -1, -1);
-        let blur = DWM_BLURBEHIND {
-            dwFlags: DWM_BB_ENABLE | DWM_BB_BLURREGION,
-            fEnable: acrylic.into(),
-            hRgnBlur: region,
-            fTransitionOnMaximized: false.into(),
-        };
-        let blurred = DwmEnableBlurBehindWindow(hwnd, &blur);
-        let _ = DeleteObject(region.into());
-        blurred?;
-        // The backdrop is drawn in the frame; acrylic extends it under the whole page.
-        let extent = if acrylic { -1 } else { 0 };
-        DwmExtendFrameIntoClientArea(
-            hwnd,
-            &MARGINS {
-                cxLeftWidth: extent,
-                cxRightWidth: extent,
-                cyTopHeight: extent,
-                cyBottomHeight: extent,
-            },
-        )?;
-        // Windows 11 22H2 and later; older systems keep the solid look.
-        let backdrop: DWM_SYSTEMBACKDROP_TYPE = if acrylic { DWMSBT_TRANSIENTWINDOW } else { DWMSBT_AUTO };
-        let _ = DwmSetWindowAttribute(
-            hwnd,
-            DWMWA_SYSTEMBACKDROP_TYPE,
-            (&raw const backdrop).cast(),
-            size_of::<DWM_SYSTEMBACKDROP_TYPE>() as u32,
-        );
+pub fn apply(window: &WebviewWindow, acrylic: bool) {
+    if let Err(error) = try_apply(window, acrylic) {
+        tracing::warn!(window = window.label(), %error, "window material not applied");
     }
+}
+
+fn try_apply(window: &WebviewWindow, acrylic: bool) -> anyhow::Result<()> {
+    if acrylic {
+        apply_acrylic(window, None)?;
+    } else {
+        // Best-effort: fails only where acrylic was never applied, which is fine.
+        let _ = clear_acrylic(window);
+    }
+    // Transparent lets the backdrop through; opaque fills the window in solid mode.
     window.set_background_color(Some(if acrylic { Color(0, 0, 0, 0) } else { SOLID }))?;
     Ok(())
 }

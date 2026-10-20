@@ -245,11 +245,10 @@ async fn window_detach_tab(app: tauri::AppHandle, window: tauri::Window, id: Str
 
 /// The calling window's material: solid, or the acrylic backdrop (experimental).
 #[tauri::command]
-fn window_set_material(window: tauri::WebviewWindow, acrylic: bool) -> CmdResult<()> {
+fn window_set_material(window: tauri::WebviewWindow, acrylic: bool) {
     #[cfg(windows)]
-    material::apply(&window, acrylic).map_err(err)?;
+    material::apply(&window, acrylic);
     let _ = (window, acrylic);
-    Ok(())
 }
 
 /// Where the calling window shows its tabs (CSS px): where a dragged tab can join it.

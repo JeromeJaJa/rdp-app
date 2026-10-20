@@ -217,6 +217,7 @@ impl Tearoff {
             .min_inner_size(480.0, 320.0)
             .decorations(false)
             .shadow(true)
+            .transparent(true)
             .disable_drag_drop_handler()
             .background_color(tauri::window::Color(9, 9, 11, 255))
             .visible(false)

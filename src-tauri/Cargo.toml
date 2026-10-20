@@ -36,6 +36,7 @@ rand = "0.8"
 rdp-clipboard = { path = "../crates/rdp-clipboard" }
 ironrdp-cliprdr.workspace = true
 webview2-com = "0.39"
+window-vibrancy = "0.8"
 windows = { version = "0.62", features = [
     "Win32_Foundation",
     "Win32_Security_Cryptography",
@@ -44,7 +45,5 @@ windows = { version = "0.62", features = [
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_Graphics_Dwm",
-    "Win32_Graphics_Gdi",
-    "Win32_UI_Controls",
 ] }
 windows-core = "0.62"
