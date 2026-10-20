@@ -77,6 +77,7 @@ function TileCard({ id, showThumb, nodeRef, style, className, ...rest }: TileCar
     <div
       ref={nodeRef}
       style={style}
+      data-id={id}
       {...rest}
       className={`tile ${live ? "is-live" : ""} ${selected ? "is-selected" : ""} ${className ?? ""}`}
       onClick={() => {

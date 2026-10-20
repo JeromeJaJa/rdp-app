@@ -394,3 +394,27 @@
 :root[data-theme="light"] .empty {
   background: var(--bg);
 }
+
+/* ── Grid ⇄ session morph (view transitions) ─────────────────────────────────── */
+.app__main--session > .live-session,
+.app__main--session > .idle {
+  view-transition-name: session-focus;
+}
+::view-transition-group(session-focus) {
+  animation-duration: 340ms;
+  animation-timing-function: cubic-bezier(0.2, 0.9, 0.25, 1);
+}
+::view-transition-old(session-focus),
+::view-transition-new(session-focus) {
+  height: 100%;
+  object-fit: cover;
+  overflow: clip;
+}
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 220ms;
+}
+::view-transition-group(session-focus) {
+  border-radius: 10px;
+  overflow: clip;
+}

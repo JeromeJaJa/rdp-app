@@ -19,6 +19,7 @@ import {
 } from "../lib/types";
 import { gatewayFromInput } from "../lib/gateway";
 import { isTauri } from "../lib/env";
+import { morphView } from "../lib/morph";
 import {
   displayName,
   flatOrder,
@@ -289,7 +290,9 @@ export function updateSettings(patch: Partial<Settings>) {
 // ---------------------------------------------------------------------------
 
 export function select(id: ConnectionId | null, opts: { connect?: boolean } = {}) {
-  setState({ selectedId: id, view: "session", menu: null });
+  const apply = () => setState({ selectedId: id, view: "session", menu: null });
+  if (getState().view === "grid") morphView(id, false, apply);
+  else apply();
   try {
     if (id) localStorage.setItem(SELECTED_KEY, id);
   } catch {
@@ -317,7 +320,9 @@ export function selectIndex(n: number) {
 }
 
 export function setView(view: "session" | "grid") {
-  setState({ view, menu: null });
+  const s = getState();
+  if (view === s.view) return setState({ menu: null });
+  morphView(s.selectedId, view === "grid", () => setState({ view, menu: null }));
 }
 
 export function toggleGrid() {
