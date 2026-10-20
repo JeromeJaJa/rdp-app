@@ -30,11 +30,23 @@ fn main() -> anyhow::Result<()> {
 
 #[cfg(windows)]
 fn use_logging() {
-    tracing_subscriber::fmt()
+    // Launched with no console, so also log to a file we can read back over WinRM.
+    let path = std::env::var_os("LOCALAPPDATA")
+        .map(|b| std::path::PathBuf::from(b).join("RdpApp"))
+        .unwrap_or_else(std::env::temp_dir);
+    let _ = std::fs::create_dir_all(&path);
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path.join("companion.log"))
+        .ok();
+    let builder = tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::try_from_env("RDP_LOG").unwrap_or_else(|_| "info".into()))
-        .with_writer(std::io::stderr)
-        .compact()
-        .init();
+        .compact();
+    match file {
+        Some(file) => builder.with_writer(std::sync::Mutex::new(file)).init(),
+        None => builder.with_writer(std::io::stderr).init(),
+    }
 }
 
 #[cfg(windows)]
@@ -51,7 +63,10 @@ mod windows_impl {
     use windows::core::PCSTR;
 
     /// How long a read waits before returning empty so we can re-check (ms).
-    const READ_TIMEOUT: u32 = 5_000;
+    /// Block indefinitely on a read; the channel closing (disconnect) wakes it.
+    const READ_WAIT: u32 = u32::MAX;
+    /// Bytes of CHANNEL_PDU_HEADER (`length: u32, flags: u32`) that precede each read.
+    const CHANNEL_PDU_HEADER: usize = 8;
 
     /// The open companion channel; closes on drop.
     struct Channel(HANDLE);
@@ -74,15 +89,24 @@ mod windows_impl {
             Ok(())
         }
 
-        /// Reads the next chunk, or an empty slice on timeout. `None` means the channel closed.
+        /// Blocks until the next chunk arrives. `None` means the channel closed (the
+        /// client disconnected). Blocking (rather than a short timeout that looks like a
+        /// close every interval) keeps one attach stable until a real disconnect.
         fn read<'b>(&self, buffer: &'b mut [u8]) -> anyhow::Result<Option<&'b [u8]>> {
             let mut read = 0u32;
             // SAFETY: reads into `buffer`, which outlives the call.
-            let result = unsafe { WTSVirtualChannelRead(self.0, READ_TIMEOUT, buffer, &mut read) };
+            let result = unsafe { WTSVirtualChannelRead(self.0, READ_WAIT, buffer, &mut read) };
             match result {
-                Ok(()) => Ok(Some(&buffer[..read as usize])),
-                // The client closed the channel.
-                Err(_) => Ok(None),
+                // With no timeout, a zero-length read means end of channel.
+                Ok(()) if read > 0 => Ok(Some(&buffer[..read as usize])),
+                Ok(()) => {
+                    tracing::debug!("read returned 0 bytes");
+                    Ok(None)
+                }
+                Err(error) => {
+                    tracing::debug!(%error, code = format!("{:#010x}", error.code().0), "read failed");
+                    Ok(None)
+                }
             }
         }
     }
@@ -151,9 +175,14 @@ mod windows_impl {
                 return Ok(());
             };
             if chunk.is_empty() {
-                continue; // read timed out; keep waiting
+                continue; // nothing this read; keep waiting
             }
-            decoder.feed(chunk);
+            // WTSVirtualChannelRead prepends an 8-byte CHANNEL_PDU_HEADER (length, flags)
+            // on each read; our own length-prefixed frames sit after it. Our decoder
+            // reassembles from our prefix, so we only need to drop the header. (Our
+            // messages fit one chunk; larger ones will need the header's FIRST/LAST flags.)
+            let payload = if chunk.len() >= CHANNEL_PDU_HEADER { &chunk[CHANNEL_PDU_HEADER..] } else { chunk };
+            decoder.feed(payload);
             loop {
                 match decoder.next_message() {
                     Ok(Some(message)) => {
