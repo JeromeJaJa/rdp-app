@@ -12,7 +12,7 @@ use ironrdp_pdu::rdp::capability_sets::{MajorPlatformType, RailSupportLevel, cli
 use ironrdp_pdu::rdp::client_info::{CompressionType, PerformanceFlags, TimezoneInfo};
 use ironrdp_tokio::reqwest::ReqwestNetworkClient;
 use tokio::io::{AsyncRead, AsyncWrite};
-use tokio::net::TcpStream;
+use tokio::net::{TcpSocket, TcpStream};
 
 use parking_lot::Mutex;
 
@@ -26,6 +26,30 @@ impl<T> AsyncReadWrite for T where T: AsyncRead + AsyncWrite {}
 pub(crate) type UpgradedFramed = ironrdp_tokio::TokioFramed<Box<dyn AsyncReadWrite + Unpin + Send + Sync>>;
 
 const TCP_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+/// Socket send buffer. Windows leaves non-overlapped sockets at 64 KiB, which lets only
+/// 64 KiB be in flight per round trip: under 1 MiB/s at 70 ms for uploads (files the
+/// server pulls, large pastes). 4 MiB covers a few hundred Mbit/s at that latency.
+const SEND_BUFFER: u32 = 4 * 1024 * 1024;
+
+/// Connects to `addr` (host:port), trying each resolved address.
+async fn connect_tcp(addr: &str) -> std::io::Result<TcpStream> {
+    let mut last_error = None;
+    for target in tokio::net::lookup_host(addr).await? {
+        let socket = if target.is_ipv4() {
+            TcpSocket::new_v4()?
+        } else {
+            TcpSocket::new_v6()?
+        };
+        if let Err(error) = socket.set_send_buffer_size(SEND_BUFFER) {
+            tracing::warn!(%error, "could not enlarge the socket send buffer");
+        }
+        match socket.connect(target).await {
+            Ok(stream) => return Ok(stream),
+            Err(error) => last_error = Some(error),
+        }
+    }
+    Err(last_error.unwrap_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "host has no addresses")))
+}
 
 pub(crate) struct Connected {
     pub result: ConnectionResult,
@@ -199,7 +223,7 @@ async fn open_transport(
     }
 
     let addr = format!("{}:{}", host_for_socket(&params.host), params.port);
-    let stream = tokio::time::timeout(TCP_CONNECT_TIMEOUT, TcpStream::connect(&addr))
+    let stream = tokio::time::timeout(TCP_CONNECT_TIMEOUT, connect_tcp(&addr))
         .await
         .map_err(|_| anyhow::anyhow!("TCP connect timed out"))?
         .with_context(|| format!("TCP connect to {addr}"))?;
