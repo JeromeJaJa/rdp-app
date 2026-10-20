@@ -105,6 +105,7 @@ pub struct ApiRuntime {
 pub fn default_settings() -> Map<String, Value> {
     let v = json!({
         "theme": "dark",
+        "windowMaterial": "solid",
         "tabPlacement": "left",
         "sidebarWidth": 248,
         "gridTileWidth": 320,
@@ -138,6 +139,7 @@ pub fn default_settings() -> Map<String, Value> {
 pub fn validate_settings(settings: &Map<String, Value>) -> anyhow::Result<()> {
     const CHOICES: &[(&str, &[&str])] = &[
         ("theme", &["dark", "light", "system"]),
+        ("windowMaterial", &["solid", "acrylic"]),
         ("tabPlacement", &["top", "left"]),
         ("codec", &["auto", "h264", "remotefx"]),
         ("h264Quality", &["balanced", "sharp"]),

@@ -104,3 +104,23 @@
   --glass-hover: rgba(0, 0, 0, 0.055);
   --glass-divider: rgba(0, 0, 0, 0.07);
 }
+
+/* Experimental acrylic material (Settings → Appearance): the system draws a blurred
+   backdrop behind the window and the app's own surfaces become tints over it. Remove
+   this block and src-tauri/src/material.rs to drop the experiment. */
+:root[data-material="acrylic"][data-theme="dark"] {
+  --bg: rgba(9, 9, 11, 0.5);
+  --panel: rgba(14, 14, 17, 0.42);
+  --thumb-bg: rgba(5, 5, 6, 0.6);
+}
+:root[data-material="acrylic"][data-theme="light"] {
+  --bg: rgba(247, 247, 248, 0.55);
+  --panel: rgba(251, 251, 252, 0.45);
+  --thumb-bg: rgba(233, 233, 236, 0.6);
+}
+/* Only the leaf surfaces paint; stacked translucent layers would turn opaque. */
+:root[data-material="acrylic"] body,
+:root[data-material="acrylic"] .app,
+:root[data-material="acrylic"] .app__main--grid {
+  background: transparent;
+}

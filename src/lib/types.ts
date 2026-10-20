@@ -132,11 +132,14 @@ export interface GroupInput {
 }
 
 export type Theme = "dark" | "light" | "system";
+export type WindowMaterial = "solid" | "acrylic";
 export type TabPlacement = "top" | "left";
 export type Codec = "auto" | "h264" | "remotefx";
 
 export interface Settings {
   theme: Theme;
+  /** Experimental: the system acrylic backdrop behind the window's surfaces. */
+  windowMaterial: WindowMaterial;
   tabPlacement: TabPlacement;
   /** Left sidebar width in CSS px. */
   sidebarWidth: number;
@@ -183,6 +186,7 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = {
   theme: "dark",
+  windowMaterial: "solid",
   tabPlacement: "left",
   sidebarWidth: 248,
   gridTileWidth: 320,

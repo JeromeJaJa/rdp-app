@@ -117,6 +117,17 @@ function General() {
           ]}
         />
       </Row>
+      <Row title="Window material" desc="Acrylic lets a blur of what's behind the window show through (experimental).">
+        <Segmented
+          size="sm"
+          value={s.windowMaterial}
+          onChange={(windowMaterial) => updateSettings({ windowMaterial })}
+          options={[
+            { value: "solid", label: "Solid" },
+            { value: "acrylic", label: "Acrylic" },
+          ]}
+        />
+      </Row>
       <Row title="Tab placement" desc="Show connections as tabs along the top, or as a sidebar.">
         <Segmented
           size="sm"
