@@ -10,6 +10,7 @@ mod frames;
 mod keys;
 mod profile;
 mod store;
+mod tearoff;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -28,6 +29,7 @@ struct AppState {
     core: Arc<Core>,
     #[cfg(windows)]
     surfaces: Arc<frames::WebviewSurfaces>,
+    tearoff: tearoff::Tearoff,
 }
 
 type CmdResult<T> = Result<T, String>;
@@ -162,18 +164,70 @@ fn session_snapshot(state: State<'_, AppState>) -> Vec<EngineEvent> {
     state.core.engine.snapshot()
 }
 
+/// The calling window's session area was resized.
 #[tauri::command]
-fn engine_set_viewport(state: State<'_, AppState>, width: u32, height: u32, scale: u32) {
-    state.core.engine.set_viewport(Viewport {
-        width: width.clamp(200, 8192) as u16,
-        height: height.clamp(200, 8192) as u16,
-        scale: scale.clamp(100, 500),
-    });
+fn engine_set_viewport(window: tauri::Window, state: State<'_, AppState>, width: u32, height: u32, scale: u32) {
+    state.tearoff.set_viewport(
+        window.label(),
+        Viewport {
+            width: width.clamp(200, 8192) as u16,
+            height: height.clamp(200, 8192) as u16,
+            scale: scale.clamp(100, 500),
+        },
+    );
+}
+
+/// What the calling window shows: its full-size session and (main window) grid thumbnails.
+#[tauri::command]
+fn engine_set_visibility(
+    window: tauri::Window,
+    state: State<'_, AppState>,
+    active: Option<String>,
+    thumbnails: Vec<String>,
+) {
+    state.tearoff.set_visibility(window.label(), active, thumbnails);
+}
+
+// ── Windows (tabs torn out of the main window) ──────────────────────────────
+
+#[tauri::command]
+fn window_layout(state: State<'_, AppState>) -> tearoff::Layout {
+    state.tearoff.layout()
+}
+
+/// Moves a tab into a window ("main" or a detached window's label).
+#[tauri::command]
+fn window_move_tab(state: State<'_, AppState>, id: String, target: String, index: Option<usize>) -> CmdResult<()> {
+    state.tearoff.move_tab(&id, &target, index).map_err(err)
+}
+
+/// A tab was dropped outside the calling window: moves it to the window under the
+/// pointer, or opens a new window there. Async: windows can't be built on a sync command.
+#[tauri::command]
+async fn window_drop_tab(window: tauri::Window, state: State<'_, AppState>, id: String) -> CmdResult<String> {
+    state.tearoff.drop_tab(&id, window.label()).map_err(err)
+}
+
+/// Opens a new window holding the tab.
+#[tauri::command]
+async fn window_detach_tab(state: State<'_, AppState>, id: String) -> CmdResult<String> {
+    state.tearoff.detach(&id).map_err(err)
 }
 
 #[tauri::command]
-fn engine_set_visibility(state: State<'_, AppState>, active: Option<String>, thumbnails: Vec<String>) {
-    state.core.engine.set_visibility(active, thumbnails);
+fn window_reorder_tabs(window: tauri::Window, state: State<'_, AppState>, tabs: Vec<String>) {
+    state.tearoff.reorder(window.label(), tabs);
+}
+
+#[tauri::command]
+fn window_focus(state: State<'_, AppState>, label: String) {
+    state.tearoff.focus(&label);
+}
+
+/// Focuses the window holding the tab and selects it there.
+#[tauri::command]
+fn window_show_tab(state: State<'_, AppState>, id: String) {
+    state.tearoff.show_tab(&id);
 }
 
 #[tauri::command]
@@ -216,10 +270,10 @@ fn engine_ctrl_alt_del(state: State<'_, AppState>, id: String) {
 }
 
 #[tauri::command]
-fn engine_repost_surfaces(state: State<'_, AppState>) -> CmdResult<()> {
+fn engine_repost_surfaces(window: tauri::Window, state: State<'_, AppState>) -> CmdResult<()> {
     #[cfg(windows)]
-    state.surfaces.repost_all().map_err(err)?;
-    let _ = state;
+    state.surfaces.repost_all(window.label()).map_err(err)?;
+    let _ = (state, window);
     Ok(())
 }
 
@@ -313,6 +367,24 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_dialog::init())
+        .on_window_event(|window, event| match event {
+            // Closing the main window quits, taking any detached windows with it.
+            tauri::WindowEvent::CloseRequested { .. } if window.label() == frames::MAIN_WINDOW => {
+                window.app_handle().exit(0);
+            }
+            // A detached window closed: its tabs go back to the main window. Done off the
+            // event loop's dispatch of this event: it talks to webviews and emits events.
+            tauri::WindowEvent::Destroyed if window.label().starts_with(tearoff::PREFIX) => {
+                let app = window.app_handle().clone();
+                let label = window.label().to_owned();
+                std::thread::spawn(move || {
+                    if let Some(state) = app.try_state::<AppState>() {
+                        state.tearoff.window_closed(&label);
+                    }
+                });
+            }
+            _ => {}
+        })
         .setup(|app| {
             init_logging(app.path().app_log_dir().ok());
             tracing::info!(version = env!("CARGO_PKG_VERSION"), "starting");
@@ -342,14 +414,23 @@ pub fn run() {
             let core = Arc::new(Core::new(store, engine, app.handle().clone(), certs, bus));
             core.apply_settings();
 
+            let tearoff = tearoff::Tearoff::new(
+                app.handle().clone(),
+                core.engine.clone(),
+                #[cfg(windows)]
+                surfaces.clone(),
+            );
             app.manage(AppState {
                 core,
                 #[cfg(windows)]
                 surfaces,
+                tearoff,
             });
 
             #[cfg(windows)]
-            configure_webview(app);
+            if let Some(window) = app.get_webview_window(frames::MAIN_WINDOW) {
+                configure_webview(&window);
+            }
 
             // The window starts hidden to avoid a white flash; the UI shows it after
             // its first paint. Fall back in case the UI fails to load.
@@ -391,6 +472,13 @@ pub fn run() {
             engine_input,
             engine_ctrl_alt_del,
             engine_repost_surfaces,
+            window_layout,
+            window_move_tab,
+            window_drop_tab,
+            window_detach_tab,
+            window_reorder_tabs,
+            window_focus,
+            window_show_tab,
             engine_send_keys,
             trust_certificate,
             list_certificates,
@@ -416,23 +504,21 @@ pub fn run() {
 /// Browser accelerators (F5 reload, Ctrl+P print, Ctrl+F find, …) make no sense in
 /// a desktop app and would steal keystrokes meant for remote sessions.
 #[cfg(windows)]
-fn configure_webview(app: &tauri::App) {
+pub(crate) fn configure_webview(window: &tauri::WebviewWindow) {
     use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings3;
     use windows_core::Interface as _;
 
     if cfg!(debug_assertions) {
         return; // keep reload/devtools while developing
     }
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.with_webview(|pw| unsafe {
-            if let Ok(core) = pw.controller().CoreWebView2()
-                && let Ok(settings) = core.Settings()
-            {
-                if let Ok(s3) = settings.cast::<ICoreWebView2Settings3>() {
-                    let _ = s3.SetAreBrowserAcceleratorKeysEnabled(false);
-                }
-                let _ = settings.SetAreDefaultContextMenusEnabled(false);
+    let _ = window.with_webview(|pw| unsafe {
+        if let Ok(core) = pw.controller().CoreWebView2()
+            && let Ok(settings) = core.Settings()
+        {
+            if let Ok(s3) = settings.cast::<ICoreWebView2Settings3>() {
+                let _ = s3.SetAreBrowserAcceleratorKeysEnabled(false);
             }
-        });
-    }
+            let _ = settings.SetAreDefaultContextMenusEnabled(false);
+        }
+    });
 }

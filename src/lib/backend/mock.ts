@@ -29,6 +29,7 @@ import {
   type TrustedCertificate,
   type UiCommand,
   type UiState,
+  type WindowTabs,
 } from "../types";
 import { gatewayFromInput } from "../gateway";
 import { matchKey } from "../match";
@@ -786,6 +787,33 @@ export class MockBackend implements Backend {
   async openExternal(url: string): Promise<void> {
     window.open(url, "_blank", "noopener");
   }
+
+  // The browser preview has a single window.
+  async windowLayout(): Promise<WindowTabs[]> {
+    return [];
+  }
+
+  onWindowLayout(_cb: (windows: WindowTabs[]) => void): Unsubscribe {
+    return () => {};
+  }
+
+  onSelectTab(_cb: (id: ConnectionId) => void): Unsubscribe {
+    return () => {};
+  }
+
+  async moveTab(): Promise<void> {}
+
+  async dropTab(): Promise<string> {
+    return "main";
+  }
+
+  async detachTab(): Promise<string> {
+    throw new Error("Separate windows need the desktop app");
+  }
+
+  async reorderWindowTabs(): Promise<void> {}
+
+  async showTab(): Promise<void> {}
 }
 
 function fakeFingerprint(seed: string): string {

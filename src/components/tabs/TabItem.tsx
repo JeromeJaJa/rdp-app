@@ -2,7 +2,9 @@ import { forwardRef, memo, useEffect, useRef, type CSSProperties, type HTMLAttri
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { connect, disconnect, openMenu, select } from "../../state/actions";
-import { displayName, isBusy, isLive, useConnection, useStatus, useStore } from "../../state/store";
+import { displayName, hostOf, isBusy, isLive, useConnection, useStatus, useStore } from "../../state/store";
+import { isMainWindow } from "../../lib/env";
+import { AppWindow, X } from "lucide-react";
 import { StatusDot } from "../common/StatusDot";
 import { ConnectIcon, DisconnectIcon } from "../common/SessionIcons";
 import type { ConnectionId } from "../../lib/types";
@@ -15,15 +17,21 @@ interface ViewProps extends HTMLAttributes<HTMLDivElement> {
   variant: Variant;
   dragging?: boolean;
   overlay?: boolean;
+  /** The overlay is about to leave the window. */
+  detaching?: boolean;
+  /** Shows an × that calls this (detached windows: send the tab back). */
+  onClose?: () => void;
 }
 
 const TabView = forwardRef<HTMLDivElement, ViewProps>(function TabView(
-  { id, variant, dragging, overlay, style, ...rest },
+  { id, variant, dragging, overlay, detaching, onClose, style, ...rest },
   ref,
 ) {
   const conn = useConnection(id);
   const status = useStatus(id);
   const selected = useStore((s) => s.selectedId === id);
+  // In the main window, a tab that lives in another window.
+  const elsewhere = useStore((s) => isMainWindow() && hostOf(s, id) !== "main");
   if (!conn) return null;
 
   const name = displayName(conn);
@@ -36,7 +44,7 @@ const TabView = forwardRef<HTMLDivElement, ViewProps>(function TabView(
       style={style as CSSProperties}
       className={`tab tab--${variant} ${selected ? "is-selected" : ""} ${dragging ? "is-dragging" : ""} ${
         overlay ? "is-overlay" : ""
-      }`}
+      } ${detaching ? "is-detaching" : ""} ${elsewhere ? "is-elsewhere" : ""}`}
       role="tab"
       aria-selected={selected}
       title={variant === "top" ? `${name} — ${conn.host}` : undefined}
@@ -44,6 +52,26 @@ const TabView = forwardRef<HTMLDivElement, ViewProps>(function TabView(
     >
       <StatusDot status={status} />
       <span className="tab__name">{name}</span>
+      {elsewhere && (
+        <span className="tab__elsewhere" title="Open in another window">
+          <AppWindow size={12} />
+        </span>
+      )}
+      {detaching && <span className="tab__detach-hint">New window</span>}
+      {onClose && !overlay && (
+        <button
+          className="tab__close"
+          aria-label="Move back to the main window"
+          title="Move back to the main window"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onClose();
+          }}
+        >
+          <X size={12} />
+        </button>
+      )}
       {variant === "side" && (
         <>
           {showHost && <span className="tab__host mono">{conn.host}</span>}
@@ -71,7 +99,7 @@ const TabView = forwardRef<HTMLDivElement, ViewProps>(function TabView(
   );
 });
 
-function SortableTab({ id, variant }: { id: ConnectionId; variant: Variant }) {
+function SortableTab({ id, variant, onClose }: { id: ConnectionId; variant: Variant; onClose?: () => void }) {
   const { setNodeRef, attributes, listeners, transform, transition, isDragging } = useSortable({ id });
   const selected = useStore((s) => s.selectedId === id);
   const elRef = useRef<HTMLDivElement | null>(null);
@@ -88,6 +116,7 @@ function SortableTab({ id, variant }: { id: ConnectionId; variant: Variant }) {
       }}
       id={id}
       variant={variant}
+      onClose={onClose}
       dragging={isDragging}
       style={{ transform: CSS.Translate.toString(transform), transition }}
       {...attributes}
@@ -106,6 +135,6 @@ function SortableTab({ id, variant }: { id: ConnectionId; variant: Variant }) {
 
 export const TabItem = memo(SortableTab);
 
-export function TabOverlay({ id, variant }: { id: ConnectionId; variant: Variant }) {
-  return <TabView id={id} variant={variant} overlay />;
+export function TabOverlay({ id, variant, detaching }: { id: ConnectionId; variant: Variant; detaching?: boolean }) {
+  return <TabView id={id} variant={variant} overlay detaching={detaching} />;
 }

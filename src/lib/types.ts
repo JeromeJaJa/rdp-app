@@ -344,3 +344,9 @@ export interface UiState {
   view: "session" | "grid";
   fullscreen: boolean;
 }
+
+/** A window that tabs were dragged into, with its tabs in order. */
+export interface WindowTabs {
+  label: string;
+  tabs: ConnectionId[];
+}

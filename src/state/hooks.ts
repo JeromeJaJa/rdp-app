@@ -1,6 +1,8 @@
 import { useEffect } from "react";
 import { engine } from "../engine";
+import { isMainWindow } from "../lib/env";
 import {
+  moveToMainWindow,
   openDialog,
   selectIndex,
   selectRelative,
@@ -34,14 +36,21 @@ export function useShortcuts() {
         return;
       }
       if (s.dialog) return;
-      if (key === "k") {
+      // The palette and the grid belong to the main window.
+      if (key === "k" && isMainWindow()) {
         e.preventDefault();
         setState({ paletteOpen: !s.paletteOpen, menu: null });
         return;
       }
-      if (key === "g" && !typing) {
+      if (key === "g" && !typing && isMainWindow()) {
         e.preventDefault();
         toggleGrid();
+        return;
+      }
+      // In a detached window, Ctrl+W sends the tab back to the main window.
+      if (key === "w" && !isMainWindow()) {
+        e.preventDefault();
+        if (s.selectedId) moveToMainWindow(s.selectedId);
         return;
       }
       if (key === "tab") {

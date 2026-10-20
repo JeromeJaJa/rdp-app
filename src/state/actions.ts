@@ -17,20 +17,23 @@ import {
   type SettingOverrides,
   type Theme,
   type UiCommand,
+  type WindowTabs,
 } from "../lib/types";
 import { gatewayFromInput } from "../lib/gateway";
-import { isTauri } from "../lib/env";
+import { isMainWindow, isTauri, windowLabel } from "../lib/env";
 import { morphView } from "../lib/morph";
 import {
   displayName,
   flatOrder,
   getState,
+  hostOf,
   isBusy,
   isLive,
   resolveSetting,
   sessionOf,
   setState,
   useStore,
+  windowTabs,
   withDefaultGroup,
   type CertPrompt,
   type DialogState,
@@ -72,13 +75,91 @@ export async function initApp(): Promise<void> {
   } catch {
     /* ignore */
   }
-  applyLibrary(lib, { preferSelected: selectedId });
-  setState({ ready: true });
+  const main = isMainWindow();
+  applyLibrary(lib, { preferSelected: main ? selectedId : null });
+  const windows = await backend.windowLayout().catch(() => []);
+  setState({ ready: true, windows, ...(main ? {} : { view: "session" as const }) });
+  if (!main) keepDetachedSelection([]);
   applyTheme(lib.settings.theme, false);
   backend.onSessionEvent(onSessionEvent);
-  backend.onLibraryChanged((next) => applyLibrary(next));
-  backend.onUiCommand(onUiCommand);
-  startUiStateReporting();
+  backend.onLibraryChanged((next) => {
+    applyLibrary(next);
+    if (!isMainWindow()) keepDetachedSelection(getState().windows);
+  });
+  backend.onWindowLayout(onWindowLayout);
+  if (main) {
+    // The REST API drives (and reads) the main window.
+    backend.onUiCommand(onUiCommand);
+    startUiStateReporting();
+  } else {
+    backend.onSelectTab((id) => setState({ selectedId: id }));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Windows: tabs dragged out of the main window
+// ---------------------------------------------------------------------------
+
+function onWindowLayout(windows: WindowTabs[]) {
+  const previous = getState().windows;
+  setState({ windows });
+  if (!isMainWindow()) keepDetachedSelection(previous);
+}
+
+/**
+ * A detached window shows one of its own tabs: a tab that just arrived, or the
+ * selected one if it is still here, or the first.
+ */
+function keepDetachedSelection(previous: WindowTabs[]) {
+  const s = getState();
+  const me = windowLabel();
+  const tabs = windowTabs(s, me);
+  const before = new Set(windowTabs({ windows: previous }, me));
+  const arrived = tabs.find((t) => !before.has(t));
+  const selectedId = arrived ?? (s.selectedId && tabs.includes(s.selectedId) ? s.selectedId : (tabs[0] ?? null));
+  if (selectedId !== s.selectedId) setState({ selectedId, view: "session" });
+  const conn = selectedId ? s.connById[selectedId] : undefined;
+  if (isTauri() && conn) {
+    import("@tauri-apps/api/window")
+      .then(({ getCurrentWindow }) => getCurrentWindow().setTitle(`${displayName(conn)} — RDP App`))
+      .catch(() => {});
+  }
+}
+
+/** Opens a new window holding the connection's tab. */
+export async function openInNewWindow(id: ConnectionId) {
+  try {
+    await be().detachTab(id);
+  } catch (err) {
+    toast("error", "Could not open a window", errorText(err));
+  }
+}
+
+/** Sends a tab back to the main window. */
+export function moveToMainWindow(id: ConnectionId) {
+  bg(be().moveTab(id, "main"), "move tab");
+}
+
+/** Brings the window holding the tab to the front and selects the tab there. */
+export function showTabWindow(id: ConnectionId) {
+  bg(be().showTab(id), "show tab");
+}
+
+/** New tab order for this (detached) window. */
+export function reorderWindowTabs(tabs: ConnectionId[]) {
+  const me = windowLabel();
+  setState({ windows: getState().windows.map((w) => (w.label === me ? { ...w, tabs } : w)) });
+  bg(be().reorderWindowTabs(tabs), "reorder tabs");
+}
+
+/** The tabs this window can switch between, in order. */
+function windowOrder(): ConnectionId[] {
+  return isMainWindow() ? flatOrder(getState()) : windowTabs(getState(), windowLabel());
+}
+
+/** A tab was dragged out of this window and released: it moves to the window under the pointer, or a new one. */
+export function dropTabOutside(id: ConnectionId) {
+  bg(be().dropTab(id), "move tab");
 }
 
 /**
@@ -127,8 +208,11 @@ function flushSessionEvents() {
   const sessions = { ...s.sessions };
   const certPrompts = [...s.certPrompts];
   const certIds = new Set(events.filter((e) => e.type === "certificate").map((e) => e.id));
+  // Prompts and error toasts belong to the window that holds the tab.
+  const me = windowLabel();
   for (const e of events) {
     if (!s.connById[e.id]) continue;
+    const mine = hostOf(s, e.id) === me;
     const prev = sessions[e.id] ?? { status: "idle" as const };
     switch (e.type) {
       case "status":
@@ -137,7 +221,7 @@ function flushSessionEvents() {
             ? { status: e.status }
             : { ...prev, status: e.status, message: e.status === "error" ? e.message : undefined };
         // A certificate decision gets its own dialog instead of an error toast.
-        if (e.status === "error" && !certIds.has(e.id)) queueErrorToast(e.id, e.message);
+        if (e.status === "error" && !certIds.has(e.id) && mine) queueErrorToast(e.id, e.message);
         break;
       case "resolution":
         sessions[e.id] = { ...prev, width: e.width, height: e.height };
@@ -146,6 +230,7 @@ function flushSessionEvents() {
         sessions[e.id] = { ...prev, codec: e.codec };
         break;
       case "certificate": {
+        if (!mine) break;
         const prompt: CertPrompt = {
           id: e.id,
           endpoint: e.endpoint,
@@ -292,6 +377,12 @@ export function updateSettings(patch: Partial<Settings>) {
 // ---------------------------------------------------------------------------
 
 export function select(id: ConnectionId | null, opts: { connect?: boolean } = {}) {
+  // A tab that lives in another window: show it there.
+  if (id && isMainWindow() && hostOf(getState(), id) !== "main") {
+    setState({ selectedId: id, menu: null });
+    showTabWindow(id);
+    return;
+  }
   const apply = () => setState({ selectedId: id, view: "session", menu: null });
   if (getState().view === "grid") morphView(id, false, apply);
   else apply();
@@ -307,7 +398,7 @@ export function select(id: ConnectionId | null, opts: { connect?: boolean } = {}
 }
 
 export function selectRelative(delta: number) {
-  const ids = flatOrder(getState());
+  const ids = windowOrder();
   if (!ids.length) return;
   const cur = getState().selectedId;
   const idx = cur ? ids.indexOf(cur) : -1;
@@ -316,7 +407,7 @@ export function selectRelative(delta: number) {
 }
 
 export function selectIndex(n: number) {
-  const ids = flatOrder(getState());
+  const ids = windowOrder();
   const id = n === 9 ? ids[ids.length - 1] : ids[n - 1];
   if (id) select(id);
 }

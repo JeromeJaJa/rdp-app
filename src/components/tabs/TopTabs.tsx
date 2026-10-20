@@ -2,14 +2,14 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { DndContext, DragOverlay, useDroppable, type Modifier } from "@dnd-kit/core";
 import { horizontalListSortingStrategy, SortableContext } from "@dnd-kit/sortable";
-import { selectRelative } from "../../state/actions";
 import { useStore } from "../../state/store";
 import type { GroupId } from "../../lib/types";
 import { TabItem, TabOverlay } from "./TabItem";
-import { containerId, useTabsDnd } from "./useTabsDnd";
+import { containerId, stripWheel, useTabsDnd } from "./useTabsDnd";
 import "./toptabs.css";
 
-const lockY: Modifier = ({ transform }) => ({ ...transform, y: 0 });
+// The tab stays in the strip until it is pulled well away from it (to tear it off).
+const lockY: Modifier = ({ transform }) => (Math.abs(transform.y) > 40 ? transform : { ...transform, y: 0 });
 
 function Segment({ groupId, label, ids }: { groupId: GroupId; label?: string; ids: string[] }) {
   const { setNodeRef, isOver } = useDroppable({ id: containerId(groupId) });
@@ -26,7 +26,13 @@ function Segment({ groupId, label, ids }: { groupId: GroupId; label?: string; id
 }
 
 function TopTabsInner() {
-  const { sections, activeId, sensors, collisionDetection, handlers } = useTabsDnd();
+  // Dropped well below the tab strip or outside the window: a window of its own.
+  const { sections, activeId, detaching, sensors, collisionDetection, handlers } = useTabsDnd({
+    away: (_x, y) => {
+      const r = document.querySelector(".titlebar")?.getBoundingClientRect();
+      return !!r && y > r.bottom + 48;
+    },
+  });
   const groups = useStore((s) => s.groups);
   const groupName = useMemo(() => new Map(groups.map((g) => [g.id, g.name])), [groups]);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -37,31 +43,7 @@ function TopTabsInner() {
     if (!el) return;
     const update = () =>
       setFade({ left: el.scrollLeft > 2, right: el.scrollLeft + el.clientWidth < el.scrollWidth - 2 });
-    // Shift+wheel switches to the next / previous tab (one per notch; touchpads
-    // accumulate); a plain wheel scrolls the strip.
-    let acc = 0;
-    let lastWheel = 0;
-    const onWheel = (e: WheelEvent) => {
-      if (e.shiftKey) {
-        e.preventDefault();
-        // Windows turns Shift+wheel into horizontal scrolling.
-        const delta = e.deltaY || e.deltaX;
-        const now = performance.now();
-        if (now - lastWheel > 300 || Math.sign(delta) !== Math.sign(acc)) acc = 0;
-        lastWheel = now;
-        acc += e.deltaMode === 1 ? delta * 40 : delta;
-        while (Math.abs(acc) >= 60) {
-          selectRelative(acc > 0 ? 1 : -1);
-          acc -= Math.sign(acc) * 100;
-          if (Math.abs(acc) < 60) acc = 0;
-        }
-        return;
-      }
-      if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-        el.scrollLeft += e.deltaY;
-        e.preventDefault();
-      }
-    };
+    const onWheel = stripWheel(el);
     update();
     el.addEventListener("scroll", update, { passive: true });
     el.addEventListener("wheel", onWheel, { passive: false });
@@ -94,7 +76,7 @@ function TopTabsInner() {
           })}
           {createPortal(
             <DragOverlay dropAnimation={{ duration: 160, easing: "cubic-bezier(0.16, 1, 0.3, 1)" }}>
-              {activeId ? <TabOverlay id={activeId} variant="top" /> : null}
+              {activeId ? <TabOverlay id={activeId} variant="top" detaching={detaching} /> : null}
             </DragOverlay>,
             document.body,
           )}

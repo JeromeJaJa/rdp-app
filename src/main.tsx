@@ -5,8 +5,9 @@ import "@fontsource-variable/jetbrains-mono";
 import "./styles/tokens.css";
 import "./styles/base.css";
 import { App } from "./App";
+import { DetachedApp } from "./DetachedApp";
 import { initApp } from "./state/actions";
-import { isTauri } from "./lib/env";
+import { isMainWindow, isTauri } from "./lib/env";
 
 async function boot() {
   try {
@@ -16,7 +17,7 @@ async function boot() {
   }
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>
-      <App />
+      {isMainWindow() ? <App /> : <DetachedApp />}
     </React.StrictMode>,
   );
   if (isTauri()) {

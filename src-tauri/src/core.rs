@@ -12,7 +12,7 @@ use rdp_engine::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
-use tauri::{AppHandle, Emitter as _};
+use tauri::{AppHandle, Emitter as _, Manager as _};
 use tokio::sync::broadcast;
 
 use crate::certs::CertStore;
@@ -219,7 +219,8 @@ impl Core {
     }
 
     fn changed(&self, origin: Origin) {
-        if origin == Origin::Api {
+        // The window that made a UI change already shows it; other windows don't.
+        if origin == Origin::Api || self.app.webview_windows().len() > 1 {
             let _ = self.app.emit("library-changed", self.library());
         }
         self.publish(json!({ "type": "libraryChanged" }));

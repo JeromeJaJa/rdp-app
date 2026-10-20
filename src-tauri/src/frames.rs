@@ -5,6 +5,11 @@
 //! renderer with zero copies and zero IPC messages. See
 //! `rdp_engine::surface` for the memory layout the page polls.
 //!
+//! A session's full-size surface goes to the window that shows it (the main
+//! window, or a window its tab was dragged into); grid thumbnails always go to the
+//! main window. All windows share one WebView2 environment, so a buffer can be
+//! handed to another window when its tab moves.
+//!
 //! WebView2 objects live on the UI thread; session threads ask for buffers
 //! through `with_webview` and wait for the result.
 
@@ -36,6 +41,8 @@ struct Entry {
     buffer: UiThreadOnly<ICoreWebView2SharedBuffer>,
     meta: String,
     generation: u64,
+    /// The window the buffer was last posted to.
+    window: String,
 }
 
 /// COM pointer that is only ever used on the UI thread.
@@ -68,6 +75,8 @@ struct SurfaceReleased {
 pub struct WebviewSurfaces {
     app: AppHandle,
     next_generation: AtomicU64,
+    /// Window showing each session's full surface (absent = the main window).
+    hosts: Mutex<HashMap<String, String>>,
 }
 
 impl WebviewSurfaces {
@@ -75,17 +84,31 @@ impl WebviewSurfaces {
         Arc::new(Self {
             app,
             next_generation: AtomicU64::new(1),
+            hosts: Mutex::new(HashMap::new()),
         })
     }
 
-    /// Re-sends every live buffer to the page (after a reload the page has lost them).
-    pub fn repost_all(&self) -> anyhow::Result<()> {
-        let window = self.app.get_webview_window(MAIN_WINDOW).context("main window")?;
-        window.with_webview(|pw| {
+    fn window_for(&self, session: &str, kind: SurfaceKind) -> String {
+        match kind {
+            SurfaceKind::Full => self
+                .hosts
+                .lock()
+                .get(session)
+                .cloned()
+                .unwrap_or_else(|| MAIN_WINDOW.to_owned()),
+            SurfaceKind::Thumb => MAIN_WINDOW.to_owned(),
+        }
+    }
+
+    /// Re-sends the live buffers that belong to `label` (after its page loaded or reloaded).
+    pub fn repost_all(&self, label: &str) -> anyhow::Result<()> {
+        let window = self.app.get_webview_window(label).context("window")?;
+        let label = label.to_owned();
+        window.with_webview(move |pw| {
             let Ok(core) = core_webview(&pw) else { return };
             let registry = REGISTRY.lock();
             if let Some(map) = registry.as_ref() {
-                for entry in map.values() {
+                for entry in map.values().filter(|e| e.window == label) {
                     unsafe {
                         let _ = core.PostSharedBufferToScript(
                             &entry.buffer.0,
@@ -98,6 +121,70 @@ impl WebviewSurfaces {
         })?;
         Ok(())
     }
+
+    /// Shows a session's full surface in another window (its tab moved there). The
+    /// buffer itself stays; the old window is told to let go of its view of it.
+    pub fn set_host(&self, session: &str, label: &str) {
+        {
+            let mut hosts = self.hosts.lock();
+            let current = hosts.get(session).map(String::as_str).unwrap_or(MAIN_WINDOW);
+            if current == label {
+                return;
+            }
+            if label == MAIN_WINDOW {
+                hosts.remove(session);
+            } else {
+                hosts.insert(session.to_owned(), label.to_owned());
+            }
+        }
+        let Some(window) = self.app.get_webview_window(label) else {
+            return;
+        };
+        let key = (session.to_owned(), SurfaceKind::Full);
+        let target = label.to_owned();
+        let app = self.app.clone();
+        let _ = window.with_webview(move |pw| {
+            let Ok(core) = core_webview(&pw) else { return };
+            let (previous, generation) = {
+                let mut registry = REGISTRY.lock();
+                let Some(entry) = registry.as_mut().and_then(|m| m.get_mut(&key)) else {
+                    return;
+                };
+                unsafe {
+                    let _ = core.PostSharedBufferToScript(
+                        &entry.buffer.0,
+                        COREWEBVIEW2_SHARED_BUFFER_ACCESS_READ_ONLY,
+                        &HSTRING::from(entry.meta.as_str()),
+                    );
+                }
+                (std::mem::replace(&mut entry.window, target), entry.generation)
+            };
+            // A window that closed has nothing left to let go of.
+            if app.get_webview_window(&previous).is_some() {
+                emit_later(
+                    app,
+                    Some(previous),
+                    SurfaceReleased {
+                        session: key.0,
+                        kind: key.1.as_str(),
+                        generation,
+                    },
+                );
+            }
+        });
+    }
+}
+
+/// Emits `surface-released` (to one window, or all) from outside a `with_webview`
+/// closure: run on the UI thread, such a closure holds its webview's lock, and emitting
+/// evaluates script in every listening webview, that one included: a deadlock.
+fn emit_later(app: AppHandle, window: Option<String>, released: SurfaceReleased) {
+    tauri::async_runtime::spawn(async move {
+        let _ = match window {
+            Some(label) => app.emit_to(label.as_str(), "surface-released", released),
+            None => app.emit("surface-released", released),
+        };
+    });
 }
 
 fn core_webview(pw: &tauri::webview::PlatformWebview) -> windows_core::Result<ICoreWebView2_17> {
@@ -112,7 +199,12 @@ impl SurfaceProvider for WebviewSurfaces {
         width: u32,
         height: u32,
     ) -> anyhow::Result<Arc<dyn SurfaceMemory>> {
-        let window = self.app.get_webview_window(MAIN_WINDOW).context("main window")?;
+        let label = self.window_for(session, kind);
+        let window = match self.app.get_webview_window(&label) {
+            Some(w) => w,
+            None => self.app.get_webview_window(MAIN_WINDOW).context("main window")?,
+        };
+        let label = window.label().to_owned();
         let generation = self.next_generation.fetch_add(1, Ordering::Relaxed);
         let key = (session.to_owned(), kind);
         let len = surface_len(width, height);
@@ -150,6 +242,7 @@ impl SurfaceProvider for WebviewSurfaces {
                         buffer: UiThreadOnly(buffer),
                         meta,
                         generation,
+                        window: label,
                     },
                 ) {
                     unsafe {
@@ -180,8 +273,9 @@ impl SurfaceProvider for WebviewSurfaces {
                 unsafe {
                     let _ = entry.buffer.0.Close();
                 }
-                let _ = app.emit(
-                    "surface-released",
+                emit_later(
+                    app,
+                    None,
                     SurfaceReleased {
                         session: key.0,
                         kind: key.1.as_str(),

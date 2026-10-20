@@ -20,6 +20,7 @@ import type {
   TrustedCertificate,
   UiCommand,
   UiState,
+  WindowTabs,
 } from "../types";
 
 export type Unsubscribe = () => void;
@@ -104,4 +105,21 @@ export interface Backend {
   reportUiState(state: UiState): void;
   /** Opens an http(s) link in the default browser. */
   openExternal(url: string): Promise<void>;
+
+  // ── Windows: tabs dragged out of the main window ────────────────────────
+  /** Which tabs live in which detached window (everything else is in the main window). */
+  windowLayout(): Promise<WindowTabs[]>;
+  onWindowLayout(cb: (windows: WindowTabs[]) => void): Unsubscribe;
+  /** Another window asked this one to show a tab. */
+  onSelectTab(cb: (id: ConnectionId) => void): Unsubscribe;
+  /** Moves a tab into "main" or a detached window (at `index`, or the end). */
+  moveTab(id: ConnectionId, target: string, index?: number): Promise<void>;
+  /** The tab was dropped outside this window: into the window under the pointer, or a new one. */
+  dropTab(id: ConnectionId): Promise<string>;
+  /** Opens a new window holding the tab. */
+  detachTab(id: ConnectionId): Promise<string>;
+  /** New tab order for this (detached) window. */
+  reorderWindowTabs(tabs: ConnectionId[]): Promise<void>;
+  /** Focuses the window holding the tab and selects it there. */
+  showTab(id: ConnectionId): Promise<void>;
 }

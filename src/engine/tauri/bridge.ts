@@ -2,7 +2,7 @@
 // indexed by session + kind. Memory layout: see `crates/rdp-engine/src/surface.rs`.
 
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 
 export const MAGIC = 0x46504452;
 export const RING_OFFSET = 64;
@@ -91,7 +91,9 @@ export function initBridge() {
 
   webview.addEventListener("sharedbufferreceived", (e) => adopt(e.additionalData, e.getBuffer()));
 
-  listen<{ session: string; kind: SurfaceKind; generation: number }>("surface-released", (e) => {
+  // Listened on this window only: a release can be meant for another window (the
+  // surface moved there along with its tab).
+  getCurrentWebviewWindow().listen<{ session: string; kind: SurfaceKind; generation: number }>("surface-released", (e) => {
     const key = keyOf(e.payload.session, e.payload.kind);
     const s = surfaces.get(key);
     if (s && s.generation === e.payload.generation) {

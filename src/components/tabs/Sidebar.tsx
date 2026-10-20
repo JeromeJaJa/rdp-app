@@ -13,7 +13,8 @@ import { containerId, useTabsDnd } from "./useTabsDnd";
 import type { GroupId } from "../../lib/types";
 import "./sidebar.css";
 
-const lockX: Modifier = ({ transform }) => ({ ...transform, x: 0 });
+// The tab stays in the list until it is pulled well away from it (to tear it off).
+const lockX: Modifier = ({ transform }) => (Math.abs(transform.x) > 60 ? transform : { ...transform, x: 0 });
 
 function DropZone({ groupId, children, empty }: { groupId: GroupId; children: React.ReactNode; empty?: boolean }) {
   const { setNodeRef, isOver } = useDroppable({ id: containerId(groupId) });
@@ -55,7 +56,14 @@ function FilteredList({ filter }: { filter: string }) {
 }
 
 function SidebarList() {
-  const { sections, activeId, sensors, collisionDetection, handlers } = useTabsDnd();
+  // Dropped well to the right of the sidebar (over the session) or outside the window:
+  // the tab gets a window of its own.
+  const { sections, activeId, detaching, sensors, collisionDetection, handlers } = useTabsDnd({
+    away: (x) => {
+      const r = document.querySelector(".sidebar")?.getBoundingClientRect();
+      return !!r && x > r.right + 48;
+    },
+  });
   const groups = useStore((s) => s.groups);
   const total = useStore((s) => s.order.length);
   const groupById = useMemo(() => new Map(groups.map((g) => [g.id, g])), [groups]);
@@ -91,7 +99,7 @@ function SidebarList() {
       {/* In <body>: the sidebar's container query (layout containment) would offset the copy. */}
       {createPortal(
         <DragOverlay dropAnimation={{ duration: 160, easing: "cubic-bezier(0.16, 1, 0.3, 1)" }}>
-          {activeId ? <TabOverlay id={activeId} variant="side" /> : null}
+          {activeId ? <TabOverlay id={activeId} variant="side" detaching={detaching} /> : null}
         </DragOverlay>,
         document.body,
       )}

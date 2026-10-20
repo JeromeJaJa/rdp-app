@@ -116,3 +116,66 @@
 .tab:focus-visible {
   outline: none;
 }
+
+/* ── Tabs in other windows ─────────────────────────────────────────────── */
+
+/* In the main window: the tab lives in another window. */
+.tab__elsewhere {
+  flex: none;
+  display: grid;
+  place-items: center;
+  color: var(--text-3);
+}
+.tab.is-elsewhere .tab__name {
+  color: var(--text-3);
+}
+.tab.is-elsewhere.is-selected .tab__name,
+.tab.is-elsewhere:hover .tab__name {
+  color: var(--text-2);
+}
+
+/* Detached windows: × sends the tab back to the main window. */
+.tab__close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-right: -6px;
+  border-radius: 5px;
+  color: var(--text-3);
+  opacity: 0;
+  transition: background-color var(--t-fast) ease, color var(--t-fast) ease, opacity var(--t-fast) ease;
+}
+.tab:hover .tab__close,
+.tab.is-selected .tab__close {
+  opacity: 1;
+}
+.tab__close:hover {
+  background: var(--active);
+  color: var(--text);
+}
+
+/* The dragged tab, once releasing it would take it out of the window. */
+.tab.is-overlay.is-detaching {
+  box-shadow: 0 0 0 1px var(--accent), var(--shadow-md);
+}
+/* Room for the hint next to the name (the overlay starts at the tab's width). */
+.tab--top.is-overlay.is-detaching {
+  width: max-content;
+  max-width: none;
+}
+.tab--top.is-overlay.is-detaching .tab__name {
+  flex: none;
+  max-width: 180px;
+}
+.tab__detach-hint {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-soft);
+  white-space: nowrap;
+}

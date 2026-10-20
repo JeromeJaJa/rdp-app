@@ -7,6 +7,7 @@ A fast, minimal Windows Remote Desktop client for managing many connections at o
 - **Built for scale**: 50–100+ simultaneous sessions. Each session has its own thread, and sessions you aren't looking at are paused on the server side, so they cost almost nothing.
 - **H.264**: graphics pipeline with AVC420 and AVC444 (full 4:4:4 color, so small colored text stays crisp), decoded on the GPU (Media Foundation / DXVA) or in software. Only the regions that changed are converted, straight into shared memory.
 - **Tabs on top or left**, drag to reorder (in the grid too, also across groups), a live **grid view** of every session.
+- **Separate windows**, Chrome-style: drag a tab out to give it a window of its own, drag tabs between windows. Sessions stay connected throughout and are sized to the window they're in.
 - **Groups**: every connection belongs to a group, the built-in **All** group or one of yours. Each group can connect/disconnect as a whole and have its whole list **replaced** from a pasted list (matching connections keep their live sessions).
 - **Bulk add**: paste `host:user:pass` lines (also `host:port:user:pass`, `DOMAIN\user`, `user@domain`, `[ipv6]:port:…`).
 - **Import / export** everything or single groups, as JSON (groups, notes) or bulk text. Exports include passwords in plain text, so treat the file like the passwords themselves.
@@ -27,6 +28,8 @@ A fast, minimal Windows Remote Desktop client for managing many connections at o
 | Grid view | `Ctrl+G` or the grid toggle (bottom of the sidebar; title bar when tabs are on top) — click a tile to open it, drag to reorder |
 | Switch within a group | With tabs on the left, click the connection name in the title bar |
 | Next / previous tab | `Ctrl+Tab` / `Ctrl+Shift+Tab`, `Ctrl+1…9`, or `Shift`+scroll over the top tabs |
+| Open a tab in its own window | Drag it out of the tab strip (or over the session), or right-click → **Open in new window** |
+| Move a tab between windows | Drag it onto the other window; its × (or `Ctrl+W`) sends it back to the main window. Closing a window does too |
 | Session toolbar (send keys, mute, reconnect, fullscreen) | Rest the pointer on the top edge of a session; its X hides it until you move away |
 | Send Win, Win+R, Alt+Tab, Task Manager… | Session toolbar → keyboard button |
 | Release keyboard from a session | Click outside it, or `Ctrl+Alt+Home` |
@@ -79,6 +82,7 @@ src-tauri/               Tauri shell
   src/api/               REST API server, endpoint table, generated docs
   src/certs.rs           pinned server certificates
   src/frames.rs          WebView2 shared buffers
+  src/tearoff.rs         tabs torn off into windows of their own
 crates/rdp-engine/       the RDP engine (no UI dependencies)
   src/session.rs         per-session thread: connect, reconnect, input, pause/resume, resize
   src/connect.rs         transport (direct or RD Gateway), TLS, channels

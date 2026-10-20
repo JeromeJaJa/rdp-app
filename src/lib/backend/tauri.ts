@@ -25,6 +25,7 @@ import {
   type TrustedCertificate,
   type UiCommand,
   type UiState,
+  type WindowTabs,
 } from "../types";
 
 /** Library as sent by Rust: settings are null until first saved. */
@@ -207,6 +208,52 @@ export class TauriBackend implements Backend {
 
   onUiCommand(cb: (command: UiCommand) => void): Unsubscribe {
     return subscribe<UiCommand>("ui-command", cb);
+  }
+
+  windowLayout(): Promise<WindowTabs[]> {
+    return invoke<{ windows: WindowTabs[] }>("window_layout").then((l) => l.windows);
+  }
+
+  onWindowLayout(cb: (windows: WindowTabs[]) => void): Unsubscribe {
+    return subscribe<{ windows: WindowTabs[] }>("window-layout", (l) => cb(l.windows));
+  }
+
+  onSelectTab(cb: (id: ConnectionId) => void): Unsubscribe {
+    // Sent to one window only: listen on this window, not on every target.
+    let disposed = false;
+    let unlisten: (() => void) | null = null;
+    import("@tauri-apps/api/webviewWindow").then(({ getCurrentWebviewWindow }) =>
+      getCurrentWebviewWindow()
+        .listen<ConnectionId>("select-tab", (e) => cb(e.payload))
+        .then((fn) => {
+          if (disposed) fn();
+          else unlisten = fn;
+        }),
+    );
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }
+
+  moveTab(id: ConnectionId, target: string, index?: number): Promise<void> {
+    return invoke("window_move_tab", { id, target, index: index ?? null });
+  }
+
+  dropTab(id: ConnectionId): Promise<string> {
+    return invoke("window_drop_tab", { id });
+  }
+
+  detachTab(id: ConnectionId): Promise<string> {
+    return invoke("window_detach_tab", { id });
+  }
+
+  reorderWindowTabs(tabs: ConnectionId[]): Promise<void> {
+    return invoke("window_reorder_tabs", { tabs });
+  }
+
+  showTab(id: ConnectionId): Promise<void> {
+    return invoke("window_show_tab", { id });
   }
 
   openExternal(url: string): Promise<void> {

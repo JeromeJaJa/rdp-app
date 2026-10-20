@@ -9,6 +9,7 @@ import {
   type SessionStatus,
   type OverridableKey,
   type Settings,
+  type WindowTabs,
 } from "../lib/types";
 
 export interface SessionInfo {
@@ -84,6 +85,8 @@ export interface AppState {
   menu: MenuState | null;
   /** The command palette (Ctrl+K) is open. */
   paletteOpen: boolean;
+  /** Windows that tabs were dragged into (all other tabs live in the main window). */
+  windows: WindowTabs[];
   toasts: Toast[];
   fullscreen: boolean;
   /** Keyboard focus is inside a RemoteSurface: app shortcuts are suspended. */
@@ -111,6 +114,7 @@ export const useStore = create<AppState>(() => ({
   dialog: null,
   menu: null,
   paletteOpen: false,
+  windows: [],
   toasts: [],
   fullscreen: false,
   remoteFocused: false,
@@ -223,6 +227,16 @@ export function groupOf(c: Connection, groups: Group[]): GroupId {
 }
 
 /** Flat display order (what Ctrl+Tab walks and what top tabs show). */
+/** The window a connection's tab lives in: "main" or a detached window's label. */
+export function hostOf(s: Pick<AppState, "windows">, id: ConnectionId): string {
+  return s.windows.find((w) => w.tabs.includes(id))?.label ?? "main";
+}
+
+/** This (detached) window's tabs, in order. */
+export function windowTabs(s: Pick<AppState, "windows">, label: string): ConnectionId[] {
+  return s.windows.find((w) => w.label === label)?.tabs ?? [];
+}
+
 export function flatOrder(s: Pick<AppState, "order" | "connById" | "groups">): ConnectionId[] {
   return buildSections(s.order, s.connById, s.groups).flatMap((x) => x.ids);
 }

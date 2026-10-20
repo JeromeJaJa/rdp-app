@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
+  AppWindow,
   ArrowDownToLine,
   ArrowUpFromLine,
   Check,
@@ -14,6 +15,7 @@ import {
   RotateCw,
   SlidersHorizontal,
   Trash2,
+  Undo2,
   Volume2,
   VolumeX,
 } from "lucide-react";
@@ -29,13 +31,27 @@ import {
   duplicateConnection,
   groupMembers,
   moveToGroup,
+  moveToMainWindow,
   openDialog,
+  openInNewWindow,
   reconnect,
+  showTabWindow,
   startRenameGroup,
   toggleConnectionMute,
 } from "../../state/actions";
+import { isMainWindow, isTauri, windowLabel } from "../../lib/env";
 import { FEATURES } from "../../lib/features";
-import { displayName, isBusy, isLive, type MenuState, resolveSetting, useBulkActions, useStore } from "../../state/store";
+import {
+  displayName,
+  hostOf,
+  isBusy,
+  isLive,
+  type MenuState,
+  resolveSetting,
+  useBulkActions,
+  useStore,
+  windowTabs,
+} from "../../state/store";
 import { ConnectIcon, DisconnectIcon } from "../common/SessionIcons";
 import "./menu.css";
 
@@ -91,6 +107,27 @@ function Item({ icon, label, hint, danger, disabled, checked, onSelect, submenu 
 
 const Sep = () => <div className="menu__sep" />;
 
+/** Where the tab lives: its own window, back to the main one, or to the front. */
+function WindowItems({ id }: { id: string }) {
+  const host = useStore((s) => hostOf(s, id));
+  // A detached window's only tab already has a window of its own.
+  const alone = useStore((s) => !isMainWindow() && windowTabs(s, windowLabel()).length <= 1);
+  if (!isTauri()) return null;
+  const here = host === windowLabel();
+  return (
+    <>
+      {here && !alone && (
+        <Item icon={<AppWindow size={14} />} label="Open in new window" onSelect={() => openInNewWindow(id)} />
+      )}
+      {!here && <Item icon={<AppWindow size={14} />} label="Show window" onSelect={() => showTabWindow(id)} />}
+      {host !== "main" && (
+        <Item icon={<Undo2 size={14} />} label="Move to main window" onSelect={() => moveToMainWindow(id)} />
+      )}
+      <Sep />
+    </>
+  );
+}
+
 function ConnectionMenu({ id }: { id: string }) {
   const conn = useStore((s) => s.connById[id]);
   const status = useStore((s) => s.sessions[id]?.status ?? "idle");
@@ -110,6 +147,7 @@ function ConnectionMenu({ id }: { id: string }) {
         <Item icon={<RotateCw size={14} />} label="Reconnect" onSelect={() => reconnect(id)} />
       )}
       <Sep />
+      <WindowItems id={id} />
       <Item icon={<Pencil size={14} />} label="Edit…" onSelect={() => openDialog({ kind: "edit", id })} />
       <Item icon={<Copy size={14} />} label="Duplicate" onSelect={() => duplicateConnection(id)} />
       <Item
