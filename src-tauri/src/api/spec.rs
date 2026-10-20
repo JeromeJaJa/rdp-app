@@ -267,7 +267,7 @@ pub const ENDPOINTS: &[Endpoint] = &[
         description: "gateway: null removes the group's gateway. settings replaces the group's overrides for its connections ({} clears them). The built-in group cannot be renamed.",
         params: &[GID],
         body: Some(
-            r#"{"name":"Prod","collapsed":true,"settings":{"driveRedirection":"custom","drivePaths":["D:\Shared"]}}"#,
+            r#"{"name":"Prod","collapsed":true,"settings":{"driveRedirection":"custom","drivePaths":["D:\\Shared"]}}"#,
         ),
         response: Some(r#"{"id":"<group id>","name":"Prod", "…": "…"}"#),
         auth: true,
