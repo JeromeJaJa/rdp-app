@@ -1,4 +1,7 @@
+#![cfg_attr(windows, windows_subsystem = "windows")]
 //! Remote-side companion for RDP App.
+//!
+//! A background agent with no UI — runs without a console window (it logs to a file).
 //!
 //! Runs inside the remote session, opens the companion dynamic virtual channel back to
 //! the client, and performs the [`rdp_companion_proto`] handshake. On the client the

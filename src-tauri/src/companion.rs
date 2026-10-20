@@ -15,6 +15,18 @@ use std::process::Command;
 
 use anyhow::{Context as _, bail};
 
+/// A `powershell.exe` command that runs without flashing a console window.
+fn powershell() -> Command {
+    let mut command = Command::new("powershell.exe");
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt as _;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    command
+}
+
 /// A host to install the companion on, with the credentials to reach it.
 pub struct Target {
     pub host: String,
@@ -71,7 +83,7 @@ pub fn install_over_winrm(target: &Target, exe: &Path) -> anyhow::Result<Outcome
 
     // Credentials go through the environment, never the command line (process args are
     // world-readable); the script builds a PSCredential from them.
-    let output = Command::new("powershell.exe")
+    let output = powershell()
         .args([
             "-NoProfile",
             "-NonInteractive",
@@ -131,7 +143,7 @@ pub fn trust_host(host: &str) -> anyhow::Result<()> {
          -ArgumentList @('-NoProfile','-NonInteractive','-Command',\"{}\"); exit $p.ExitCode",
         inner.replace('"', "`\"")
     );
-    let status = Command::new("powershell.exe")
+    let status = powershell()
         .args(["-NoProfile", "-NonInteractive", "-Command", &script])
         .status()
         .context("run powershell")?;
@@ -150,7 +162,7 @@ pub fn uninstall_over_winrm(target: &Target) -> anyhow::Result<()> {
     } else {
         format!("{}\\{}", target.domain, target.username)
     };
-    let output = Command::new("powershell.exe")
+    let output = powershell()
         .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", UNINSTALL_PS1])
         .env("RDPAPP_HOST", &target.host)
         .env("RDPAPP_USER", &user)
