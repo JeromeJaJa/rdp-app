@@ -96,6 +96,34 @@ pub fn install_over_winrm(target: &Target, exe: &Path) -> anyhow::Result<Outcome
     bail!("companion install failed: {}", detail.trim());
 }
 
+const UNINSTALL_PS1: &str = include_str!("companion_uninstall.ps1");
+
+/// Removes the companion from a host over WinRM: stops it, drops its autostart entry,
+/// and deletes its files. Blocking.
+pub fn uninstall_over_winrm(target: &Target) -> anyhow::Result<()> {
+    let user = if target.domain.is_empty() || target.username.contains('\\') {
+        target.username.clone()
+    } else {
+        format!("{}\\{}", target.domain, target.username)
+    };
+    let output = Command::new("powershell.exe")
+        .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", UNINSTALL_PS1])
+        .env("RDPAPP_HOST", &target.host)
+        .env("RDPAPP_USER", &user)
+        .env("RDPAPP_PASS", &target.password)
+        .output()
+        .context("run powershell")?;
+    if !output.status.success() {
+        bail!(
+            "companion uninstall failed: {}{}",
+            String::from_utf8_lossy(&output.stdout).trim(),
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    tracing::info!(host = %target.host, "companion removed over WinRM");
+    Ok(())
+}
+
 /// Whether the failure is "WinRM can't be reached/used" (so we fall back) rather than a
 /// real deployment error worth surfacing.
 fn looks_like_no_winrm(detail: &str) -> bool {

@@ -286,6 +286,15 @@ async fn companion_install(state: State<'_, AppState>, id: String) -> CmdResult<
 }
 
 #[tauri::command]
+async fn companion_uninstall(state: State<'_, AppState>, id: String) -> CmdResult<()> {
+    let core = std::sync::Arc::clone(&state.core);
+    tauri::async_runtime::spawn_blocking(move || core.uninstall_companion(&id))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(err)
+}
+
+#[tauri::command]
 fn engine_set_thumbnail_width(state: State<'_, AppState>, width: u32) {
     let current = state.core.engine.settings();
     // Bucket to 64px steps so slider drags don't reallocate every surface on each pixel.
@@ -539,6 +548,7 @@ pub fn run() {
             window_focus,
             window_show_tab,
             companion_install,
+            companion_uninstall,
             engine_send_keys,
             trust_certificate,
             list_certificates,

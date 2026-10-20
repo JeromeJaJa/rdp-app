@@ -13,6 +13,10 @@ $session = New-PSSession -ComputerName $env:RDPAPP_HOST -Credential $cred -Authe
 try {
   Invoke-Command -Session $session -ScriptBlock {
     New-Item -ItemType Directory -Force -Path 'C:\ProgramData\RdpApp' | Out-Null
+    # Replace any instance already running (a redeploy, or a stale one), so the copy
+    # below isn't blocked by the file being in use.
+    Get-Process rdp-companion -ErrorAction SilentlyContinue | Stop-Process -Force
+    Start-Sleep -Milliseconds 300
   }
   Copy-Item -ToSession $session -Path $env:RDPAPP_EXE -Destination 'C:\ProgramData\RdpApp\rdp-companion.exe' -Force
 

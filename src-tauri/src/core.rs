@@ -307,6 +307,18 @@ impl Core {
         crate::companion::install_over_winrm(&target, &exe)
     }
 
+    /// Removes the companion from a connection's host over WinRM. Blocking.
+    pub fn uninstall_companion(&self, id: &str) -> anyhow::Result<()> {
+        let creds = self.store.lock().credentials(id)?;
+        let target = crate::companion::Target {
+            host: creds.host,
+            username: creds.username,
+            domain: creds.domain,
+            password: creds.password,
+        };
+        crate::companion::uninstall_over_winrm(&target)
+    }
+
     /// The audio mode a connection should use.
     fn audio_mode(&self, id: &str) -> AudioMode {
         match self.effective_settings(id).get("audio").and_then(Value::as_str) {
