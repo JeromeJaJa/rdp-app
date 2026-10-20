@@ -2813,7 +2813,6 @@ dependencies = [
 [[package]]
 name = "ironrdp-rdpdr-native"
 version = "0.7.0"
-source = "git+https://github.com/Devolutions/IronRDP?rev=62246b364a0282bab85087f658a81fe4207b6b31#62246b364a0282bab85087f658a81fe4207b6b31"
 dependencies = [
  "ironrdp-core",
  "ironrdp-pdu",

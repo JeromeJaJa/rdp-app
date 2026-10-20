@@ -37,12 +37,22 @@ type Writer = TokioFramed<WriteHalf<Stream>>;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(45);
 const MAX_RECONNECT_ATTEMPTS: u32 = 8;
+/// A session that stays up this long starts a fresh round of reconnect attempts if it
+/// drops; one that fails sooner keeps counting, so a failure that repeats right after
+/// connecting (a bad shared folder, a server that refuses the session) ends instead
+/// of looping.
+const STABLE_SESSION: Duration = Duration::from_secs(60);
 /// Keep a hidden session's full-resolution surface around briefly so quick tab
 /// switches don't reallocate.
 const FULL_SURFACE_GRACE: Duration = Duration::from_secs(8);
 /// Wait this long after a session leaves the screen before pausing its stream.
 const PAUSE_DELAY: Duration = Duration::from_secs(2);
 const RESIZE_DEBOUNCE: Duration = Duration::from_millis(250);
+/// Windows drops a monitor layout that arrives while it is still applying the previous
+/// one (a tab dragged into a window and straight back): this long after asking, the
+/// session checks it got the size and asks again, up to `RESIZE_TRIES` times.
+const RESIZE_VERIFY: Duration = Duration::from_secs(3);
+const RESIZE_TRIES: u8 = 3;
 
 pub(crate) struct SessionInit {
     pub id: String,
@@ -514,7 +524,7 @@ async fn run(
 
         info!(session = %s.id, elapsed_ms = started.elapsed().as_millis() as u64, "connected");
         ever_connected = true;
-        attempt = 0;
+        let connected_at = Instant::now();
         s.status(SessionStatus::Connected, None);
 
         let exit = active(&mut s, connected, stats, gfx_out, &mut rx).await;
@@ -527,6 +537,9 @@ async fn run(
             Exit::Failed(e) => {
                 let msg = friendly(&e);
                 warn!(session = %s.id, error = %format!("{e:#}"), "session failed");
+                if connected_at.elapsed() >= STABLE_SESSION {
+                    attempt = 0;
+                }
                 if s.params.auto_reconnect && attempt < MAX_RECONNECT_ATTEMPTS {
                     attempt += 1;
                     last_error = Some(msg);
@@ -584,6 +597,8 @@ struct Live {
     refresh_rect_supported: bool,
     suppressed: bool,
     resize_to: Option<(Viewport, Instant)>,
+    /// Requests sent for the current target size without it taking effect.
+    resize_tries: u8,
     resize_unavailable_logged: bool,
     /// Bytes written and time spent writing, since the last perf report.
     sent_bytes: u64,
@@ -677,10 +692,10 @@ impl Live {
         self.send(&frame).await
     }
 
-    async fn resize_now(&mut self, vp: Viewport) -> anyhow::Result<bool> {
+    async fn resize_now(&mut self, vp: Viewport) -> anyhow::Result<ResizeStep> {
         let (w, h) = clamp_size(vp.width, vp.height);
         if (w, h) == self.dims() {
-            return Ok(true);
+            return Ok(ResizeStep::Done);
         }
         match self
             .stage
@@ -690,11 +705,20 @@ impl Live {
                 let frame = frame.context("encode resize")?;
                 self.send(&frame).await?;
                 debug!(w, h, "requested dynamic resize");
-                Ok(true)
+                Ok(ResizeStep::Sent)
             }
-            None => Ok(false),
+            None => Ok(ResizeStep::NotReady),
         }
     }
+}
+
+enum ResizeStep {
+    /// The session already has the size.
+    Done,
+    /// Asked the server for it.
+    Sent,
+    /// The display control channel isn't up yet.
+    NotReady,
 }
 
 /// A batch of input, split where the order of non-key/mouse events matters.
@@ -841,6 +865,7 @@ async fn active(
         refresh_rect_supported: refresh_rect_support,
         suppressed: false,
         resize_to: None,
+        resize_tries: 0,
         resize_unavailable_logged: false,
         sent_bytes: 0,
         send_us: 0,
@@ -968,6 +993,7 @@ async fn active(
                         Command::Resize(vp) => {
                             s.viewport = vp;
                             live.resize_to = Some((vp, Instant::now() + RESIZE_DEBOUNCE));
+                            live.resize_tries = 0;
                         }
                         Command::View(v) => {
                             s.set_view(v);
@@ -1072,16 +1098,27 @@ async fn active(
                 }
 
                 _ = sleep_until_opt(resize_deadline), if resize_deadline.is_some() => {
-                    if let Some((vp, _)) = live.resize_to.take()
-                        && !live.resize_now(vp).await? {
+                    if let Some((vp, _)) = live.resize_to.take() {
+                        match live.resize_now(vp).await? {
+                            ResizeStep::Done => live.resize_tries = 0,
+                            ResizeStep::Sent if live.resize_tries < RESIZE_TRIES => {
+                                live.resize_tries += 1;
+                                live.resize_to = Some((vp, Instant::now() + RESIZE_VERIFY));
+                            }
+                            ResizeStep::Sent => {
+                                debug!("server kept its size after repeated resize requests");
+                                live.resize_tries = 0;
+                            }
                             // Display control not ready yet; retry shortly (gives up quietly
                             // on servers without the channel).
-                            if !live.resize_unavailable_logged {
+                            ResizeStep::NotReady if !live.resize_unavailable_logged => {
                                 live.resize_unavailable_logged = true;
                                 debug!("display control not ready; will retry resize");
                                 live.resize_to = Some((vp, Instant::now() + Duration::from_secs(2)));
                             }
+                            ResizeStep::NotReady => {}
                         }
+                    }
                 }
 
                 _ = sleep_until_opt(shots_deadline), if shots_deadline.is_some() => {

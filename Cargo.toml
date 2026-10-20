@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = ["src-tauri", "crates/*"]
-exclude = ["third_party/ironrdp-graphics"]
+exclude = ["third_party/ironrdp-graphics", "third_party/ironrdp-rdpdr-native"]
 
 [workspace.package]
 edition = "2024"
@@ -46,6 +46,7 @@ opt-level = 3
 panic = "unwind" # sessions are isolated with catch_unwind
 strip = true
 
-# IronRDP's graphics crate with fixes not yet upstream (see third_party/README.md).
+# IronRDP crates with fixes not yet upstream (see third_party/README.md).
 [patch."https://github.com/Devolutions/IronRDP"]
 ironrdp-graphics = { path = "third_party/ironrdp-graphics" }
+ironrdp-rdpdr-native = { path = "third_party/ironrdp-rdpdr-native" }
