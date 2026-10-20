@@ -11,11 +11,15 @@ const SHIFT = 0x2a;
 const ALT = 0x38;
 
 /** How long the pointer must rest at the top edge before the toolbar appears. */
-const DWELL_MS = 550;
+const DWELL_MS = 400;
 /** Grace period before hiding once the pointer has left. */
 const HIDE_MS = 250;
-/** Height of the trigger strip along the top edge of the session. */
-const TRIGGER_PX = 8;
+/**
+ * The trigger strip along the top edge: a few pixels of the session plus the bottom of
+ * the title bar above it, so overshooting the edge while moving up still counts.
+ */
+const TRIGGER_TOP = -10;
+const TRIGGER_PX = 6;
 /** Height of the area the toolbar lives in; a dismissal lasts while the pointer stays inside it. */
 const AREA_PX = 64;
 
@@ -70,7 +74,7 @@ export function SessionToolbar({ id }: { id: string }) {
       const x = e.clientX - r.left;
       const y = e.clientY - r.top;
       const centered = Math.abs(x - r.width / 2) <= band / 2;
-      const inArea = centered && y >= 0 && y < AREA_PX;
+      const inArea = centered && y >= TRIGGER_TOP && y < AREA_PX;
       const onTrigger = inArea && y < TRIGGER_PX && e.buttons === 0;
       const bar = barRef.current?.getBoundingClientRect();
       const overBar =
