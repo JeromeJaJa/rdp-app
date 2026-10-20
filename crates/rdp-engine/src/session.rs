@@ -582,6 +582,9 @@ struct Live {
     suppressed: bool,
     resize_to: Option<(Viewport, Instant)>,
     resize_unavailable_logged: bool,
+    /// Bytes written and time spent writing, since the last perf report.
+    sent_bytes: u64,
+    send_us: u64,
 }
 
 impl Live {
@@ -597,7 +600,10 @@ impl Live {
 
     async fn send(&mut self, frame: &[u8]) -> anyhow::Result<()> {
         if !frame.is_empty() {
+            let t = Instant::now();
             self.writer.write_all(frame).await.context("write to server")?;
+            self.send_us += t.elapsed().as_micros() as u64;
+            self.sent_bytes += frame.len() as u64;
         }
         Ok(())
     }
@@ -833,6 +839,8 @@ async fn active(
         suppressed: false,
         resize_to: None,
         resize_unavailable_logged: false,
+        sent_bytes: 0,
+        send_us: 0,
     };
 
     let mut perf = Perf::new();
@@ -978,6 +986,7 @@ async fn active(
 
                 pdu = reader.read_pdu() => {
                     let (action, payload) = pdu.context("read from server")?;
+                    perf.bytes_in += payload.len() as u64;
                     if let Some(reply) = bandwidth.on_frame(action, &payload) {
                         live.send(&reply).await?;
                     }
@@ -1095,7 +1104,7 @@ async fn active(
 
                 _ = housekeeping.tick() => {
                     if perf.since.elapsed() >= Duration::from_secs(5) {
-                        perf.report(&s.id, &stats);
+                        perf.report(&s.id, &stats, std::mem::take(&mut live.sent_bytes), std::mem::take(&mut live.send_us));
                     }
                     // Delayed pause, full-surface release after the grace period.
                     if s.full.is_some() && !s.view.full {
@@ -1126,6 +1135,7 @@ async fn active(
 struct Perf {
     since: Instant,
     pdus: u64,
+    bytes_in: u64,
     process_us: u64,
     present_us: u64,
     thumb_us: u64,
@@ -1138,6 +1148,7 @@ impl Perf {
         Self {
             since: Instant::now(),
             pdus: 0,
+            bytes_in: 0,
             process_us: 0,
             present_us: 0,
             thumb_us: 0,
@@ -1146,12 +1157,29 @@ impl Perf {
         }
     }
 
-    fn report(&mut self, id: &str, stats: &GfxStats) {
+    fn report(&mut self, id: &str, stats: &GfxStats, bytes_out: u64, send_us: u64) {
         use std::sync::atomic::Ordering::Relaxed;
         let secs = self.since.elapsed().as_secs_f64();
         let decode_us = stats.decode_us.load(Relaxed) - self.decode_us;
         let decoded = stats.decoded.load(Relaxed) - self.decoded;
         let pct = |us: u64| us as f64 / 1e4 / secs;
+        // Heavy traffic (file copies, big pastes): how fast it flows and how busy this
+        // session's loop is, to tell a slow link or server from a slow client.
+        let mib_s = |bytes: u64| bytes as f64 / 1_048_576.0 / secs;
+        if mib_s(self.bytes_in) >= 0.5 || mib_s(bytes_out) >= 0.5 {
+            info!(
+                session = id,
+                in_mib_s = format!("{:.2}", mib_s(self.bytes_in)),
+                out_mib_s = format!("{:.2}", mib_s(bytes_out)),
+                pdus_per_s = format!("{:.0}", self.pdus as f64 / secs),
+                busy_pct = format!(
+                    "{:.0}",
+                    pct(self.process_us + self.present_us + self.thumb_us + decode_us + send_us)
+                ),
+                writing_pct = format!("{:.0}", pct(send_us)),
+                "session traffic"
+            );
+        }
         debug!(
             session = id,
             pdus_per_s = format!("{:.0}", self.pdus as f64 / secs),
@@ -1313,8 +1341,8 @@ mod input_order_tests {
         );
         let up = typematic_input(&mut db, vec![Operation::KeyReleased(shift)]);
         let press = FastPathInputEvent::KeyboardEvent(KeyboardFlags::empty(), 0x2A);
-        assert_eq!(first.as_slice(), [press.clone()]);
-        assert_eq!(repeats.as_slice(), [press.clone(), press], "no release between repeats");
+        assert_eq!(first.as_slice(), [press]);
+        assert_eq!(repeats.as_slice(), [press, press], "no release between repeats");
         assert_eq!(
             up.as_slice(),
             [FastPathInputEvent::KeyboardEvent(KeyboardFlags::RELEASE, 0x2A)]

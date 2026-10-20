@@ -665,8 +665,8 @@ struct Reader {
     /// Bytes at `[buf_start, buf_start + buf.len())`.
     buf_start: u64,
     buf: Vec<u8>,
-    /// Requests sent and not consumed yet, in file order: (stream id, position, length).
-    in_flight: VecDeque<(u32, u64, u32)>,
+    /// Requests sent and not consumed yet, in file order: (stream id, position, length, sent at).
+    in_flight: VecDeque<(u32, u64, u32, Instant)>,
     /// Where the next request starts.
     next: u64,
     /// Request size: `CHUNK`, lowered to what the server actually returns per reply.
@@ -680,6 +680,33 @@ struct ReadStats {
     bytes: u64,
     requests: u32,
     short: u32,
+    /// Sum of each request's time from being sent to its reply arriving.
+    latency: Duration,
+    /// Time spent blocked waiting for replies (vs. the app consuming data).
+    waiting: Duration,
+    last_progress: Option<Instant>,
+}
+
+impl ReadStats {
+    fn log(&self, name: &str, size: u64, what: &str) {
+        let Some(started) = self.started else { return };
+        let secs = started.elapsed().as_secs_f64().max(0.001);
+        let requests = self.requests.max(1);
+        info!(
+            file = %name,
+            size,
+            received = self.bytes,
+            requests = self.requests,
+            short_replies = self.short,
+            secs = format!("{secs:.2}"),
+            mib_per_s = format!("{:.2}", self.bytes as f64 / 1_048_576.0 / secs),
+            avg_request_ms = format!("{:.0}", self.latency.as_secs_f64() * 1000.0 / f64::from(requests)),
+            waiting_pct = format!("{:.0}", self.waiting.as_secs_f64() * 100.0 / secs),
+            in_flight = DEPTH,
+            chunk_kib = CHUNK / 1024,
+            "{what}"
+        );
+    }
 }
 
 impl Reader {
@@ -699,9 +726,12 @@ impl Reader {
                 self.restart(remote, self.position); // first read, or after a seek
             }
             self.fill(remote, index, size);
-            let (id, start, len) = self.in_flight.pop_front().ok_or(())?;
+            let (id, start, len, sent) = self.in_flight.pop_front().ok_or(())?;
             self.stats.started.get_or_insert_with(Instant::now);
+            let wait_from = Instant::now();
             let data = remote.take_response(id).ok_or(())?;
+            self.stats.waiting += wait_from.elapsed();
+            self.stats.latency += sent.elapsed();
             self.stats.requests += 1;
             self.stats.bytes += data.len() as u64;
             if data.is_empty() || data.len() > len as usize {
@@ -721,7 +751,7 @@ impl Reader {
                 let got = u32::try_from(data.len()).unwrap_or(len);
                 let tail = start + u64::from(got);
                 let id = remote.request_range(index, tail, len - got);
-                self.in_flight.push_front((id, tail, len - got));
+                self.in_flight.push_front((id, tail, len - got, Instant::now()));
                 self.chunk = Some(got.max(MIN_CHUNK));
             }
             self.buf_start = start;
@@ -735,7 +765,7 @@ impl Reader {
             let chunk = self.chunk.unwrap_or(CHUNK);
             let len = u32::try_from((size - self.next).min(u64::from(chunk))).unwrap_or(chunk);
             let id = remote.request_range(index, self.next, len);
-            self.in_flight.push_back((id, self.next, len));
+            self.in_flight.push_back((id, self.next, len, Instant::now()));
             self.next += u64::from(len);
         }
     }
@@ -750,26 +780,26 @@ impl Drop for RemoteStream {
     fn drop(&mut self) {
         let reader = self.reader.get_mut().unwrap_or_else(PoisonError::into_inner);
         self.remote.abandon(reader.in_flight.drain(..).map(|r| r.0));
-        let stats = &reader.stats;
-        if let Some(started) = stats.started {
-            let secs = started.elapsed().as_secs_f64().max(0.001);
-            info!(
-                file = %self.name,
-                size = self.size,
-                received = stats.bytes,
-                requests = stats.requests,
-                short_replies = stats.short,
-                secs = format!("{secs:.2}"),
-                mib_per_s = format!("{:.2}", stats.bytes as f64 / 1_048_576.0 / secs),
-                "file received from the remote"
-            );
-        }
+        reader.stats.log(&self.name, self.size, "file received from the remote");
     }
 }
 
 impl RemoteStream_Impl {
     fn read_into(&self, out: &mut [u8]) -> Result<usize, ()> {
-        lock(&self.reader).read(&self.remote, self.index, self.size, out)
+        let mut reader = lock(&self.reader);
+        let result = reader.read(&self.remote, self.index, self.size, out);
+        let stats = &mut reader.stats;
+        if stats.started.is_some()
+            && stats
+                .last_progress
+                .is_none_or(|t| t.elapsed() >= Duration::from_secs(5))
+        {
+            stats.last_progress = Some(Instant::now());
+            if stats.requests > 4 {
+                stats.log(&self.name, self.size, "receiving a file from the remote");
+            }
+        }
+        result
     }
 }
 

@@ -185,6 +185,9 @@ struct Current {
 struct Stats {
     bytes: u64,
     requests: u32,
+    /// Range sizes the server asked for.
+    min_request: u32,
+    max_request: u32,
     started: Option<Instant>,
     /// Time spent reading and replying.
     busy: Duration,
@@ -194,7 +197,7 @@ struct Stats {
 }
 
 impl Stats {
-    fn log(&self, path: &Path, size: u64) {
+    fn log(&self, path: &Path, size: u64, what: &str) {
         let Some(started) = self.started else { return };
         let secs = started.elapsed().as_secs_f64().max(0.001);
         let requests = self.requests.max(1);
@@ -204,18 +207,40 @@ impl Stats {
             sent = self.bytes,
             requests = self.requests,
             avg_request_kib = self.bytes / 1024 / u64::from(requests),
+            min_request_kib = self.min_request / 1024,
+            max_request_kib = self.max_request / 1024,
             secs = format!("{secs:.2}"),
             mib_per_s = format!("{:.2}", self.bytes as f64 / 1_048_576.0 / secs),
             avg_server_wait_ms = format!("{:.1}", self.waiting.as_secs_f64() * 1000.0 / f64::from(requests)),
             avg_local_ms = format!("{:.2}", self.busy.as_secs_f64() * 1000.0 / f64::from(requests)),
-            "file sent to the remote"
+            "{what}"
         );
     }
 }
 
 fn run(offered: &Mutex<Offered>, proxy: &SharedProxy, requests: &mpsc::Receiver<FileContentsRequest>) {
+    const PROGRESS_EVERY: Duration = Duration::from_secs(5);
+    /// No request for this long: the copy finished, failed or was cancelled.
+    const STOPPED_AFTER: Duration = Duration::from_secs(3);
+
     let mut current: Option<Current> = None;
-    while let Ok(request) = requests.recv() {
+    let mut last_progress = Instant::now();
+    loop {
+        let request = match requests.recv_timeout(Duration::from_secs(1)) {
+            Ok(request) => request,
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                if let Some(c) = current.as_mut()
+                    && c.stats.requests > 0
+                    && c.stats.last_reply.is_some_and(|t| t.elapsed() >= STOPPED_AFTER)
+                {
+                    let path = path_of(offered, c.version, c.index).unwrap_or_default();
+                    c.stats.log(&path, c.size, "file transfer to the remote stopped");
+                    c.stats = Stats::default();
+                }
+                continue;
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+        };
         let arrived = Instant::now();
         let (version, path) = {
             let offered = offered.lock().unwrap_or_else(PoisonError::into_inner);
@@ -241,6 +266,7 @@ fn run(offered: &Mutex<Offered>, proxy: &SharedProxy, requests: &mpsc::Receiver<
                 done.stats.log(
                     &path_of(offered, done.version, done.index).unwrap_or_default(),
                     done.size,
+                    "file transfer to the remote stopped",
                 );
             }
             match File::open(&path).and_then(|f| f.metadata().map(|m| (f, m.len()))) {
@@ -274,6 +300,12 @@ fn run(offered: &Mutex<Offered>, proxy: &SharedProxy, requests: &mpsc::Receiver<
                     }
                     s.requests += 1;
                     s.bytes += data.len() as u64;
+                    s.min_request = if s.min_request == 0 {
+                        request.requested_size
+                    } else {
+                        s.min_request.min(request.requested_size)
+                    };
+                    s.max_request = s.max_request.max(request.requested_size);
                     FileContentsResponse::new_data_response(request.stream_id, data)
                 }
                 Err(error) => {
@@ -289,8 +321,11 @@ fn run(offered: &Mutex<Offered>, proxy: &SharedProxy, requests: &mpsc::Receiver<
         c.stats.busy += now.saturating_duration_since(arrived);
         c.stats.last_reply = Some(now);
         if finished && c.stats.requests > 0 {
-            c.stats.log(&path, c.size);
+            c.stats.log(&path, c.size, "file sent to the remote");
             c.stats = Stats::default();
+        } else if c.stats.requests > 0 && last_progress.elapsed() >= PROGRESS_EVERY {
+            last_progress = Instant::now();
+            c.stats.log(&path, c.size, "sending a file to the remote");
         }
     }
 }

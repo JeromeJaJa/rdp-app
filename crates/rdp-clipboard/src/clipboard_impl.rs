@@ -7,7 +7,7 @@ use ironrdp_cliprdr::backend::{ClipboardMessage, ClipboardMessageProxy};
 use ironrdp_cliprdr::pdu::{
     ClipboardFormat, ClipboardFormatId, ClipboardGeneralCapabilityFlags, FormatDataRequest, FormatDataResponse,
 };
-use tracing::{debug, info};
+use tracing::info;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::DataExchange::GetClipboardOwner;
 use windows::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass};
@@ -84,6 +84,13 @@ impl WinClipboardImpl {
         let clipboard = OwnedOsClipboard::new(self.window)?;
 
         let buffer = ClipboardDataRef::get(&clipboard, request.format).map(|borrowed| borrowed.data().to_vec());
+        if let Some(data) = &buffer {
+            info!(
+                bytes = data.len(),
+                format = request.format.value(),
+                "local clipboard data requested by the remote"
+            );
+        }
 
         let response = match buffer {
             Some(data) => FormatDataResponse::new_data(data),
@@ -165,12 +172,13 @@ impl WinClipboardImpl {
             .recv_timeout(Duration::from_secs(RENDER_FORMAT_TIMEOUT_SECS))
             .map_err(|_| WinCliprdrError::DataReceiveTimeout)?;
         let bytes = response.data().len();
-        let ms = started.elapsed().as_millis();
-        if bytes >= 1024 * 1024 {
-            info!(bytes, ms, "remote clipboard data received");
-        } else {
-            debug!(bytes, ms, "remote clipboard data received");
-        }
+        let secs = started.elapsed().as_secs_f64();
+        info!(
+            bytes,
+            ms = (secs * 1000.0) as u64,
+            mib_per_s = format!("{:.2}", bytes as f64 / 1_048_576.0 / secs.max(0.001)),
+            "remote clipboard data received (paste)"
+        );
         Ok(Some(response))
     }
 
