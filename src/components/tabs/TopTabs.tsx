@@ -2,6 +2,7 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { DndContext, DragOverlay, useDroppable, type Modifier } from "@dnd-kit/core";
 import { horizontalListSortingStrategy, SortableContext } from "@dnd-kit/sortable";
+import { selectRelative } from "../../state/actions";
 import { useStore } from "../../state/store";
 import type { GroupId } from "../../lib/types";
 import { TabItem, TabOverlay } from "./TabItem";
@@ -36,7 +37,26 @@ function TopTabsInner() {
     if (!el) return;
     const update = () =>
       setFade({ left: el.scrollLeft > 2, right: el.scrollLeft + el.clientWidth < el.scrollWidth - 2 });
+    // Shift+wheel switches to the next / previous tab (one per notch; touchpads
+    // accumulate); a plain wheel scrolls the strip.
+    let acc = 0;
+    let lastWheel = 0;
     const onWheel = (e: WheelEvent) => {
+      if (e.shiftKey) {
+        e.preventDefault();
+        // Windows turns Shift+wheel into horizontal scrolling.
+        const delta = e.deltaY || e.deltaX;
+        const now = performance.now();
+        if (now - lastWheel > 300 || Math.sign(delta) !== Math.sign(acc)) acc = 0;
+        lastWheel = now;
+        acc += e.deltaMode === 1 ? delta * 40 : delta;
+        while (Math.abs(acc) >= 60) {
+          selectRelative(acc > 0 ? 1 : -1);
+          acc -= Math.sign(acc) * 100;
+          if (Math.abs(acc) < 60) acc = 0;
+        }
+        return;
+      }
       if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
         el.scrollLeft += e.deltaY;
         e.preventDefault();
