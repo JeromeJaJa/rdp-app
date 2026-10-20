@@ -20,5 +20,8 @@ async-trait = "0.1"
 anyhow = "1"
 bytes = "1"
 rcgen = "0.13"
+# Several deps pull in both the ring and aws-lc-rs rustls providers, so rustls can't
+# pick one automatically; install ring explicitly in main (matches rdp-engine).
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

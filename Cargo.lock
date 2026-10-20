@@ -4787,6 +4787,7 @@ dependencies = [
  "ironrdp-svc",
  "openh264",
  "rcgen",
+ "rustls",
  "tokio",
  "tracing",
  "tracing-subscriber",

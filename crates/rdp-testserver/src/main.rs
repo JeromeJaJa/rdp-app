@@ -390,6 +390,8 @@ fn main() -> anyhow::Result<()> {
         .with_env_filter(tracing_subscriber::EnvFilter::try_from_env("RDP_LOG").unwrap_or_else(|_| "warn".into()))
         .compact()
         .init();
+    // Both rustls providers are in the tree, so pick one (ring) before any TLS work.
+    let _ = rustls::crypto::ring::default_provider().install_default();
 
     let mut base_port = 33890u16;
     let mut count = 1u16;
