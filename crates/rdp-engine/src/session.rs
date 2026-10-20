@@ -612,7 +612,7 @@ impl Live {
     }
 
     async fn apply_ops(&mut self, ops: Vec<Operation>) -> anyhow::Result<()> {
-        let events = self.input.apply(ops);
+        let events = typematic_input(&mut self.input, ops);
         if events.is_empty() {
             return Ok(());
         }
@@ -689,6 +689,43 @@ impl Live {
 }
 
 /// A batch of input, split where the order of non-key/mouse events matters.
+/// Applies input operations, sending a key that is already down again as a plain
+/// press: an auto-repeat, the way a physical keyboard reports it. (The input database
+/// would release and press it again; held Shift then reads as repeated taps, which
+/// opens the Sticky Keys prompt.)
+fn typematic_input(
+    input: &mut ironrdp_input::Database,
+    ops: Vec<Operation>,
+) -> Vec<ironrdp_pdu::input::fast_path::FastPathInputEvent> {
+    use ironrdp_pdu::input::fast_path::{FastPathInputEvent, KeyboardFlags};
+
+    let mut events = Vec::new();
+    let mut batch = Vec::with_capacity(ops.len());
+    for op in ops {
+        let repeat = match op {
+            Operation::KeyPressed(sc) if input.is_key_pressed(sc) => {
+                let (extended, code) = sc.as_u8();
+                let flags = if extended {
+                    KeyboardFlags::EXTENDED
+                } else {
+                    KeyboardFlags::empty()
+                };
+                Some(FastPathInputEvent::KeyboardEvent(flags, code))
+            }
+            _ => None,
+        };
+        match repeat {
+            Some(event) => {
+                events.extend(input.apply(std::mem::take(&mut batch)));
+                events.push(event);
+            }
+            None => batch.push(op),
+        }
+    }
+    events.extend(input.apply(batch));
+    events
+}
+
 enum InputStep {
     Ops(Vec<Operation>),
     ReleaseAll,
@@ -1262,5 +1299,25 @@ mod input_order_tests {
             })
             .collect();
         assert_eq!(shape, ["ops", "release", "ops", "sync", "ops"]);
+    }
+
+    #[test]
+    fn held_keys_repeat_without_releasing() {
+        use ironrdp_pdu::input::fast_path::{FastPathInputEvent, KeyboardFlags};
+        let shift = Scancode::from_u16(0x2A);
+        let mut db = ironrdp_input::Database::new();
+        let first = typematic_input(&mut db, vec![Operation::KeyPressed(shift)]);
+        let repeats = typematic_input(
+            &mut db,
+            vec![Operation::KeyPressed(shift), Operation::KeyPressed(shift)],
+        );
+        let up = typematic_input(&mut db, vec![Operation::KeyReleased(shift)]);
+        let press = FastPathInputEvent::KeyboardEvent(KeyboardFlags::empty(), 0x2A);
+        assert_eq!(first.as_slice(), [press.clone()]);
+        assert_eq!(repeats.as_slice(), [press.clone(), press], "no release between repeats");
+        assert_eq!(
+            up.as_slice(),
+            [FastPathInputEvent::KeyboardEvent(KeyboardFlags::RELEASE, 0x2A)]
+        );
     }
 }
