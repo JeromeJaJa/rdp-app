@@ -1,4 +1,13 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from "react";
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
@@ -28,6 +37,82 @@ import { displayName, getState, isLive, setState, useStore } from "../../state/s
 import { ConnectIcon, DisconnectIcon } from "../common/SessionIcons";
 import { StatusDot } from "../common/StatusDot";
 import "./palette.css";
+
+const OFFSET_KEY = "rdp-app:palette-offset";
+
+/** Where the user last dragged the palette, relative to its default spot. */
+function loadOffset(): { x: number; y: number } {
+  try {
+    const v = JSON.parse(localStorage.getItem(OFFSET_KEY) ?? "null") as { x?: unknown; y?: unknown } | null;
+    if (v && typeof v.x === "number" && typeof v.y === "number") return { x: v.x, y: v.y };
+  } catch {
+    /* ignore */
+  }
+  return { x: 0, y: 0 };
+}
+
+/**
+ * Drag the palette by its search bar (like Spotlight). A press that doesn't move is an
+ * ordinary click, so the text field still works; the position is remembered.
+ */
+function usePaletteDrag(panelRef: React.RefObject<HTMLDivElement | null>) {
+  const [offset, setOffset] = useState(loadOffset);
+  const [dragging, setDragging] = useState(false);
+
+  // Keep it on screen (the window may have shrunk since).
+  useLayoutEffect(() => {
+    const el = panelRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    if (r.left < 0 || r.top < 0 || r.right > innerWidth || r.top + 60 > innerHeight) setOffset({ x: 0, y: 0 });
+  }, [panelRef]);
+
+  const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const el = panelRef.current;
+    if (e.button !== 0 || !el) return;
+    const bar = e.currentTarget;
+    const start = { x: e.clientX, y: e.clientY };
+    const base = offset;
+    const rect = el.getBoundingClientRect();
+    let moved = false;
+    let last = base;
+    const onMove = (ev: PointerEvent) => {
+      const dx = ev.clientX - start.x;
+      const dy = ev.clientY - start.y;
+      if (!moved) {
+        if (Math.hypot(dx, dy) < 4) return;
+        moved = true;
+        setDragging(true);
+        // Take the pointer from the text field so it stops selecting text.
+        bar.setPointerCapture(e.pointerId);
+        const input = bar.querySelector("input");
+        if (input) input.setSelectionRange(input.selectionEnd, input.selectionEnd);
+      }
+      ev.preventDefault();
+      const clampedX = Math.min(Math.max(dx, 8 - rect.left), innerWidth - 8 - rect.right);
+      const clampedY = Math.min(Math.max(dy, 8 - rect.top), innerHeight - 60 - rect.top);
+      last = { x: base.x + clampedX, y: base.y + clampedY };
+      setOffset(last);
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+      if (!moved) return;
+      setDragging(false);
+      try {
+        localStorage.setItem(OFFSET_KEY, JSON.stringify(last));
+      } catch {
+        /* ignore */
+      }
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+  };
+
+  return { offset, dragging, onPointerDown };
+}
 
 /** Subsequence match: higher is better, null when `query` doesn't match `text`. */
 function score(query: string, text: string): number | null {
@@ -107,6 +192,8 @@ function Palette() {
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const drag = usePaletteDrag(panelRef);
   const close = () => setState({ paletteOpen: false });
 
   const items = useMemo(() => {
@@ -176,8 +263,15 @@ function Palette() {
   let lastSection: string | null = null;
   return (
     <div className="palette-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close()}>
-      <div className="palette" role="dialog" aria-label="Command palette" onKeyDown={onKeyDown}>
-        <div className="palette__search">
+      <div
+        ref={panelRef}
+        className={`palette ${drag.dragging ? "is-dragging" : ""}`}
+        role="dialog"
+        aria-label="Command palette"
+        style={{ translate: `${drag.offset.x}px ${drag.offset.y}px` }}
+        onKeyDown={onKeyDown}
+      >
+        <div className="palette__search" onPointerDown={drag.onPointerDown}>
           <Search size={16} className="palette__search-icon" />
           <input
             autoFocus
