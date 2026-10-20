@@ -361,3 +361,13 @@ export interface WindowTabs {
   label: string;
   tabs: ConnectionId[];
 }
+
+/** Progress of the companion auto-install for a connection (experimental). */
+export interface CompanionStatus {
+  id: ConnectionId;
+  /** installing → pushing over WinRM; needs-trust → this PC must trust the host first;
+   *  winrm-unavailable → no WinRM (needs the in-session fallback); failed → unexpected. */
+  status: "installing" | "installed" | "needs-trust" | "winrm-unavailable" | "failed";
+  /** The host, when the UI needs it (e.g. to add it to TrustedHosts). */
+  host: string | null;
+}

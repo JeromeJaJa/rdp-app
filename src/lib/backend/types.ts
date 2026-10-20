@@ -18,6 +18,7 @@ import type {
   SessionEvent,
   Settings,
   TrustedCertificate,
+  CompanionStatus,
   UiCommand,
   UiState,
   WindowTabs,
@@ -101,6 +102,10 @@ export interface Backend {
   onLibraryChanged(cb: (library: Library) => void): Unsubscribe;
   /** UI commands from the REST API (select a tab, switch view, …). */
   onUiCommand(cb: (command: UiCommand) => void): Unsubscribe;
+  /** Companion auto-install progress for a connection (experimental). */
+  onCompanionStatus(cb: (status: CompanionStatus) => void): Unsubscribe;
+  /** Adds a host to the WinRM client's TrustedHosts (UAC prompt), then retries install. */
+  companionTrustHost(id: ConnectionId, host: string): Promise<string>;
   /** Tells the backend what the UI shows (answers GET /api/v1/ui). */
   reportUiState(state: UiState): void;
   /** Opens an http(s) link in the default browser. */

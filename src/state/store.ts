@@ -71,6 +71,8 @@ export interface Toast {
   message?: string;
   /** One follow-up button (e.g. "Reconnect"). */
   action?: { label: string; run: () => void };
+  /** Stays until acted on or dismissed (for prompts that need a decision). */
+  sticky?: boolean;
 }
 
 export interface AppState {

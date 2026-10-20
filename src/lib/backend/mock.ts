@@ -27,6 +27,7 @@ import {
   type SessionStatus,
   type Settings,
   type TrustedCertificate,
+  type CompanionStatus,
   type UiCommand,
   type UiState,
   type WindowTabs,
@@ -778,6 +779,14 @@ export class MockBackend implements Backend {
 
   onUiCommand(_cb: (command: UiCommand) => void): Unsubscribe {
     return () => {};
+  }
+
+  onCompanionStatus(_cb: (status: CompanionStatus) => void): Unsubscribe {
+    return () => {};
+  }
+
+  async companionTrustHost(): Promise<string> {
+    return "WinrmUnavailable";
   }
 
   reportUiState(state: UiState): void {

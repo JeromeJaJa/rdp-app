@@ -23,12 +23,17 @@ pub struct Target {
     pub password: String,
 }
 
-/// Outcome of an install attempt, so the UI can tell "done" from "WinRM unreachable".
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Outcome of an install attempt, so the UI can respond appropriately.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum Outcome {
     /// Pushed and launched over WinRM.
     Installed,
-    /// WinRM wasn't reachable (refused, timed out, not trusted): needs the fallback.
+    /// WinRM reached the host but this PC doesn't trust it yet (TrustedHosts): fixable
+    /// with a one-time elevated step, then retry.
+    NeedsTrust,
+    /// WinRM wasn't reachable at all (refused, timed out, no listener): needs the
+    /// in-session fallback.
     WinrmUnavailable,
 }
 
@@ -88,12 +93,51 @@ pub fn install_over_winrm(target: &Target, exe: &Path) -> anyhow::Result<Outcome
         tracing::info!(host = %target.host, "companion installed over WinRM");
         return Ok(Outcome::Installed);
     }
-    let detail = format!("{stdout}\n{stderr}");
-    if looks_like_no_winrm(&detail) {
+    let detail = format!("{stdout}\n{stderr}").to_lowercase();
+    // The client doesn't trust the host yet — fixable with a one-time elevated step.
+    if detail.contains("trustedhosts") || detail.contains("0x8009030e") {
+        tracing::info!(host = %target.host, "WinRM needs this host trusted");
+        return Ok(Outcome::NeedsTrust);
+    }
+    // WinRM isn't reachable at all.
+    if ["cannot connect", "winrm", "timed out", "actively refused", "no logon servers"]
+        .iter()
+        .any(|needle| detail.contains(needle))
+    {
         tracing::info!(host = %target.host, "WinRM not available; fallback needed");
         return Ok(Outcome::WinrmUnavailable);
     }
     bail!("companion install failed: {}", detail.trim());
+}
+
+/// Adds a host to the WinRM client's TrustedHosts via an elevated prompt (UAC), so WinRM
+/// can reach a workgroup host by IP. One-time per client; adds the specific host, not `*`.
+/// Blocking (waits for the elevated process).
+pub fn trust_host(host: &str) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        !host.is_empty() && host.chars().all(|c| c.is_ascii_alphanumeric() || ".-:_".contains(c)),
+        "invalid host"
+    );
+    // The elevated command starts the WinRM client and appends this host if not present.
+    let inner = format!(
+        "Start-Service WinRM -ErrorAction SilentlyContinue; \
+         $cur = (Get-Item WSMan:\\localhost\\Client\\TrustedHosts -ErrorAction SilentlyContinue).Value; \
+         $hosts = @($cur -split ',' | ForEach-Object {{ $_.Trim() }} | Where-Object {{ $_ }}); \
+         if ($hosts -notcontains '*' -and $hosts -notcontains '{host}') {{ \
+           Set-Item WSMan:\\localhost\\Client\\TrustedHosts -Value '{host}' -Concatenate -Force }}"
+    );
+    let script = format!(
+        "$p = Start-Process powershell -Verb RunAs -PassThru -Wait -WindowStyle Hidden \
+         -ArgumentList @('-NoProfile','-NonInteractive','-Command',\"{}\"); exit $p.ExitCode",
+        inner.replace('"', "`\"")
+    );
+    let status = Command::new("powershell.exe")
+        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+        .status()
+        .context("run powershell")?;
+    anyhow::ensure!(status.success(), "the elevation prompt was declined or the command failed");
+    tracing::info!(host, "host added to WinRM TrustedHosts");
+    Ok(())
 }
 
 const UNINSTALL_PS1: &str = include_str!("companion_uninstall.ps1");
@@ -124,20 +168,3 @@ pub fn uninstall_over_winrm(target: &Target) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Whether the failure is "WinRM can't be reached/used" (so we fall back) rather than a
-/// real deployment error worth surfacing.
-fn looks_like_no_winrm(detail: &str) -> bool {
-    let d = detail.to_lowercase();
-    [
-        "cannot connect",
-        "winrm",
-        "the client cannot connect",
-        "access is denied", // auth/trust issues on the WinRM channel
-        "trustedhosts",
-        "timed out",
-        "no logon servers",
-        "actively refused",
-    ]
-    .iter()
-    .any(|needle| d.contains(needle))
-}

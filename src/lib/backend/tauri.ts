@@ -23,6 +23,7 @@ import {
   type SessionEvent,
   type Settings,
   type TrustedCertificate,
+  type CompanionStatus,
   type UiCommand,
   type UiState,
   type WindowTabs,
@@ -208,6 +209,14 @@ export class TauriBackend implements Backend {
 
   onUiCommand(cb: (command: UiCommand) => void): Unsubscribe {
     return subscribe<UiCommand>("ui-command", cb);
+  }
+
+  onCompanionStatus(cb: (status: CompanionStatus) => void): Unsubscribe {
+    return subscribe<CompanionStatus>("companion-status", cb);
+  }
+
+  companionTrustHost(id: ConnectionId, host: string): Promise<string> {
+    return invoke("companion_trust_host", { id, host });
   }
 
   windowLayout(): Promise<WindowTabs[]> {

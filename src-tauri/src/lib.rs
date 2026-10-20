@@ -294,6 +294,20 @@ async fn companion_uninstall(state: State<'_, AppState>, id: String) -> CmdResul
         .map_err(err)
 }
 
+/// Adds a host to the WinRM client's TrustedHosts (raises a UAC prompt), then retries the
+/// companion install for that connection.
+#[tauri::command]
+async fn companion_trust_host(state: State<'_, AppState>, id: String, host: String) -> CmdResult<String> {
+    let core = std::sync::Arc::clone(&state.core);
+    tauri::async_runtime::spawn_blocking(move || {
+        core.trust_host(&host)?;
+        core.install_companion(&id).map(|outcome| format!("{outcome:?}"))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(err)
+}
+
 #[tauri::command]
 fn engine_set_thumbnail_width(state: State<'_, AppState>, width: u32) {
     let current = state.core.engine.settings();
@@ -464,6 +478,10 @@ pub fn run() {
                 if let Ok(v) = serde_json::to_value(&event) {
                     let _ = sink_bus.send(v);
                 }
+                // Drive the companion auto-install off the same event stream.
+                if let Some(state) = handle.try_state::<AppState>() {
+                    state.core.on_engine_event(&event);
+                }
             });
 
             #[cfg(windows)]
@@ -549,6 +567,7 @@ pub fn run() {
             window_show_tab,
             companion_install,
             companion_uninstall,
+            companion_trust_host,
             engine_send_keys,
             trust_certificate,
             list_certificates,

@@ -16,6 +16,7 @@ import {
   type Settings,
   type SettingOverrides,
   type Theme,
+  type CompanionStatus,
   type UiCommand,
   type WindowMaterial,
   type WindowTabs,
@@ -92,6 +93,7 @@ export async function initApp(): Promise<void> {
   if (main) {
     // The REST API drives (and reads) the main window.
     backend.onUiCommand(onUiCommand);
+    backend.onCompanionStatus(onCompanionStatus);
     startUiStateReporting();
   } else {
     backend.onSelectTab((id) => setState({ selectedId: id }));
@@ -483,11 +485,55 @@ export function confirm(opts: Omit<Extract<DialogState, { kind: "confirm" }>, "k
 }
 
 let toastSeq = 0;
-export function toast(tone: Toast["tone"], title: string, message?: string, action?: Toast["action"]) {
+// Hosts we've already offered the trust prompt for, so we don't nag on every reconnect.
+const trustPrompted = new Set<string>();
+
+/** Companion auto-install progress (main window). Only the trust prompt is interactive. */
+function onCompanionStatus(s: CompanionStatus) {
+  const name = (s.id && getState().connById[s.id] && displayName(getState().connById[s.id])) || "the host";
+  switch (s.status) {
+    case "installed":
+      toast("success", "Companion installed", `${name} is set up — it'll start automatically from now on.`);
+      break;
+    case "needs-trust":
+      if (!s.host || trustPrompted.has(s.host)) break;
+      trustPrompted.add(s.host);
+      toast(
+        "info",
+        "Set up the companion?",
+        `To install it on ${name}, this PC needs to trust the host once (asks for admin).`,
+        { label: "Enable", run: () => enableCompanionTrust(s.id, s.host!) },
+        true,
+      );
+      break;
+    // winrm-unavailable and failed stay quiet — nothing the user can act on yet.
+    default:
+      break;
+  }
+}
+
+function enableCompanionTrust(id: ConnectionId, host: string) {
+  toast("info", "Setting up…", "Approve the admin prompt to continue.");
+  be()
+    .companionTrustHost(id, host)
+    .then((outcome) => {
+      if (outcome === "Installed") toast("success", "Companion installed", "It'll start automatically from now on.");
+      else toast("info", "Couldn't reach the host", "WinRM wasn't available on this host.");
+    })
+    .catch((e) => toast("error", "Setup didn't complete", errorText(e)));
+}
+
+export function toast(
+  tone: Toast["tone"],
+  title: string,
+  message?: string,
+  action?: Toast["action"],
+  sticky?: boolean,
+) {
   const id = ++toastSeq;
-  const toasts = [...getState().toasts, { id, tone, title, message, action }].slice(-4);
+  const toasts = [...getState().toasts, { id, tone, title, message, action, sticky }].slice(-4);
   setState({ toasts });
-  window.setTimeout(() => dismissToast(id), tone === "error" || action ? 6000 : 3500);
+  if (!sticky) window.setTimeout(() => dismissToast(id), tone === "error" || action ? 6000 : 3500);
 }
 
 export function dismissToast(id: number) {

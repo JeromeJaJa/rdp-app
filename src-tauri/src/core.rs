@@ -180,6 +180,10 @@ pub fn validate_settings(settings: &Map<String, Value>) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// After a companion-enabled session connects, how long to wait for an already-installed
+/// companion to attach on its own before installing one.
+const COMPANION_INSTALL_DELAY: u64 = 8;
+
 pub struct Core {
     store: Mutex<Store>,
     pub engine: Engine,
@@ -188,6 +192,16 @@ pub struct Core {
     ui: Mutex<UiState>,
     bus: broadcast::Sender<Value>,
     pub api: Mutex<ApiRuntime>,
+    /// Sessions with a companion attached, and sessions whose auto-install we've already
+    /// kicked off this connection. Ephemeral — we never persist "installed"; each connect
+    /// re-checks by whether the companion attaches (hosts get reset, IPs change).
+    companion: Mutex<CompanionState>,
+}
+
+#[derive(Default)]
+struct CompanionState {
+    attached: std::collections::HashSet<String>,
+    pending: std::collections::HashSet<String>,
 }
 
 impl Core {
@@ -209,7 +223,81 @@ impl Core {
             }),
             bus,
             api: Mutex::new(ApiRuntime::default()),
+            companion: Mutex::new(CompanionState::default()),
         }
+    }
+
+    /// Observes engine events for the companion: tracks attach state and, when a
+    /// companion-enabled connection comes up without one attaching shortly, installs it.
+    pub fn on_engine_event(self: &Arc<Self>, event: &EngineEvent) {
+        match event {
+            EngineEvent::CompanionConnected { id, .. } => {
+                self.companion.lock().attached.insert(id.clone());
+            }
+            EngineEvent::CompanionDisconnected { id } => {
+                self.companion.lock().attached.remove(id);
+            }
+            EngineEvent::Status { id, status, .. } => match status {
+                SessionStatus::Connected => self.maybe_install_companion(id.clone()),
+                // Session ended: forget it, so a later connect re-checks from scratch.
+                SessionStatus::Idle | SessionStatus::Error => {
+                    let mut c = self.companion.lock();
+                    c.attached.remove(id);
+                    c.pending.remove(id);
+                }
+                _ => {}
+            },
+            _ => {}
+        }
+    }
+
+    /// If the connection wants a companion, wait briefly for one (an already-installed
+    /// companion self-starts), then install over WinRM if none attached.
+    fn maybe_install_companion(self: &Arc<Self>, id: String) {
+        let enabled = self.effective_settings(&id).get("companion").and_then(Value::as_bool) == Some(true);
+        if !enabled {
+            return;
+        }
+        if !self.companion.lock().pending.insert(id.clone()) {
+            return; // already handling this session
+        }
+        let core = Arc::clone(self);
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(COMPANION_INSTALL_DELAY)).await;
+            let attached = core.companion.lock().attached.contains(&id);
+            // Gone already, or the resident companion attached on its own: nothing to do.
+            if attached || !core.engine.running().contains(&id) {
+                return;
+            }
+            core.emit_companion("installing", &id, None);
+            let outcome = {
+                let core = Arc::clone(&core);
+                let id = id.clone();
+                tauri::async_runtime::spawn_blocking(move || core.install_companion(&id)).await
+            };
+            match outcome {
+                Ok(Ok(crate::companion::Outcome::Installed)) => {} // the attach event will follow
+                Ok(Ok(crate::companion::Outcome::NeedsTrust)) => {
+                    let host = core.store.lock().credentials(&id).map(|c| c.host).unwrap_or_default();
+                    core.emit_companion("needs-trust", &id, Some(&host));
+                }
+                Ok(Ok(crate::companion::Outcome::WinrmUnavailable)) => core.emit_companion("winrm-unavailable", &id, None),
+                Ok(Err(e)) => {
+                    tracing::warn!(error = %format!("{e:#}"), "companion auto-install failed");
+                    core.emit_companion("failed", &id, None);
+                }
+                Err(_) => {}
+            }
+        });
+    }
+
+    fn emit_companion(&self, status: &str, id: &str, host: Option<&str>) {
+        let _ = self.app.emit("companion-status", json!({ "id": id, "status": status, "host": host }));
+    }
+
+    /// Adds a host to the WinRM client's TrustedHosts (elevated). Blocking.
+    pub fn trust_host(&self, host: &str) -> anyhow::Result<()> {
+        crate::companion::trust_host(host)
     }
 
     /// Event stream for API subscribers (session events, library changes, UI state).
