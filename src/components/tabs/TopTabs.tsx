@@ -1,15 +1,12 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { DndContext, DragOverlay, useDroppable, type Modifier } from "@dnd-kit/core";
+import { DndContext, DragOverlay, useDroppable } from "@dnd-kit/core";
 import { horizontalListSortingStrategy, SortableContext } from "@dnd-kit/sortable";
 import { useStore } from "../../state/store";
 import type { GroupId } from "../../lib/types";
 import { TabItem, TabOverlay } from "./TabItem";
 import { containerId, pastTitlebar, stripWheel, useTabsDnd } from "./useTabsDnd";
 import "./toptabs.css";
-
-// The tab stays in the strip until it is pulled well away from it (to tear it off).
-const lockY: Modifier = ({ transform }) => (Math.abs(transform.y) > 40 ? transform : { ...transform, y: 0 });
 
 function Segment({ groupId, label, ids }: { groupId: GroupId; label?: string; ids: string[] }) {
   const { setNodeRef, isOver } = useDroppable({ id: containerId(groupId) });
@@ -63,7 +60,7 @@ function TopTabsInner() {
       role="tablist"
     >
       <div className="top-tabs__track">
-        <DndContext sensors={sensors} collisionDetection={collisionDetection} modifiers={[lockY]} {...handlers}>
+        <DndContext sensors={sensors} collisionDetection={collisionDetection} {...handlers}>
           {sections.map((sec) => {
             if (!sec.ids.length && !(dragging && hasGroups)) return null;
             const label = hasGroups ? groupName.get(sec.groupId) : undefined;

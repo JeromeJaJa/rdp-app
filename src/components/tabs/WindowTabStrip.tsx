@@ -10,7 +10,6 @@ import {
   type DragEndEvent,
   type DragMoveEvent,
   type DragStartEvent,
-  type Modifier,
 } from "@dnd-kit/core";
 import { arrayMove, horizontalListSortingStrategy, SortableContext } from "@dnd-kit/sortable";
 import { useShallow } from "zustand/react/shallow";
@@ -21,8 +20,6 @@ import { SoloTab, TabItem, TabOverlay } from "./TabItem";
 import { dragPointer, pastTitlebar, stripWheel, useTearOff } from "./useTabsDnd";
 import "./toptabs.css";
 
-// The tab stays in the strip until it is pulled well away from it (to tear it off).
-const lockY: Modifier = ({ transform }) => (Math.abs(transform.y) > 40 ? transform : { ...transform, y: 0 });
 
 /**
  * A detached window's tabs: reorder them, pull one out into a window of its own (or onto
@@ -64,7 +61,6 @@ export function WindowTabStrip() {
           <DndContext
             sensors={sensors}
             collisionDetection={closestCenter}
-            modifiers={[lockY]}
             onDragStart={(e: DragStartEvent) => {
               tear.onStart();
               setActiveId(String(e.active.id));

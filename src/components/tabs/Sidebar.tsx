@@ -1,6 +1,6 @@
 import { memo, useCallback, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
-import { DndContext, DragOverlay, useDroppable, type Modifier } from "@dnd-kit/core";
+import { DndContext, DragOverlay, useDroppable } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { FolderPlus, Search, X } from "lucide-react";
 import { createGroup, updateSettings } from "../../state/actions";
@@ -15,8 +15,6 @@ import "./sidebar.css";
 
 const pastSidebar = (x: number) => x - (document.querySelector(".sidebar")?.getBoundingClientRect().right ?? Infinity);
 
-// The tab stays in the list until it is pulled well away from it (to tear it off).
-const lockX: Modifier = ({ transform }) => (Math.abs(transform.x) > 60 ? transform : { ...transform, x: 0 });
 
 function DropZone({ groupId, children, empty }: { groupId: GroupId; children: React.ReactNode; empty?: boolean }) {
   const { setNodeRef, isOver } = useDroppable({ id: containerId(groupId) });
@@ -68,7 +66,7 @@ function SidebarList() {
   if (!total && !customGroups) return <div className="side-empty">No connections yet</div>;
 
   return (
-    <DndContext sensors={sensors} collisionDetection={collisionDetection} modifiers={[lockX]} {...handlers}>
+    <DndContext sensors={sensors} collisionDetection={collisionDetection} {...handlers}>
       {sections.map((sec) => {
         const group = groupById.get(sec.groupId);
         if (!group) return null;
