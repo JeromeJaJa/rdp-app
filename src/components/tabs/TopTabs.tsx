@@ -49,7 +49,6 @@ function TopTabsInner() {
     };
   }, [sections.length]);
 
-  const dragging = activeId !== null;
   // With only the built-in "All" group, labels would just be noise.
   const hasGroups = groups.length > 1;
 
@@ -62,7 +61,9 @@ function TopTabsInner() {
       <div className="top-tabs__track">
         <DndContext sensors={sensors} collisionDetection={collisionDetection} {...handlers}>
           {sections.map((sec) => {
-            if (!sec.ids.length && !(dragging && hasGroups)) return null;
+            // Empty groups stay hidden even mid-drag — a group appearing would shift the
+            // tabs out from under the cursor. (Drop into an empty group via the sidebar.)
+            if (!sec.ids.length) return null;
             const label = hasGroups ? groupName.get(sec.groupId) : undefined;
             return <Segment key={sec.groupId} groupId={sec.groupId} label={label} ids={sec.ids} />;
           })}

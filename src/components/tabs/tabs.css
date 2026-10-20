@@ -155,3 +155,11 @@
   background: var(--active);
   color: var(--text);
 }
+
+/* Companion attached on the remote (enhanced integration is live). */
+.tab__companion {
+  flex: none;
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+}

@@ -4,7 +4,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { connect, disconnect, dragWindow, openMenu, select } from "../../state/actions";
 import { displayName, hostOf, isBusy, isLive, useConnection, useStatus, useStore } from "../../state/store";
 import { isMainWindow } from "../../lib/env";
-import { AppWindow, X } from "lucide-react";
+import { AppWindow, X, Zap } from "lucide-react";
 import { StatusDot } from "../common/StatusDot";
 import { ConnectIcon, DisconnectIcon } from "../common/SessionIcons";
 import type { ConnectionId } from "../../lib/types";
@@ -30,6 +30,8 @@ const TabView = forwardRef<HTMLDivElement, ViewProps>(function TabView(
   const selected = useStore((s) => s.selectedId === id);
   // In the main window, a tab that lives in another window.
   const elsewhere = useStore((s) => isMainWindow() && hostOf(s, id) !== "main");
+  // A companion is attached on the remote (deeper integration is live).
+  const companion = useStore((s) => !!s.sessions[id]?.companion);
   if (!conn) return null;
 
   const name = displayName(conn);
@@ -50,6 +52,11 @@ const TabView = forwardRef<HTMLDivElement, ViewProps>(function TabView(
     >
       <StatusDot status={status} />
       <span className="tab__name">{name}</span>
+      {companion && (
+        <span className="tab__companion" title="Companion connected">
+          <Zap size={11} />
+        </span>
+      )}
       {elsewhere && (
         <span className="tab__elsewhere" title="Open in another window">
           <AppWindow size={12} />
