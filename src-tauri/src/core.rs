@@ -294,6 +294,19 @@ impl Core {
         }
     }
 
+    /// Installs the companion on a connection's host over WinRM (experimental). Blocking.
+    pub fn install_companion(&self, id: &str) -> anyhow::Result<crate::companion::Outcome> {
+        let creds = self.store.lock().credentials(id)?;
+        let target = crate::companion::Target {
+            host: creds.host,
+            username: creds.username,
+            domain: creds.domain,
+            password: creds.password,
+        };
+        let exe = crate::companion::companion_exe()?;
+        crate::companion::install_over_winrm(&target, &exe)
+    }
+
     /// The audio mode a connection should use.
     fn audio_mode(&self, id: &str) -> AudioMode {
         match self.effective_settings(id).get("audio").and_then(Value::as_str) {

@@ -1,6 +1,7 @@
 mod api;
 mod bulk;
 mod certs;
+mod companion;
 #[cfg(windows)]
 mod clipboard;
 mod core;
@@ -273,6 +274,17 @@ fn window_show_tab(state: State<'_, AppState>, id: String) {
     state.tearoff.show_tab(&id);
 }
 
+/// Installs the companion on a connection's host over WinRM (experimental, manual trigger).
+#[tauri::command]
+async fn companion_install(state: State<'_, AppState>, id: String) -> CmdResult<String> {
+    let core = std::sync::Arc::clone(&state.core);
+    tauri::async_runtime::spawn_blocking(move || core.install_companion(&id))
+        .await
+        .map_err(|e| e.to_string())?
+        .map(|outcome| format!("{outcome:?}"))
+        .map_err(err)
+}
+
 #[tauri::command]
 fn engine_set_thumbnail_width(state: State<'_, AppState>, width: u32) {
     let current = state.core.engine.settings();
@@ -526,6 +538,7 @@ pub fn run() {
             window_reorder_tabs,
             window_focus,
             window_show_tab,
+            companion_install,
             engine_send_keys,
             trust_certificate,
             list_certificates,
