@@ -146,7 +146,7 @@ function SwitcherPanel({
   return (
     <div
       ref={ref}
-      className="switcher"
+      className="switcher glass"
       role="menu"
       tabIndex={-1}
       style={pos ? { left: pos.left, top: pos.top } : { visibility: "hidden" }}

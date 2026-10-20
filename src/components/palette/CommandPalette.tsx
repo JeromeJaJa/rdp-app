@@ -265,7 +265,7 @@ function Palette() {
     <div className="palette-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close()}>
       <div
         ref={panelRef}
-        className={`palette ${drag.dragging ? "is-dragging" : ""}`}
+        className={`palette glass ${drag.dragging ? "is-dragging" : ""}`}
         role="dialog"
         aria-label="Command palette"
         style={{ translate: `${drag.offset.x}px ${drag.offset.y}px` }}

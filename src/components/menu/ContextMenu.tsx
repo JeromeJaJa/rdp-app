@@ -83,7 +83,7 @@ function Item({ icon, label, hint, danger, disabled, checked, onSelect, submenu 
       <span className="menu__label">{label}</span>
       {hint && <span className="menu__hint">{hint}</span>}
       {submenu && <ChevronRight size={13} className="menu__chev" />}
-      {submenu && open && <div className={`menu menu--sub ${flip ? "is-flipped" : ""}`}>{submenu}</div>}
+      {submenu && open && <div className={`menu menu--sub glass ${flip ? "is-flipped" : ""}`}>{submenu}</div>}
     </div>
   );
 }
@@ -244,7 +244,7 @@ function MenuPanel({ menu }: { menu: MenuState }) {
   return (
     <div
       ref={ref}
-      className="menu"
+      className="menu glass"
       role="menu"
       style={{ left: pos.x, top: pos.y, visibility: pos.ready ? "visible" : "hidden" }}
       onMouseDown={(e) => e.stopPropagation()}

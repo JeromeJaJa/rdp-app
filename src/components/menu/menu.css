@@ -4,8 +4,6 @@
   min-width: 200px;
   padding: 4px;
   border-radius: 10px;
-  background: var(--elevated);
-  box-shadow: var(--shadow-lg);
   animation: menu-in 140ms var(--ease-out);
   transform-origin: top left;
 }
@@ -36,7 +34,7 @@
 }
 .menu__item:hover,
 .menu__item.is-open {
-  background: var(--hover);
+  background: var(--glass-hover);
 }
 .menu__item.is-danger {
   color: var(--danger);
@@ -74,7 +72,7 @@
 .menu__sep {
   height: 1px;
   margin: 4px 6px;
-  background: var(--border);
+  background: var(--glass-divider);
 }
 
 @keyframes menu-in {
@@ -82,4 +80,14 @@
     opacity: 0;
     transform: scale(0.97);
   }
+}
+
+/* A submenu can scroll, which would carry the glass pseudo-element away with it, so it
+   blurs on itself (its parent menu isn't a backdrop root, so this still works). */
+.menu--sub.glass {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-filter);
+}
+.menu--sub.glass::before {
+  display: none;
 }

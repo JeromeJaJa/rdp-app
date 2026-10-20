@@ -71,6 +71,33 @@ textarea {
   background: color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
+/* Dark glass surface. The blur lives on a pseudo-element so the element itself doesn't
+   become a "backdrop root": nested glass (a submenu poking out of its menu) still blurs
+   what is behind the window, not just its parent. The element must be positioned. */
+.glass {
+  isolation: isolate;
+  background: none;
+  box-shadow: var(--glass-shadow);
+}
+.glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-filter);
+  pointer-events: none;
+}
+/* Always dark (surfaces drawn over a remote screen). */
+.glass--dark {
+  --glass-bg: var(--glass-dark-bg);
+  --glass-filter: var(--glass-dark-filter);
+  --glass-shadow: var(--glass-dark-shadow);
+  --glass-hover: var(--glass-dark-hover);
+  --glass-divider: var(--glass-dark-divider);
+}
+
 .mono {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;

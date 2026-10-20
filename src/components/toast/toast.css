@@ -17,9 +17,8 @@
   width: 340px;
   max-width: calc(100vw - 32px);
   padding: 11px 10px 11px 13px;
-  border-radius: 11px;
-  background: var(--elevated);
-  box-shadow: var(--shadow-lg);
+  position: relative;
+  border-radius: 10px;
   pointer-events: auto;
   animation: toast-in 260ms var(--ease-out);
 }

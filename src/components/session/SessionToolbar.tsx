@@ -144,7 +144,7 @@ export function SessionToolbar({ id }: { id: string }) {
     <div ref={zoneRef} className={`session-toolbar-zone ${keysOpen ? "is-open" : ""}`}>
       <div
         ref={barRef}
-        className={`session-toolbar ${visible || keysOpen ? "is-visible" : ""}`}
+        className={`session-toolbar glass glass--dark ${visible || keysOpen ? "is-visible" : ""}`}
         onMouseDown={(e) => e.preventDefault()}
       >
         {(codec || width) && (
@@ -223,7 +223,7 @@ export function SessionToolbar({ id }: { id: string }) {
       </div>
 
       {keysOpen && (
-        <div className="session-keys" role="menu" onMouseDown={(e) => e.preventDefault()}>
+        <div className="session-keys glass glass--dark" role="menu" onMouseDown={(e) => e.preventDefault()}>
           {COMBOS.map((c) => (
             <button
               key={c.keys}

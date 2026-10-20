@@ -132,8 +132,6 @@
   max-height: min(420px, calc(100vh - 80px));
   padding: 4px;
   border-radius: 10px;
-  background: var(--elevated);
-  box-shadow: var(--shadow-lg);
   outline: none;
   animation: menu-in 140ms var(--ease-out);
   transform-origin: top left;
@@ -147,7 +145,7 @@
   padding: 0 9px;
   border-radius: 7px;
   color: var(--text-3);
-  background: var(--hover);
+  background: var(--glass-hover);
 }
 .switcher__search input {
   flex: 1;
@@ -173,7 +171,7 @@
   text-align: left;
 }
 .switcher__item.is-active {
-  background: var(--hover);
+  background: var(--glass-hover);
 }
 .switcher__name {
   flex: 0 1 auto;

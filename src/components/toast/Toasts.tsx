@@ -9,7 +9,7 @@ export function Toasts() {
   return (
     <div className="toasts" aria-live="polite">
       {toasts.map((t) => (
-        <div key={t.id} className={`toast toast--${t.tone}`}>
+        <div key={t.id} className={`toast glass toast--${t.tone}`}>
           <span className="toast__icon">
             {t.tone === "error" ? <AlertCircle size={15} /> : t.tone === "success" ? <CheckCircle2 size={15} /> : <Info size={15} />}
           </span>
