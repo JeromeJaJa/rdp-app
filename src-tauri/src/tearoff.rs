@@ -212,25 +212,59 @@ impl Tearoff {
         }
     }
 
+    /// Opens main-window tabs for those of `sessions` not open anywhere yet (sessions that
+    /// just became active), with one layout update for the lot: "Connect all" over a hundred
+    /// connections is one broadcast, not a hundred.
+    pub fn open_tabs(&self, sessions: &[String]) {
+        let added: Vec<&String> = {
+            let mut state = self.state.lock();
+            let mut added = Vec::new();
+            for session in sessions {
+                if state.layout.host(session).is_none() {
+                    state.layout.main_tabs.push(session.clone());
+                    added.push(session);
+                }
+            }
+            added
+        };
+        if added.is_empty() {
+            return;
+        }
+        for session in added {
+            self.apply_host(session, MAIN_WINDOW);
+        }
+        self.apply_visibility();
+        self.broadcast();
+    }
+
     /// Closes `session`'s tab (the caller disconnects the session). A detached window left
     /// without tabs closes.
     pub fn close_tab(&self, session: &str) {
-        let emptied = {
+        self.close_tabs(&[session.to_owned()]);
+    }
+
+    /// Closes the tabs of `sessions` (being disconnected, or already ended) with one layout
+    /// update for the lot. Detached windows left without tabs close.
+    pub fn close_tabs(&self, sessions: &[String]) {
+        let emptied: Vec<String> = {
             let mut state = self.state.lock();
-            let emptied = state.layout.remove_tab(session);
-            for active in state.active.values_mut() {
-                if active.as_deref() == Some(session) {
-                    *active = None;
+            let mut emptied = Vec::new();
+            for session in sessions {
+                emptied.extend(state.layout.remove_tab(session));
+                for active in state.active.values_mut() {
+                    if active.as_deref() == Some(session.as_str()) {
+                        *active = None;
+                    }
                 }
             }
             emptied
         };
         self.apply_visibility();
         self.broadcast();
-        if let Some(label) = emptied
-            && let Some(window) = self.app.get_webview_window(&label)
-        {
-            let _ = window.close();
+        for label in emptied {
+            if let Some(window) = self.app.get_webview_window(&label) {
+                let _ = window.close();
+            }
         }
     }
 

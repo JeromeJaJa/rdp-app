@@ -254,6 +254,14 @@ export class TauriBackend implements Backend {
     return invoke("window_close_tab", { id });
   }
 
+  openTabs(ids: ConnectionId[]): Promise<void> {
+    return invoke("window_open_tabs", { ids });
+  }
+
+  closeTabs(ids: ConnectionId[]): Promise<void> {
+    return invoke("window_close_tabs", { ids });
+  }
+
   setMainTabs(ids: ConnectionId[]): Promise<void> {
     return invoke("window_set_main_tabs", { tabs: ids });
   }

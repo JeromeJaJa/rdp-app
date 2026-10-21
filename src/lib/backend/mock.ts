@@ -811,6 +811,10 @@ export class MockBackend implements Backend {
 
   async closeTab(): Promise<void> {}
 
+  async openTabs(): Promise<void> {}
+
+  async closeTabs(): Promise<void> {}
+
   async setMainTabs(): Promise<void> {}
 
   onSelectTab(_cb: (id: ConnectionId) => void): Unsubscribe {

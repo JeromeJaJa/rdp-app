@@ -134,12 +134,17 @@ export interface GroupInput {
 
 export type Theme = "dark" | "light" | "system";
 export type WindowMaterial = "solid" | "acrylic";
+/** Which connections get a tab: only active ones (queued, connecting, connected,
+ *  reconnecting), or any you open (they stay until closed). */
+export type TopTabs = "active" | "opened";
 export type Codec = "auto" | "h264" | "remotefx";
 
 export interface Settings {
   theme: Theme;
   /** Experimental: the system acrylic backdrop behind the window's surfaces. */
   windowMaterial: WindowMaterial;
+  /** Which connections get a tab in the top strip. */
+  topTabs: TopTabs;
   /** Left sidebar width in CSS px. */
   sidebarWidth: number;
   /** Grid tile width in CSS px. */
@@ -188,6 +193,7 @@ export interface Settings {
 export const DEFAULT_SETTINGS: Settings = {
   theme: "dark",
   windowMaterial: "solid",
+  topTabs: "active",
   sidebarWidth: 248,
   gridTileWidth: 320,
   gridFilter: "all",

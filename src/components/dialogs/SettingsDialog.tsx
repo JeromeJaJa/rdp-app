@@ -128,6 +128,21 @@ function General() {
           ]}
         />
       </Row>
+      <h3 className="settings__heading">Tabs</h3>
+      <Row
+        title="Tabs show"
+        desc="Active: only connections that are connecting or connected; a tab closes when its session ends. Opened: any connection you open, until you close its tab."
+      >
+        <Segmented
+          size="sm"
+          value={s.topTabs}
+          onChange={(topTabs) => updateSettings({ topTabs })}
+          options={[
+            { value: "active", label: "Active" },
+            { value: "opened", label: "Opened" },
+          ]}
+        />
+      </Row>
     </>
   );
 }
@@ -137,7 +152,7 @@ function Connections() {
   return (
     <>
       <h3 className="settings__heading">Connecting</h3>
-      <Row title="Connect when selected" desc="Opening an idle tab connects it immediately. Otherwise double-click or press Enter.">
+      <Row title="Connect when selected" desc="Selecting an idle connection connects it immediately. Otherwise double-click or press Enter.">
         <Switch checked={s.connectOnSelect} onChange={(connectOnSelect) => updateSettings({ connectOnSelect })} />
       </Row>
       <Row title="Parallel connects" desc="How many logins run at once when connecting many sessions.">

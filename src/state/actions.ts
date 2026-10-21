@@ -13,6 +13,7 @@ import {
   type NewConnection,
   type ReplaceResult,
   type SessionEvent,
+  type SessionStatus,
   type Settings,
   type SettingOverrides,
   type TabGrab,
@@ -31,6 +32,7 @@ import {
   flatOrder,
   getState,
   hostOf,
+  isActive,
   isBusy,
   isLive,
   resolveSetting,
@@ -114,6 +116,10 @@ export async function initApp(): Promise<void> {
     backend.onUiCommand(onUiCommand);
     backend.onCompanionStatus(onCompanionStatus);
     startUiStateReporting();
+    // Switched to tabs only for active sessions: the others' tabs close.
+    useStore.subscribe((s, prev) => {
+      if (s.settings.topTabs !== prev.settings.topTabs && s.settings.topTabs !== "opened") closeInactiveTabs();
+    });
   } else {
     backend.onSelectTab((id) => setState({ selectedId: id }));
   }
@@ -127,6 +133,13 @@ const TABS_KEY = "rdp-app:open-tabs";
 
 /** Reopens the tabs that were open last time (or, on first run, all connections). */
 function restoreOpenTabs(lib: Library, selectedId: ConnectionId | null) {
+  if (lib.settings.topTabs !== "opened") {
+    // Tabs are only for active sessions: keep whatever the backend has (the live ones, after
+    // a reload) and show the last selected connection, tab or not.
+    const sel = selectedId && lib.connections.some((c) => c.id === selectedId) ? selectedId : getState().mainTabs[0];
+    if (sel) setState({ selectedId: sel, view: "session" });
+    return;
+  }
   let ids: ConnectionId[];
   try {
     const raw = localStorage.getItem(TABS_KEY);
@@ -154,9 +167,12 @@ function onWindowLayout(layout: WindowLayout) {
   setState({ mainTabs: layout.mainTabs, windows: layout.windows });
   if (isMainWindow()) {
     persistMainTabs(layout.mainTabs);
-    // If the selected tab left the main window (closed or torn off), pick a neighbour.
+    // If the selected tab left the main window (closed or torn off), pick a neighbour. Not
+    // when it closed because its session ended (tabs only for active sessions): it stays
+    // selected, so its error or idle card stays in view.
     const sel = prev.selectedId;
-    if (sel && !layout.mainTabs.includes(sel) && hostOf(getState(), sel) === null) {
+    const ended = getState().settings.topTabs !== "opened" && sel !== null && !isActive(sessionOf(sel).status);
+    if (sel && !ended && !layout.mainTabs.includes(sel) && hostOf(getState(), sel) === null) {
       const idx = Math.max(0, prev.mainTabs.indexOf(sel));
       setState({ selectedId: layout.mainTabs[Math.min(idx, layout.mainTabs.length - 1)] ?? null });
     }
@@ -225,7 +241,56 @@ export async function openInNewWindow(id: ConnectionId) {
     await be().detachTab(id);
   } catch (err) {
     toast("error", "Could not open a window", errorText(err));
+    return;
   }
+  // With tabs only for active sessions, a tab means a session: start it.
+  if (getState().settings.topTabs !== "opened" && !isActive(sessionOf(id).status)) connect([id]);
+}
+
+/**
+ * Main window: tabs follow the sessions. A session that becomes active always gets a tab
+ * (so one started from the library or by "Connect all" shows up in the strip). With tabs
+ * only for active sessions (the default), a tab also closes when its session ends; the
+ * connection stays selected, so an error stays in view. Batched: one layout update each way.
+ */
+function followSessions(changed: Map<ConnectionId, SessionStatus>) {
+  const s = getState();
+  const activeOnly = s.settings.topTabs !== "opened";
+  const open: ConnectionId[] = [];
+  const close: ConnectionId[] = [];
+  for (const [id, status] of changed) {
+    const host = hostOf(s, id);
+    if (isActive(status)) {
+      if (host === null) open.push(id);
+    } else if (activeOnly && host !== null) {
+      close.push(id);
+    }
+  }
+  if (open.length) {
+    const mainTabs = [...s.mainTabs, ...open];
+    setState({ mainTabs });
+    persistMainTabs(mainTabs);
+    bg(be().openTabs(open), "open tabs");
+  }
+  if (close.length) dropTabs(close);
+}
+
+/** Switched to tabs only for active sessions: close the tabs of the ones that aren't. */
+function closeInactiveTabs() {
+  const s = getState();
+  const open = [...s.mainTabs, ...s.windows.flatMap((w) => w.tabs)];
+  const ended = open.filter((id) => !isActive(sessionOf(id).status));
+  if (ended.length) dropTabs(ended);
+}
+
+/** Closes tabs without touching their sessions or the selection (optimistic, then backend). */
+function dropTabs(ids: ConnectionId[]) {
+  const gone = new Set(ids);
+  const s = getState();
+  const mainTabs = s.mainTabs.filter((t) => !gone.has(t));
+  setState({ mainTabs, windows: s.windows.map((w) => ({ ...w, tabs: w.tabs.filter((t) => !gone.has(t)) })) });
+  persistMainTabs(mainTabs);
+  bg(be().closeTabs(ids), "close tabs");
 }
 
 /** Sends a tab back to the main window. */
@@ -331,20 +396,30 @@ function flushSessionEvents() {
   const sessions = { ...s.sessions };
   const certPrompts = [...s.certPrompts];
   const certIds = new Set(events.filter((e) => e.type === "certificate").map((e) => e.id));
-  // Prompts and error toasts belong to the window that holds the tab.
+  // Prompts and error toasts belong to the window that holds the tab, or the main window if
+  // none does (a session can fail before its tab opens, or its tab may only be for active
+  // sessions).
   const me = windowLabel();
+  // With tabs only for active sessions, a failed session's tab closes (maybe taking its
+  // window with it), so failures are told in the main window.
+  const activeOnly = s.settings.topTabs !== "opened";
+  const statuses = new Map<ConnectionId, SessionStatus>();
   for (const e of events) {
     if (!s.connById[e.id]) continue;
-    const mine = hostOf(s, e.id) === me;
+    const host = hostOf(s, e.id);
+    const mine = host === me || (host === null && me === "main");
     const prev = sessions[e.id] ?? { status: "idle" as const };
     switch (e.type) {
       case "status":
+        statuses.set(e.id, e.status);
         sessions[e.id] =
           e.status === "idle"
             ? { status: e.status }
             : { ...prev, status: e.status, message: e.status === "error" ? e.message : undefined };
         // A certificate decision gets its own dialog instead of an error toast.
-        if (e.status === "error" && !certIds.has(e.id) && mine) queueErrorToast(e.id, e.message);
+        if (e.status === "error" && !certIds.has(e.id) && (activeOnly ? me === "main" : mine)) {
+          queueErrorToast(e.id, e.message);
+        }
         break;
       case "resolution":
         sessions[e.id] = { ...prev, width: e.width, height: e.height };
@@ -376,6 +451,7 @@ function flushSessionEvents() {
     }
   }
   setState({ sessions, certPrompts });
+  if (statuses.size && me === "main") followSessions(statuses);
 }
 
 // Errors from a connect-all burst are collapsed into one toast.
@@ -528,8 +604,10 @@ export function select(id: ConnectionId | null, opts: { connect?: boolean } = {}
       showTabWindow(id);
       return;
     }
-    // Not open yet (opened from the library): open it as a main tab.
-    if (!host) {
+    // Not open yet (opened from the library): open it as a main tab. With tabs only for
+    // active sessions, an idle one is just selected; connecting it opens its tab.
+    const tabbable = getState().settings.topTabs === "opened" || isActive(sessionOf(id).status);
+    if (!host && tabbable) {
       setState({ mainTabs: [...getState().mainTabs, id] });
       persistMainTabs(getState().mainTabs);
       bg(be().openTab(id, false), "open tab");

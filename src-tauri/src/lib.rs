@@ -315,6 +315,18 @@ fn window_close_tab(state: State<'_, AppState>, id: String) {
     state.tearoff.close_tab(&id);
 }
 
+/// Opens tabs for sessions that just became active (those not open anywhere yet), in one go.
+#[tauri::command]
+fn window_open_tabs(state: State<'_, AppState>, ids: Vec<String>) {
+    state.tearoff.open_tabs(&ids);
+}
+
+/// Closes several tabs in one go (sessions that ended, when tabs are only for active ones).
+#[tauri::command]
+fn window_close_tabs(state: State<'_, AppState>, ids: Vec<String>) {
+    state.tearoff.close_tabs(&ids);
+}
+
 /// Installs the companion on a connection's host over WinRM (experimental, manual trigger).
 #[tauri::command]
 async fn companion_install(state: State<'_, AppState>, id: String) -> CmdResult<String> {
@@ -609,6 +621,8 @@ pub fn run() {
             window_open_tab,
             window_set_main_tabs,
             window_close_tab,
+            window_open_tabs,
+            window_close_tabs,
             companion_install,
             companion_uninstall,
             companion_trust_host,

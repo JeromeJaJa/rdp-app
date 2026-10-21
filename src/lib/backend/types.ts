@@ -127,6 +127,10 @@ export interface Backend {
   openTab(id: ConnectionId, select: boolean): Promise<void>;
   /** Closes a connection's tab (the session is disconnected separately). */
   closeTab(id: ConnectionId): Promise<void>;
+  /** Opens main-window tabs for those not open anywhere yet, in one go (sessions that became active). */
+  openTabs(ids: ConnectionId[]): Promise<void>;
+  /** Closes several tabs in one go. */
+  closeTabs(ids: ConnectionId[]): Promise<void>;
   /** Replaces the main window's open tabs (restoring them on launch). */
   setMainTabs(ids: ConnectionId[]): Promise<void>;
   /** Moves a tab into "main" or a detached window (at `index`, or the end). */

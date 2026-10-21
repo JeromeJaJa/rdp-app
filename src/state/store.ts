@@ -170,6 +170,11 @@ export function isBusy(status: SessionStatus): boolean {
   return status === "queued" || status === "connecting" || status === "reconnecting";
 }
 
+/** Queued, connecting, connected or reconnecting: the session is in use. */
+export function isActive(status: SessionStatus): boolean {
+  return isLive(status) || isBusy(status);
+}
+
 /** Whether "connect all" / "disconnect all" would do anything for these connections. */
 export function useBulkActions(ids: ConnectionId[]): { canConnect: boolean; canDisconnect: boolean } {
   const mask = useStore((s) => {
