@@ -58,7 +58,9 @@ impl CliprdrBackend for WinCliprdrBackend {
             | ClipboardGeneralCapabilityFlags::HUGE_FILE_SUPPORT_ENABLED
     }
 
-    fn on_ready(&mut self) {}
+    fn on_ready(&mut self) {
+        self.send_event(BackendEvent::Ready)
+    }
 
     fn on_process_negotiated_capabilities(&mut self, capabilities: ClipboardGeneralCapabilityFlags) {
         self.send_event(BackendEvent::DowngradedCapabilities(capabilities))

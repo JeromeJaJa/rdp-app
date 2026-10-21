@@ -37,6 +37,9 @@ pub(crate) struct WinClipboardImpl {
     paste_rx: mpsc::Receiver<FormatDataResponse<'static>>,
     /// The server accepted file streaming (CB_STREAM_FILECLIP_ENABLED).
     file_transfer: bool,
+    /// The channel has finished setting up. Until then only a plain format list may be
+    /// sent (it completes the setup); a file list would fail and leave the channel stuck.
+    ready: bool,
     /// Serves the files last offered to the server.
     files: Arc<crate::files::FileServer>,
     /// Reaches the server from the thread serving remote files to local apps.
@@ -69,6 +72,7 @@ impl WinClipboardImpl {
             backend_rx,
             paste_rx,
             file_transfer: false,
+            ready: false,
             files: direct.files,
             remote: Remote {
                 inbox: direct.inbox,
@@ -128,6 +132,11 @@ impl WinClipboardImpl {
 
     fn on_clipboard_update(&mut self) -> WinCliprdrResult<Option<ClipboardMessage>> {
         let mut clipboard = OwnedOsClipboard::new(self.window)?;
+        if !self.ready && clipboard.dropped_files().is_some() {
+            // Finish the channel's setup with an empty list; the files are offered once
+            // it's ready (BackendEvent::Ready runs this again).
+            return Ok(Some(ClipboardMessage::SendInitiateCopy(Vec::new())));
+        }
         if let Some(paths) = clipboard.dropped_files() {
             drop(clipboard); // walking folders can take a moment; don't hold the clipboard
             // The companion streams them much faster than the clipboard channel can.
@@ -307,6 +316,12 @@ impl WinClipboardImpl {
             BackendEvent::DowngradedCapabilities(flags) => {
                 self.file_transfer = flags.contains(ClipboardGeneralCapabilityFlags::STREAM_FILECLIP_ENABLED);
                 Ok(None)
+            }
+            BackendEvent::Ready => {
+                let deferred = !self.ready;
+                self.ready = true;
+                // Files on the clipboard at connect were held back during setup: offer them now.
+                if deferred { self.on_clipboard_update() } else { Ok(None) }
             }
         };
 

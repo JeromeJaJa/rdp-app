@@ -152,6 +152,8 @@ pub(crate) enum BackendEvent {
 
     // PDU processing events
     DowngradedCapabilities(ClipboardGeneralCapabilityFlags),
+    /// The channel finished setting up (the server took our first format list).
+    Ready,
     RemoteFormatList(Vec<ClipboardFormat>),
     FormatDataRequest(FormatDataRequest),
     RemoteRequestsFormatList,
