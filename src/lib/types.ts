@@ -365,6 +365,12 @@ export interface WindowLayout {
   windows: WindowTabs[];
 }
 
+/** A tab being dragged over this window's strip: where it would land, and which tab it is. */
+export interface DockPreview {
+  index: number;
+  id: ConnectionId;
+}
+
 /** Progress of the companion auto-install for a connection (experimental). */
 export interface CompanionStatus {
   id: ConnectionId;

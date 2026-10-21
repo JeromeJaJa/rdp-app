@@ -78,8 +78,12 @@ export type PastStrip = (x: number, y: number) => number;
 /** How far below the title bar (and its tab strip) a point is. */
 export const pastTitlebar: PastStrip = (_x, y) => y - (document.querySelector(".titlebar")?.getBoundingClientRect().bottom ?? Infinity);
 
-/** Pulled this far past its strip, a tab tears off into a window of its own. */
-const TEAR_AT = 48;
+/**
+ * Pulled this far (CSS px) below its strip, a tab tears off into a window of its own.
+ * Small, like Chrome: the drag is locked horizontal in the strip, so a little vertical
+ * travel is a clear intent to pull the tab out.
+ */
+const TEAR_AT = 14;
 
 /**
  * Chrome-style tear-off while a tab is dragged: a window is prepared once the tab

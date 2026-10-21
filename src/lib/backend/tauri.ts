@@ -27,6 +27,7 @@ import {
   type CompanionStatus,
   type UiCommand,
   type UiState,
+  type DockPreview,
   type WindowLayout,
 } from "../types";
 
@@ -260,8 +261,8 @@ export class TauriBackend implements Backend {
     return subscribeThisWindow<ConnectionId>("select-tab", cb);
   }
 
-  onDockPreview(cb: (index: number | null) => void): Unsubscribe {
-    return subscribeThisWindow<number | null>("dock-preview", cb);
+  onDockPreview(cb: (preview: DockPreview | null) => void): Unsubscribe {
+    return subscribeThisWindow<DockPreview | null>("dock-preview", cb);
   }
 
   moveTab(id: ConnectionId, target: string, index?: number): Promise<void> {

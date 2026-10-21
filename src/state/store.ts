@@ -4,6 +4,7 @@ import {
   DEFAULT_SETTINGS,
   type Connection,
   type ConnectionId,
+  type DockPreview,
   type Group,
   type GroupId,
   type SessionStatus,
@@ -95,8 +96,8 @@ export interface AppState {
   windows: WindowTabs[];
   /** The left library sidebar is shown (main window only). */
   sidebarShown: boolean;
-  /** A tab is being dragged over this window's strip: the index where it would land. */
-  dockPreview: number | null;
+  /** A tab is being dragged over this window's strip: which tab, and where it would land. */
+  dockPreview: DockPreview | null;
   toasts: Toast[];
   fullscreen: boolean;
   /** Keyboard focus is inside a RemoteSurface: app shortcuts are suspended. */

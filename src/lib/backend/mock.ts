@@ -30,6 +30,7 @@ import {
   type CompanionStatus,
   type UiCommand,
   type UiState,
+  type DockPreview,
   type WindowLayout,
 } from "../types";
 import { gatewayFromInput } from "../gateway";
@@ -816,7 +817,7 @@ export class MockBackend implements Backend {
     return () => {};
   }
 
-  onDockPreview(_cb: (index: number | null) => void): Unsubscribe {
+  onDockPreview(_cb: (preview: DockPreview | null) => void): Unsubscribe {
     return () => {};
   }
 

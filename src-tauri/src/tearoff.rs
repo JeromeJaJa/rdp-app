@@ -57,6 +57,15 @@ pub struct WindowTabs {
     pub tabs: Vec<String>,
 }
 
+/// Where a tab being dragged over a window's strip would land: its index, and the tab
+/// itself so the strip can show the real tab sitting there (not a blank gap).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DockPreview {
+    index: usize,
+    id: String,
+}
+
 impl Layout {
     /// A window's tab list (main or detached), mutably.
     fn tabs_mut(&mut self, label: &str) -> Option<&mut Vec<String>> {
@@ -401,6 +410,8 @@ impl Tearoff {
     /// strip it is over (Chrome-style), then merges its tabs into that window on release (or
     /// lets its sessions take its own size if it was dropped on nothing).
     fn follow_pointer(&self, label: &str, window: &WebviewWindow, cursor: PhysicalPosition<f64>) -> String {
+        // The tab this drag carries (shown landing in whatever strip it's over).
+        let dragged = self.tabs_of(label).into_iter().next();
         // The window the tab is hovering, and where it would land there, as it moves.
         let mut last: Option<(String, usize)> = None;
         #[cfg(windows)]
@@ -419,9 +430,8 @@ impl Tearoff {
                 {
                     self.emit_dock(old, None);
                 }
-                match &cur {
-                    Some((t, idx)) => self.emit_dock(t, Some(*idx)),
-                    None => {}
+                if let (Some((t, idx)), Some(id)) = (&cur, &dragged) {
+                    self.emit_dock(t, Some(DockPreview { index: *idx, id: id.clone() }));
                 }
                 // Hide the follow window while it's "in" a strip; show it again out in the open.
                 if last.is_some() != cur.is_some() {
@@ -550,8 +560,8 @@ impl Tearoff {
     }
 
     /// Tells `label`'s window where a dragged tab would land right now (`None` clears it).
-    fn emit_dock(&self, label: &str, index: Option<usize>) {
-        let _ = self.app.emit_to(label, "dock-preview", index);
+    fn emit_dock(&self, label: &str, preview: Option<DockPreview>) {
+        let _ = self.app.emit_to(label, "dock-preview", preview);
     }
 
     // ── Closing, visibility, sizes ──────────────────────────────────────────

@@ -1,4 +1,4 @@
-import { Fragment, memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   closestCenter,
@@ -10,15 +10,20 @@ import {
   type DragEndEvent,
   type DragMoveEvent,
   type DragStartEvent,
+  type Modifier,
 } from "@dnd-kit/core";
 import { arrayMove, horizontalListSortingStrategy, SortableContext } from "@dnd-kit/sortable";
 import { useShallow } from "zustand/react/shallow";
 import { isMainWindow, windowLabel } from "../../lib/env";
 import { closeTab, reorderWindowTabs } from "../../state/actions";
 import { useStore, windowTabs } from "../../state/store";
-import { SoloTab, TabItem, TabOverlay } from "./TabItem";
+import { DockGhost, SoloTab, TabItem, TabOverlay } from "./TabItem";
 import { dragPointer, pastTitlebar, stripWheel, useTearOff } from "./useTabsDnd";
 import "./toptabs.css";
+
+// Chrome forces the drag horizontal while the tab is still in the strip; it only gains
+// vertical freedom once it tears off into a window of its own (handled natively).
+const horizontalOnly: Modifier = ({ transform }) => ({ ...transform, y: 0 });
 
 /**
  * A window's tab strip (the main window and detached windows alike): a flat row of the
@@ -30,8 +35,9 @@ function WindowTabStripInner() {
   const label = windowLabel();
   const main = isMainWindow();
   const tabs = useStore(useShallow((s) => windowTabs(s, label)));
-  // A tab from another window is being dragged over this strip: open a gap where it'd land.
+  // A tab from another window is being dragged over this strip: show it landing where it'd go.
   const dock = useStore((s) => s.dockPreview);
+  const ghost = dock !== null && !tabs.includes(dock.id);
   const [activeId, setActiveId] = useState<string | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const tear = useTearOff(pastTitlebar);
@@ -85,6 +91,7 @@ function WindowTabStripInner() {
           <DndContext
             sensors={sensors}
             collisionDetection={closestCenter}
+            modifiers={[horizontalOnly]}
             onDragStart={(e: DragStartEvent) => {
               tear.onStart();
               setActiveId(String(e.active.id));
@@ -95,13 +102,12 @@ function WindowTabStripInner() {
           >
             <div className="top-seg">
               <SortableContext items={tabs} strategy={horizontalListSortingStrategy}>
-                {tabs.map((id, i) => (
-                  <Fragment key={id}>
-                    {dock === i && <span className="top-dock-gap" aria-hidden />}
-                    <TabItem id={id} variant="top" onClose={() => closeTab(id)} />
-                  </Fragment>
-                ))}
-                {dock !== null && dock >= tabs.length && <span className="top-dock-gap" aria-hidden />}
+                {tabs.flatMap((id, i) => {
+                  const tab = <TabItem key={id} id={id} variant="top" onClose={() => closeTab(id)} />;
+                  // Stable key so React moves the ghost between slots (no re-grow) as the index changes.
+                  return ghost && dock!.index === i ? [<DockGhost key="dock-ghost" id={dock!.id} />, tab] : [tab];
+                })}
+                {ghost && dock!.index >= tabs.length && <DockGhost key="dock-ghost" id={dock!.id} />}
               </SortableContext>
             </div>
             {createPortal(
