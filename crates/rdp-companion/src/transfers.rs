@@ -68,6 +68,13 @@ impl Transfers {
             drags: Drags::default(),
             stats,
         })
+        .inspect(|transfers| {
+            // Copies made here go to this client.
+            let channel = Arc::clone(&transfers.channel);
+            transfers.clipboard.set_sink(Some(Arc::new(move |message| {
+                channel.send(&message);
+            })));
+        })
     }
 
     fn outbox(&self) -> Outbox {
@@ -383,6 +390,7 @@ impl Transfers {
     /// The client is gone: everything in flight fails, and files it put on the
     /// clipboard can't be pasted any more.
     pub(crate) fn detach(&self) {
+        self.clipboard.set_sink(None);
         self.channel.direct().close();
         for (_, inflow) in lock(&self.inflows).drain() {
             inflow.abort("the client disconnected");

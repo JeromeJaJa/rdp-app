@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 pub const CHANNEL_NAME: &str = "RdpApp::Companion";
 
 /// Bumped on any breaking change to [`Message`]. Both sides send it in the handshake.
-pub const PROTOCOL_VERSION: u32 = 6;
+pub const PROTOCOL_VERSION: u32 = 7;
 
 /// A frame larger than this is treated as a desync and ends the channel, rather than
 /// buffering without bound.
@@ -142,6 +142,10 @@ pub enum Message {
         /// companion that isn't the build it carries. Empty from companions before it.
         #[serde(default)]
         build: String,
+        /// It watches the remote clipboard and announces copies ([`Message::RemoteCopy`]),
+        /// so the client can ignore the clipboard channel's announcements.
+        #[serde(default)]
+        watches_clipboard: bool,
     },
     /// Client → companion, reply to `Hello`: the handshake is accepted.
     Welcome {
@@ -242,6 +246,14 @@ pub enum Message {
     ClipboardOffer {
         id: u64,
         formats: Vec<ClipFormat>,
+    },
+    /// Companion → client: something was copied on the remote (not the client's own copy):
+    /// its plain-memory formats, and whether it holds files. The client offers them on its
+    /// clipboard, read with [`Message::ClipboardRead`] (files with
+    /// [`Message::ClipboardQuery`]) when pasted.
+    RemoteCopy {
+        formats: Vec<ClipFormat>,
+        files: bool,
     },
     /// Client → companion: something on the client is pasting what the remote copied.
     /// Stream that format of the remote clipboard as transfer `id`: one entry, sent
@@ -432,6 +444,7 @@ mod tests {
                 host: "REMOTE-PC".into(),
                 session: 2,
                 build: build_id(b"companion"),
+                watches_clipboard: true,
             },
             Message::Welcome {
                 protocol: PROTOCOL_VERSION,
@@ -492,6 +505,10 @@ mod tests {
             Message::DirectOffer {
                 fingerprint: vec![7; 32],
                 candidates: vec!["192.0.2.1:50000".into()],
+            },
+            Message::RemoteCopy {
+                formats: vec![ClipFormat { id: 13, name: None }],
+                files: false,
             },
             Message::Close { id: 2, error: None },
             Message::Bye,

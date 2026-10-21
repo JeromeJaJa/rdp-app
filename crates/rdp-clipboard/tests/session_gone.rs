@@ -13,12 +13,15 @@ use ironrdp_cliprdr::backend::{ClipboardMessage, ClipboardMessageProxy};
 use ironrdp_cliprdr::pdu::{ClipboardFormat, ClipboardFormatId};
 use rdp_clipboard::WinClipboard;
 use windows::Win32::System::DataExchange::{
-    CloseClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard,
+    CloseClipboard, EmptyClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard,
 };
 use windows::Win32::System::StationsAndDesktops::{
     CreateDesktopW, CreateWindowStationW, DESKTOP_CONTROL_FLAGS, HDESK, SetProcessWindowStation, SetThreadDesktop,
 };
-use windows::Win32::UI::WindowsAndMessaging::{DispatchMessageW, MSG, PM_REMOVE, PeekMessageW, TranslateMessage};
+use windows::Win32::UI::WindowsAndMessaging::{
+    CreateWindowExW, DestroyWindow, DispatchMessageW, HWND_MESSAGE, MSG, PM_REMOVE, PeekMessageW, TranslateMessage,
+    WINDOW_EX_STYLE, WINDOW_STYLE,
+};
 use windows::core::w;
 
 const CF_UNICODETEXT: u32 = 13;
@@ -51,6 +54,33 @@ fn isolate() -> HDESK {
         .unwrap();
         SetThreadDesktop(desktop).unwrap();
         desktop
+    }
+}
+
+/// Empties the clipboard (the window station is shared by test runs, which leave things on
+/// it), owned by a window that goes straight after.
+fn empty_clipboard() {
+    // SAFETY: a message-only window of a system class owns the emptied clipboard, briefly.
+    unsafe {
+        let window = CreateWindowExW(
+            WINDOW_EX_STYLE::default(),
+            w!("STATIC"),
+            None,
+            WINDOW_STYLE::default(),
+            0,
+            0,
+            0,
+            0,
+            Some(HWND_MESSAGE),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        OpenClipboard(Some(window)).unwrap();
+        EmptyClipboard().unwrap();
+        CloseClipboard().unwrap();
+        DestroyWindow(window).unwrap();
     }
 }
 
@@ -116,6 +146,7 @@ fn paste_elapsed(desktop: HDESK) -> Duration {
 #[test]
 fn a_monitor_whose_session_ended_never_blocks() {
     let desktop = isolate();
+    empty_clipboard();
 
     // The session's connection is gone: a paste gives up at once.
     let (monitor, backend) = monitor_with_remote_copy();

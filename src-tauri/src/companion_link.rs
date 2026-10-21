@@ -167,6 +167,9 @@ pub struct Companions {
     transfers: Arc<Mutex<HashMap<u64, TransferView>>>,
     next_id: AtomicU64,
     prefs: Mutex<Option<PrefsSource>>,
+    /// Per session: offers what the remote copies on this PC's clipboard.
+    #[cfg(windows)]
+    announcers: Mutex<HashMap<String, rdp_clipboard::Announcer>>,
 }
 
 /// What a session's settings ask of its companion.
@@ -194,7 +197,24 @@ impl Companions {
             transfers: Arc::default(),
             next_id: AtomicU64::new(2),
             prefs: Mutex::default(),
+            #[cfg(windows)]
+            announcers: Mutex::default(),
         })
+    }
+
+    /// Where a session's remote copies are offered on this PC (its clipboard monitor), or
+    /// nowhere (clipboard sharing off, or the session ended).
+    #[cfg(windows)]
+    pub fn set_announcer(&self, session: &str, announcer: Option<rdp_clipboard::Announcer>) {
+        let mut announcers = self.announcers.lock();
+        match announcer {
+            Some(a) => {
+                announcers.insert(session.to_owned(), a);
+            }
+            None => {
+                announcers.remove(session);
+            }
+        }
     }
 
     /// Where to look up what a session's settings ask of its companion.
@@ -523,7 +543,14 @@ impl Companions {
 }
 
 impl CompanionHost for Companions {
-    fn attached(&self, session: &str, link: CompanionLink, _version: &str, _host: &str) -> Arc<dyn CompanionHandler> {
+    fn attached(
+        &self,
+        session: &str,
+        link: CompanionLink,
+        _version: &str,
+        _host: &str,
+        watches_clipboard: bool,
+    ) -> Arc<dyn CompanionHandler> {
         let transfers = Arc::clone(&self.transfers);
         let app = self.app.clone();
         let sources: Arc<Mutex<HashSet<u64>>> = Arc::default();
@@ -571,6 +598,7 @@ impl CompanionHost for Companions {
             drag_out: Mutex::default(),
             direct,
             preparing: Mutex::default(),
+            watches_clipboard,
         });
         let replaced = self.attached.lock().insert(session.to_owned(), Arc::clone(&attached));
         if let Some(old) = replaced {
@@ -615,6 +643,14 @@ impl Companions {
                 attached.pump.receive(&message);
             }
             Message::Offer { id, entries, intent } => attached.offered(id, entries, intent),
+            #[cfg(windows)]
+            Message::RemoteCopy { formats, files } => {
+                let announcer = self.announcers.lock().get(&attached.session).cloned();
+                if let Some(announcer) = announcer {
+                    tracing::debug!(session = %attached.session, formats = formats.len(), files, "the remote copied");
+                    announcer.remote_copy(formats, files);
+                }
+            }
             Message::DirectAnswer {
                 fingerprint,
                 candidates,
@@ -855,6 +891,9 @@ struct Attached {
     direct: DirectSlot,
     /// This side of a direct link being set up, until the companion answers.
     preparing: Mutex<Option<Prepared>>,
+    /// It announces what the remote copies (the clipboard channel's announcements are then
+    /// ignored).
+    watches_clipboard: bool,
 }
 
 impl Attached {
@@ -1083,6 +1122,14 @@ impl rdp_clipboard::Companion for ClipboardHook {
                 None
             }
         }
+    }
+
+    fn announces_copies(&self) -> bool {
+        let Some(companions) = self.companions.upgrade() else {
+            return false;
+        };
+        companions.get(&self.session).is_some_and(|a| a.watches_clipboard)
+            && companions.announcers.lock().contains_key(&self.session)
     }
 
     fn remote_files(&self) -> Option<Arc<Inflow>> {

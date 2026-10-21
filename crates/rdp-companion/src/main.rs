@@ -142,6 +142,7 @@ mod windows_impl {
             host,
             session,
             build: build(),
+            watches_clipboard: clipboard.as_ref().is_some_and(|c| c.watching()),
         }) {
             bail!("couldn't say hello");
         }

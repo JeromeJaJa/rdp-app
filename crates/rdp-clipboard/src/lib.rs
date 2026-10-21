@@ -151,6 +151,61 @@ pub trait Companion: Send + Sync {
     /// companion. `None` (use the clipboard channel) if none is attached or it can't. Blocks
     /// until the data is in: it's needed before `WM_RENDERFORMAT` returns.
     fn remote_format(&self, format: rdp_companion_proto::ClipFormat) -> Option<Vec<u8>>;
+
+    /// The companion announces what the remote copies ([`Announcer`]), so the clipboard
+    /// channel's announcements are ignored (a copy isn't offered twice).
+    fn announces_copies(&self) -> bool {
+        false
+    }
+}
+
+/// Offers what the remote copied, as its companion announced it, on this PC's clipboard:
+/// each format fetched when pasted (through the companion first). Any thread.
+#[derive(Clone)]
+pub struct Announcer {
+    tx: mpsc_sync::Sender<BackendEvent>,
+    window: HWND,
+}
+
+// SAFETY: the window handle is only used with PostMessageW, which any thread may call.
+unsafe impl Send for Announcer {}
+// SAFETY: as above.
+unsafe impl Sync for Announcer {}
+
+impl Announcer {
+    /// The remote copied `formats` (its ids, names for registered ones), and files if
+    /// `files`.
+    pub fn remote_copy(&self, formats: Vec<rdp_companion_proto::ClipFormat>, files: bool) {
+        use ironrdp_cliprdr::pdu::ClipboardFormatName;
+        let mut list: Vec<ClipboardFormat> = formats
+            .into_iter()
+            .map(|f| {
+                let format = ClipboardFormat::new(ClipboardFormatId::new(f.id));
+                match f.name {
+                    Some(name) => format.with_name(ClipboardFormatName::new(name)),
+                    None => format,
+                }
+            })
+            .collect();
+        if files {
+            // The file list's id is the companion's business: pastes ask it for the files.
+            list.push(
+                ClipboardFormat::new(ClipboardFormatId::new(0xC0FF))
+                    .with_name(ClipboardFormatName::new(remote_files::FILE_LIST_FORMAT_NAME)),
+            );
+        }
+        if self.tx.send(BackendEvent::CompanionCopy(list)).is_ok() {
+            // SAFETY: posting to the monitor's window from any thread.
+            let _ = unsafe {
+                windows::Win32::UI::WindowsAndMessaging::PostMessageW(
+                    Some(self.window),
+                    WM_CLIPRDR_BACKEND_EVENT,
+                    WPARAM(0),
+                    LPARAM(0),
+                )
+            };
+        }
+    }
 }
 
 /// The bytes of one format on this PC's clipboard (plain-memory formats: see
@@ -206,6 +261,8 @@ pub(crate) enum BackendEvent {
     /// The channel finished setting up (the server took our first format list).
     Ready,
     RemoteFormatList(Vec<ClipboardFormat>),
+    /// What the remote copied, as its companion announced it.
+    CompanionCopy(Vec<ClipboardFormat>),
     FormatDataRequest(FormatDataRequest),
     RemoteRequestsFormatList,
 }
@@ -368,6 +425,14 @@ impl WinClipboard {
             closing,
             _thread_marker: Default::default(),
         })
+    }
+
+    /// Offers what the remote copied, as its companion announces it (from any thread).
+    pub fn announcer(&self) -> Announcer {
+        Announcer {
+            tx: self.backend_tx.clone(),
+            window: self.window,
+        }
     }
 
     /// Returns clipboard backend factory suitable for making backend instances for `CLIPRDR` SVC.

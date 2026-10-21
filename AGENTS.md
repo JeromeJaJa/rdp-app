@@ -198,9 +198,13 @@ pattern-matching against it.
     to the companion instead: files as a listing, anything else as its plain-memory formats
     (`ClipFormat::is_memory`; registered formats go by name), which the companion puts on the
     remote clipboard with delayed rendering and fetches from the client when pasted. It marks what
-    it puts there (`CLIPBOARD_MARKER`) so the client ignores the remote's echo. Pasting a remote
-    copy here asks the companion first (`ClipboardRead`: it streams the format straight away);
-    files are read as `CF_HDROP` paths. If the companion can't serve it, CLIPRDR does. The
+    it puts there (`CLIPBOARD_MARKER`) so the client ignores the remote's echo. The other way,
+    the companion watches the remote clipboard and announces each copy (`RemoteCopy`: its
+    formats, and whether it holds files); while one that watches is attached (`Hello`'s
+    `watches_clipboard`), rdpclip's CLIPRDR announcements are ignored, so a copy isn't offered
+    twice. Pasting a remote copy here asks the companion first (`ClipboardRead`: it streams the
+    format straight away); files are read as `CF_HDROP` paths. If the companion can't serve it,
+    CLIPRDR does. The
     companion's clipboard test runs on a private window station, so it never touches yours.
   - **Direct link** (`crates/rdp-direct`): Windows' RDP listener keeps its TCP receive window at
     64 KiB whatever the host's TCP tuning (measured: `server_window=62KiB`, auto-tuning `normal`),

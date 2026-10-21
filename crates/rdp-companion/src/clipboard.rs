@@ -7,21 +7,23 @@
 //! carry [`CLIPBOARD_MARKER`], so when the session's clipboard redirection mirrors the
 //! change back, the client knows it's its own.
 //!
-//! The other way, files copied here are read off the clipboard as paths (`CF_HDROP`), and
-//! other formats as bytes ([`read_format`]), when the client pastes them.
+//! The other way, the clipboard is watched: each copy made here is announced to the client
+//! (its formats, and whether it holds files), and read when the client pastes it: files
+//! as paths (`CF_HDROP`), anything else as bytes ([`read_format`]).
 
 use std::cell::RefCell;
 use std::path::PathBuf;
-use std::sync::{Arc, mpsc};
+use std::sync::{Arc, Mutex, PoisonError, mpsc};
 use std::time::{Duration, Instant};
 
 use rdp_companion_proto::transfer::{CHUNK, Inflow};
-use rdp_companion_proto::{CLIPBOARD_MARKER, ClipFormat};
+use rdp_companion_proto::{CLIPBOARD_MARKER, ClipFormat, Message};
 use rdp_vfiles::{InflowFiles, Options, data_object};
 use windows::Win32::Foundation::{GlobalFree, HANDLE, HGLOBAL, HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::DataExchange::{
-    CloseClipboard, EmptyClipboard, GetClipboardData, GetClipboardOwner, IsClipboardFormatAvailable, OpenClipboard,
-    RegisterClipboardFormatW, SetClipboardData,
+    AddClipboardFormatListener, CloseClipboard, EmptyClipboard, EnumClipboardFormats, GetClipboardData,
+    GetClipboardFormatNameW, GetClipboardOwner, IsClipboardFormatAvailable, OpenClipboard, RegisterClipboardFormatW,
+    SetClipboardData,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Memory::{GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock};
@@ -31,7 +33,7 @@ use windows::Win32::UI::Shell::{DragQueryFileW, HDROP};
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, GetWindowThreadProcessId, HWND_MESSAGE, MSG,
     PM_NOREMOVE, PeekMessageW, PostThreadMessageW, RegisterClassW, TranslateMessage, WINDOW_EX_STYLE, WINDOW_STYLE,
-    WM_APP, WM_DESTROYCLIPBOARD, WM_RENDERFORMAT, WM_USER, WNDCLASSW,
+    WM_APP, WM_CLIPBOARDUPDATE, WM_DESTROYCLIPBOARD, WM_RENDERFORMAT, WM_USER, WNDCLASSW,
 };
 use windows::core::{HSTRING, w};
 
@@ -45,10 +47,17 @@ enum Command {
     ClearIfOurs,
 }
 
+/// Where announcements of copies made here go (the attached client), if anywhere.
+pub(crate) type Sink = Arc<dyn Fn(Message) + Send + Sync>;
+
+static SINK: Mutex<Option<Sink>> = Mutex::new(None);
+
 /// The thread that owns the clipboard objects (OLE needs an STA with a message loop).
 pub(crate) struct Clipboard {
     thread_id: u32,
     commands: mpsc::Sender<Command>,
+    /// The clipboard is watched: copies made here are announced.
+    watching: bool,
 }
 
 impl Clipboard {
@@ -59,8 +68,22 @@ impl Clipboard {
             .name("clipboard".into())
             .spawn(move || run(&rx, &ready_tx))
             .ok()?;
-        let thread_id = ready_rx.recv_timeout(Duration::from_secs(5)).ok()??;
-        Some(Self { thread_id, commands })
+        let (thread_id, watching) = ready_rx.recv_timeout(Duration::from_secs(5)).ok()??;
+        Some(Self {
+            thread_id,
+            commands,
+            watching,
+        })
+    }
+
+    /// Whether copies made here are announced ([`Clipboard::set_sink`]).
+    pub(crate) fn watching(&self) -> bool {
+        self.watching
+    }
+
+    /// Where to announce copies made here (the attached client), or nowhere.
+    pub(crate) fn set_sink(&self, sink: Option<Sink>) {
+        *SINK.lock().unwrap_or_else(PoisonError::into_inner) = sink;
     }
 
     /// Puts a transfer's files on the clipboard.
@@ -98,7 +121,7 @@ thread_local! {
     static OFFERED: RefCell<Option<Offered>> = const { RefCell::new(None) };
 }
 
-fn run(commands: &mpsc::Receiver<Command>, ready: &mpsc::SyncSender<Option<u32>>) {
+fn run(commands: &mpsc::Receiver<Command>, ready: &mpsc::SyncSender<Option<(u32, bool)>>) {
     // SAFETY: initializes OLE for this thread; paired with `OleUninitialize` below.
     if let Err(error) = unsafe { OleInitialize(None) } {
         tracing::warn!(%error, "OLE unavailable; fast clipboard copies are off");
@@ -115,7 +138,9 @@ fn run(commands: &mpsc::Receiver<Command>, ready: &mpsc::SyncSender<Option<u32>>
     if window.is_none() {
         tracing::warn!("no clipboard window; copies other than files go the usual way");
     }
-    let _ = ready.send(Some(thread_id));
+    // SAFETY: registering our own window for clipboard change notices.
+    let watching = window.is_some_and(|w| unsafe { AddClipboardFormatListener(w) }.is_ok());
+    let _ = ready.send(Some((thread_id, watching)));
     loop {
         // SAFETY: standard message loop on this thread.
         if unsafe { GetMessageW(&mut msg, None, 0, 0) }.0 <= 0 {
@@ -216,6 +241,11 @@ unsafe extern "system" fn window_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lpar
             }
             LRESULT(0)
         }
+        // The clipboard changed: if something here copied, tell the client.
+        WM_CLIPBOARDUPDATE => {
+            announce(hwnd);
+            LRESULT(0)
+        }
         // Something else was copied (or the companion is leaving): the client's copy is done.
         WM_DESTROYCLIPBOARD => {
             if let Some(offered) = OFFERED.take() {
@@ -252,6 +282,59 @@ fn put_formats(window: HWND, inflow: Arc<Inflow>, formats: &[ClipFormat]) {
     }
     tracing::info!(formats = ids.len(), "the client's copy is on the clipboard");
     OFFERED.set(Some(Offered { inflow, formats: ids }));
+}
+
+/// Announces a copy made here to the client, unless it's the client's own (offered by this
+/// thread's windows, or carrying the marker).
+fn announce(window: HWND) {
+    let sink = SINK.lock().unwrap_or_else(PoisonError::into_inner).clone();
+    let Some(sink) = sink else { return };
+    // SAFETY: plain query.
+    if owned_by(unsafe { GetCurrentThreadId() }) || owns_clipboard(window) {
+        return;
+    }
+    if let Some((formats, files)) = copied_formats()
+        && (files || !formats.is_empty())
+    {
+        tracing::debug!(formats = formats.len(), files, "announcing a copy");
+        sink(Message::RemoteCopy { formats, files });
+    }
+}
+
+/// What the clipboard holds: its plain-memory formats, and whether it has files. `None`
+/// if it can't be opened, or holds the client's own copy.
+fn copied_formats() -> Option<(Vec<ClipFormat>, bool)> {
+    // SAFETY: registering a format by name.
+    let marker = unsafe { RegisterClipboardFormatW(&HSTRING::from(CLIPBOARD_MARKER)) };
+    if !open(None) {
+        return None;
+    }
+    let mut formats = Vec::new();
+    let mut files = false;
+    let mut own = false;
+    // SAFETY: the clipboard is open; enumerating it and reading format names into a
+    // buffer of the size passed.
+    unsafe {
+        let mut id = EnumClipboardFormats(0);
+        let mut name = [0u16; 256];
+        while id != 0 {
+            own |= id == marker;
+            files |= id == CF_HDROP;
+            let format = ClipFormat {
+                id,
+                name: (id >= ClipFormat::REGISTERED)
+                    .then(|| GetClipboardFormatNameW(id, &mut name))
+                    .filter(|&n| n > 0)
+                    .map(|n| String::from_utf16_lossy(&name[..n as usize])),
+            };
+            if format.is_memory() {
+                formats.push(format);
+            }
+            id = EnumClipboardFormats(id);
+        }
+        let _ = CloseClipboard();
+    }
+    (!own).then_some((formats, files))
 }
 
 /// Fetches entry `index` of the client's copy and hands it to the clipboard as `format`.
@@ -446,6 +529,10 @@ mod tests {
         if std::env::var_os("RDP_COMPANION_CLIPBOARD_CHILD").is_some() {
             return false;
         }
+        // One child at a time: their window stations are one (it's per logon session), so
+        // two at once would share a clipboard.
+        static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
+        let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(PoisonError::into_inner);
         let output = std::process::Command::new(std::env::current_exe().unwrap())
             .args(["--exact", name, "--nocapture", "--test-threads=1"])
             .env("RDP_COMPANION_CLIPBOARD_CHILD", "1")
@@ -493,8 +580,12 @@ mod tests {
             unsafe { SetThreadDesktop(HDESK(desktop as _)).unwrap() };
             run(&rx, &ready_tx);
         });
-        let thread_id = ready_rx.recv_timeout(Duration::from_secs(5)).unwrap().unwrap();
-        Clipboard { thread_id, commands }
+        let (thread_id, watching) = ready_rx.recv_timeout(Duration::from_secs(5)).unwrap().unwrap();
+        Clipboard {
+            thread_id,
+            commands,
+            watching,
+        }
     }
 
     /// The client's side of a copy: a pump serving `contents` (an entry each), joined to
@@ -667,5 +758,46 @@ mod tests {
         .unwrap();
         assert_eq!(served[..expected.len()], expected[..]);
         drop(clipboard);
+    }
+
+    #[test]
+    fn copies_made_here_are_announced() {
+        if in_child("clipboard::tests::copies_made_here_are_announced") {
+            return;
+        }
+        let desktop = isolate();
+        copy_text(None);
+        let clipboard = spawn_on(desktop);
+        assert!(clipboard.watching());
+        let heard = Arc::new(Mutex::new(Vec::<Message>::new()));
+        let into = Arc::clone(&heard);
+        clipboard.set_sink(Some(Arc::new(move |m| into.lock().unwrap().push(m))));
+
+        copy_text(Some("copied on the remote"));
+        wait_for("the announcement", || !heard.lock().unwrap().is_empty());
+        let first = heard.lock().unwrap().remove(0);
+        let Message::RemoteCopy { formats, files } = first else {
+            panic!("{first:?}")
+        };
+        assert!(!files);
+        assert!(formats.iter().any(|f| f.id == CF_UNICODETEXT), "{formats:?}");
+
+        // The client's own copy (put here by the companion) isn't announced back.
+        let inflow = client(4, vec![utf16("from the client")]);
+        clipboard.offer_formats(
+            inflow,
+            vec![ClipFormat {
+                id: CF_UNICODETEXT,
+                name: None,
+            }],
+        );
+        // SAFETY: registering a format by name, and plain queries.
+        let marker = unsafe { RegisterClipboardFormatW(&HSTRING::from(CLIPBOARD_MARKER)) };
+        wait_for("the client's copy", || unsafe {
+            IsClipboardFormatAvailable(marker).is_ok()
+        });
+        std::thread::sleep(Duration::from_millis(200));
+        assert!(heard.lock().unwrap().is_empty(), "{:?}", heard.lock().unwrap());
+        clipboard.set_sink(None);
     }
 }

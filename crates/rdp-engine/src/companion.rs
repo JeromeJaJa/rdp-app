@@ -41,7 +41,15 @@ pub(crate) enum Update {
 pub trait CompanionHost: Send + Sync {
     /// A companion attached to `session` and completed the handshake. Its later messages
     /// go to the returned handler; `link` sends to it.
-    fn attached(&self, session: &str, link: CompanionLink, version: &str, host: &str) -> Arc<dyn CompanionHandler>;
+    /// `watches_clipboard`: it announces what the remote copies (`Message::RemoteCopy`).
+    fn attached(
+        &self,
+        session: &str,
+        link: CompanionLink,
+        version: &str,
+        host: &str,
+        watches_clipboard: bool,
+    ) -> Arc<dyn CompanionHandler>;
 }
 
 /// One attached companion's messages.
@@ -179,6 +187,7 @@ impl CompanionChannel {
                 version,
                 host,
                 build,
+                watches_clipboard,
                 ..
             } => {
                 if protocol != PROTOCOL_VERSION {
@@ -211,7 +220,7 @@ impl CompanionChannel {
                 self.handler = self
                     .host
                     .as_ref()
-                    .map(|h| h.attached(&self.session, self.link.clone(), &version, &host));
+                    .map(|h| h.attached(&self.session, self.link.clone(), &version, &host, watches_clipboard));
             }
             Message::Ping { nonce } => out.push(frame(&Message::Pong { nonce })),
             Message::Pong { .. } => {}

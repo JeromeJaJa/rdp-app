@@ -38,10 +38,13 @@ impl ClipboardHost for NativeClipboard {
     fn attach(&self, session: &str, proxy: SessionClipboard) -> Option<Box<dyn CliprdrBackendFactory + Send>> {
         let (tx, rx) = std::sync::mpsc::sync_channel(1);
         let hook = self.companions.clipboard_hook(session);
+        let companions = Arc::clone(&self.companions);
         let session = session.to_owned();
         let scheduled = self.app.run_on_main_thread(move || {
             let result = WinClipboard::new(proxy, Some(hook)).map(|monitor| {
                 let factory = monitor.backend_factory();
+                // What the remote copies, as its companion announces it, goes to this monitor.
+                companions.set_announcer(&session, Some(monitor.announcer()));
                 MONITORS
                     .lock()
                     .get_or_insert_with(HashMap::new)
@@ -64,6 +67,7 @@ impl ClipboardHost for NativeClipboard {
     }
 
     fn detach(&self, session: &str) {
+        self.companions.set_announcer(session, None);
         let session = session.to_owned();
         let _ = self.app.run_on_main_thread(move || {
             // Dropping the monitor destroys its hidden window.

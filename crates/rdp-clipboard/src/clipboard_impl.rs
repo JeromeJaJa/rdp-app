@@ -304,7 +304,14 @@ impl WinClipboardImpl {
         Ok(None)
     }
 
-    fn on_remote_format_list(&mut self, formats: &[ClipboardFormat]) -> WinCliprdrResult<Option<ClipboardMessage>> {
+    /// The remote copied `formats`: offer them here, fetched when pasted. `from_companion`:
+    /// its companion announced it (files then go through the companion whatever the
+    /// clipboard channel negotiated).
+    fn on_remote_format_list(
+        &mut self,
+        formats: &[ClipboardFormat],
+        from_companion: bool,
+    ) -> WinCliprdrResult<Option<ClipboardMessage>> {
         // The companion put files copied here on the remote clipboard; the remote is just
         // echoing that back. This side already has the originals.
         if formats.iter().any(|f| {
@@ -323,7 +330,7 @@ impl WinClipboardImpl {
         let file_list = formats
             .iter()
             .find(|f| f.name().is_some_and(|n| n.value() == FILE_LIST_FORMAT_NAME));
-        if let (true, Some(file_list)) = (self.file_transfer, file_list) {
+        if let (true, Some(file_list)) = (self.file_transfer || from_companion, file_list) {
             if self.ole.is_none() {
                 self.ole = OleClipboard::spawn(self.remote.clone(), self.companion.clone());
             }
@@ -366,7 +373,16 @@ impl WinClipboardImpl {
     fn handle_event(&mut self, event: BackendEvent) {
         let result = match &event {
             BackendEvent::FormatDataRequest(request) => self.on_format_data_request(request),
-            BackendEvent::RemoteFormatList(formats) => self.on_remote_format_list(formats),
+            // While the companion announces copies, the channel's announcements are the same
+            // copy again: ignored.
+            BackendEvent::RemoteFormatList(formats) => {
+                if self.companion.as_ref().is_some_and(|c| c.announces_copies()) {
+                    Ok(None)
+                } else {
+                    self.on_remote_format_list(formats, false)
+                }
+            }
+            BackendEvent::CompanionCopy(formats) => self.on_remote_format_list(formats, true),
 
             BackendEvent::ClipboardUpdated | BackendEvent::RemoteRequestsFormatList => self.on_clipboard_update(),
             BackendEvent::RenderFormat(format) => self.on_render_format(*format),
