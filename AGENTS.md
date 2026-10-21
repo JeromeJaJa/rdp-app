@@ -84,8 +84,12 @@ multi-window flows. For windowed/visual things, screenshot each webview separate
 
 - The window starts hidden and is revealed after first paint; detached windows are shown by the
   backend once they hold a tab.
-- **CDP captures only the webview, not the OS compositor** — DWM acrylic/backdrop and the native
-  drag move-loop are invisible to a screenshot. Those need a human to look.
+- **CDP captures only the webview, not the OS compositor** — it re-renders the frame, so DWM
+  acrylic and on-screen compositing bugs are invisible to it. To see the true on-screen pixels,
+  capture the window with `PrintWindow(hwnd, hdc, PW_RENDERFULLCONTENT)` (works while the window is
+  covered), and launch with `--disable-features=CalculateNativeWinOcclusion` added to the WebView2
+  args, or Chromium stops rendering a fully covered window and you get a stale frame. Native drags
+  (the OS cursor) still need a human.
 - After dev runs, delete the dev data so it doesn't linger:
   `AppData/{Local,Roaming}/com.jeromejaja.rdpapp.dev`, and any scratch token/host files.
 
@@ -105,9 +109,15 @@ pattern-matching against it.
 - **Tauri event targeting.** `listen()` in JS receives an event for *any* target. For an event
   meant for one window (`emit_to`), listen with `getCurrentWebviewWindow().listen(...)`, or every
   window reacts. See `onSelectTab` and the `surface-released` listener.
-- **Blocking native work goes off the UI thread.** The tab-drag move-loop (`WM_SYSCOMMAND SC_MOVE`)
-  blocks until the mouse is released; it runs via `spawn_blocking`, and `ReleaseCapture` is
-  marshalled to the main thread with `run_on_main_thread`. Don't block the event loop.
+- **Blocking native work goes off the UI thread.** The tab drag is our own loop (`SetWindowPos`
+  each tick, `GetAsyncKeyState` for the release), not the system move loop: `WM_SYSCOMMAND SC_MOVE`
+  freezes the event loop, so no other window could react mid-drag. It blocks until release, so it
+  runs via `spawn_blocking`, and `ReleaseCapture` is marshalled to the main thread with
+  `run_on_main_thread`. Don't block the event loop.
+- **Backdrop blur leaks over see-through content.** On screen, WebView2 leaves the unblurred
+  backdrop visible under a `backdrop-filter` wherever the page is translucent (the acrylic
+  material's surfaces), so text reads crisply through glass. Over opaque content it's fine. CDP
+  screenshots don't show it (see above). Glass in acrylic therefore uses a dense tint.
 - **Acrylic needs a transparent window.** The backdrop can't show through an opaque webview, so
   windows are created `transparent: true` and solid mode fills an opaque `--bg`. The material is
   applied with `window-vibrancy` (a tauri dependency), not hand-rolled DWM calls (those returned
@@ -145,10 +155,13 @@ pattern-matching against it.
 ## Subsystems, briefly
 
 - **Tear-off windows** (`tearoff.rs`, `DetachedApp.tsx`, `useTabsDnd.ts`, `WindowTabStrip.tsx`):
-  Chrome-style. Dragging a tab out hands it to a window that follows the pointer (system move
+  Chrome-style. Dragging a tab out hands it to a window that follows the pointer (our own drag
   loop); a prepared hidden window makes it instant; a window sized so the session keeps its size
-  avoids a mid-drag resize (`held`); size changes apply on drop. Drop targets are found z-order
-  aware (`WindowFromPoint` walk). Each window reports its tab-strip rects so a drag can target it.
+  avoids a mid-drag resize (`held`); size changes apply on drop. Over another window's strip the
+  tab moves into that window and the drag carries on there as an ordinary dnd-kit drag
+  (`continue-drag`: the strip presses the tab with a synthetic `pointerdown`; `drag-release` ends
+  it if the page never sees the button come up). Drop targets are found z-order aware (a
+  `GW_HWNDNEXT` walk). Each window reports its strip region and tab rects so a drag can target it.
 - **Frames** (`frames.rs`): the `SurfaceProvider` for Windows — WebView2 shared buffers, one host
   window per full-size session, re-posted/released as tabs move between windows.
 - **Clipboard** (`crates/rdp-clipboard`): CLIPRDR file streaming over OLE `IDataObject`/`IStream`
