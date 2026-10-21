@@ -122,8 +122,11 @@ pattern-matching against it.
   surface, which the surface itself hides. New glass surfaces must use it too. Glass must also
   not sit inside a "backdrop root" (an ancestor with `backdrop-filter`, `filter`, `opacity` < 1,
   a mask…), or it blurs only that ancestor: put such effects on a pseudo-element (`.glass`,
-  `.dialog-backdrop`). An opacity fade on the surface or an ancestor counts too, holding the blur
-  back until the fade ends; that's why the dialog enters by transform only.
+  `.dialog-backdrop`, `.palette-backdrop`). An opacity fade on the surface or an ancestor counts
+  too: the blur would stay off until the fade ended, then snap on. So glass enters by moving
+  (its own keyframes) plus `glass-shadow-in`, while its `::before` and children run
+  `glass-fade-in` (base.css). Tooltips are one glass element per window (`Tooltips.tsx`), driven
+  by `data-tip` / `data-tip-side`; don't reintroduce `::after` tooltips.
 - **Acrylic needs a transparent window.** The backdrop can't show through an opaque webview, so
   windows are created `transparent: true` and solid mode fills an opaque `--bg`. The material is
   applied with `window-vibrancy` (a tauri dependency), not hand-rolled DWM calls (those returned
