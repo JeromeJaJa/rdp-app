@@ -53,7 +53,10 @@ Conventions:
 - Connection settings are layered: the app settings (/settings), overridden by a group's "settings", overridden by a
   connection's "settings". Overridable keys: audio, microphone, clipboardSync, driveRedirection (none|all|custom),
   drivePaths (folders shared when custom), printerRedirection, smartcardRedirection, autoReconnect, codec,
-  h264Quality, videoDecoder. A "settings" object holds only the overrides; {} inherits everything.
+  h264Quality, videoDecoder, companion, hostStatsInterval. A "settings" object holds only the overrides; {}
+  inherits everything.
+- The companion (setting "companion") is a small agent in the remote session: it reports host load (/stats) and
+  receives files (/files/send).
 - Connecting is asynchronous. Add ?wait=true to block until sessions are connected or failed (timeout ?timeout=30 s),
   or follow GET /api/v1/events (Server-Sent Events).
 - Coordinates for mouse input are remote desktop pixels; GET /sessions/{id} reports the current width/height.
@@ -499,6 +502,66 @@ pub const ENDPOINTS: &[Endpoint] = &[
         summary: "Send Ctrl+Alt+Del",
         description: "",
         params: &[ID],
+        body: None,
+        response: Some(r#"{"ok": true}"#),
+        auth: true,
+    },
+    // ── Companion ───────────────────────────────────────────────────────────
+    Endpoint {
+        method: "GET",
+        path: "/api/v1/stats",
+        tag: "Companion",
+        summary: "Host load of every session",
+        description: "Latest sample per session whose companion reports it (setting hostStatsInterval, seconds; 0 = off). cpu, diskBusy are 0-100; rates are bytes per second averaged over span seconds; memory and volume sizes in bytes. diskRead/diskWrite/diskBusy are absent when the host doesn't expose disk counters.",
+        params: &[],
+        body: None,
+        response: Some(
+            r#"{"9f1c…":{"at":1760857200000,"span":30.0,"cpu":12.5,"memUsed":6871947673,"memTotal":17179869184,"netRx":81920,"netTx":20480,"diskRead":1048576,"diskWrite":524288,"diskBusy":4.2,"volumes":[{"name":"C:","free":107374182400,"total":274877906944}]}}"#,
+        ),
+        auth: true,
+    },
+    Endpoint {
+        method: "GET",
+        path: "/api/v1/sessions/{id}/stats",
+        tag: "Companion",
+        summary: "Host load of one session",
+        description: "404 when there is none (no companion attached, or host stats are off).",
+        params: &[ID],
+        body: None,
+        response: Some(r#"{"at":1760857200000,"span":30.0,"cpu":12.5,"memUsed":6871947673,"memTotal":17179869184,"netRx":81920,"netTx":20480,"volumes":[]}"#),
+        auth: true,
+    },
+    Endpoint {
+        method: "POST",
+        path: "/api/v1/files/send",
+        tag: "Companion",
+        summary: "Send files and folders to connections",
+        description: "Copies local paths (files or whole folders) to each connection, into folder on the remote: Desktop (default), Downloads, Documents, one of those with a subfolder (Desktop\\Drop), or a full path (%VARS% expanded). Names already there are kept and the new ones numbered. Connections that aren't connected are connected first; each send starts once its companion attaches (the companion setting must be on). Returns transfer ids; follow GET /transfers.",
+        params: &[],
+        body: Some(r#"{"ids": ["9f1c…", "2b7a…"], "paths": ["C:\Tools\setup.exe", "C:\Tools\config"], "folder": "Desktop"}"#),
+        response: Some(r#"{"transfers": [2, 4]}"#),
+        auth: true,
+    },
+    Endpoint {
+        method: "GET",
+        path: "/api/v1/transfers",
+        tag: "Companion",
+        summary: "Sends in progress or recently finished",
+        description: "state: waiting (connecting / companion attaching) | sending | done | failed (error explains) | cancelled. sent and total are bytes.",
+        params: &[],
+        body: None,
+        response: Some(
+            r#"[{"session":"9f1c…","id":2,"label":"2 items","folder":"Desktop","files":14,"total":52428800,"sent":31457280,"state":"sending"}]"#,
+        ),
+        auth: true,
+    },
+    Endpoint {
+        method: "POST",
+        path: "/api/v1/transfers/{id}/cancel",
+        tag: "Companion",
+        summary: "Cancel a send",
+        description: "The remote deletes the partly written file.",
+        params: &[p("id", "path", "number", "Transfer id")],
         body: None,
         response: Some(r#"{"ok": true}"#),
         auth: true,

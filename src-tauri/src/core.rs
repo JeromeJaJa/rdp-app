@@ -118,6 +118,7 @@ pub fn default_settings() -> Map<String, Value> {
         "videoDecoder": "auto",
         "autoReconnect": true,
         "companion": false,
+        "hostStatsInterval": 30,
         "clipboardSync": true,
         "audio": "active",
         "microphone": false,
@@ -149,7 +150,11 @@ pub fn validate_settings(settings: &Map<String, Value>) -> anyhow::Result<()> {
         ("driveRedirection", &["none", "all", "custom"]),
         ("certificatePolicy", &["tofu", "prompt", "ignore"]),
     ];
-    const RANGES: &[(&str, u64, u64)] = &[("maxConcurrentConnects", 1, 32), ("apiPort", 1024, 65535)];
+    const RANGES: &[(&str, u64, u64)] = &[
+        ("maxConcurrentConnects", 1, 32),
+        ("apiPort", 1024, 65535),
+        ("hostStatsInterval", 0, 3600),
+    ];
     // Layout sizes from pointer drags may be fractional.
     const SIZES: &[&str] = &["sidebarWidth", "gridTileWidth"];
     let defaults = default_settings();
@@ -196,6 +201,8 @@ pub struct Core {
     /// kicked off this connection. Ephemeral — we never persist "installed"; each connect
     /// re-checks by whether the companion attaches (hosts get reset, IPs change).
     companion: Mutex<CompanionState>,
+    /// Attached companions: host stats, file sends, fast clipboard copies.
+    pub companions: Arc<crate::companion_link::Companions>,
 }
 
 #[derive(Default)]
@@ -212,10 +219,13 @@ impl Core {
         certs: Arc<CertStore>,
         bus: broadcast::Sender<Value>,
     ) -> Self {
+        let companions = crate::companion_link::Companions::new(app.clone());
+        engine.set_companion_host(Some(Arc::clone(&companions) as Arc<dyn rdp_engine::CompanionHost>));
         Self {
             store: Mutex::new(store),
             engine,
             app,
+            companions,
             certs,
             ui: Mutex::new(UiState {
                 view: default_view(),
@@ -346,6 +356,7 @@ impl Core {
         let c = self.store.lock().update(id, patch)?;
         if audio_changed {
             self.apply_audio(id);
+            self.companions.refresh_intervals();
         }
         self.changed(origin);
         Ok(c)
@@ -363,6 +374,7 @@ impl Core {
             },
         )?;
         let live = self.apply_audio(id);
+        self.companions.refresh_intervals();
         self.changed(origin);
         Ok(live)
     }
@@ -373,6 +385,7 @@ impl Core {
         for session in self.engine.running() {
             self.apply_audio(&session);
         }
+        self.companions.refresh_intervals();
         self.changed(origin);
         Ok(group)
     }
@@ -384,6 +397,92 @@ impl Core {
             Some((group, conn)) => crate::profile::resolve(&app, &[&group, &conn]),
             None => app,
         }
+    }
+
+    /// A connection's host stats interval in seconds (0: off), from its settings.
+    pub fn stats_interval(&self, id: &str) -> u32 {
+        let s = self.effective_settings(id);
+        let on = s.get("companion").and_then(Value::as_bool) == Some(true);
+        let secs = s.get("hostStatsInterval").and_then(Value::as_u64).unwrap_or(30);
+        if on { u32::try_from(secs).unwrap_or(u32::MAX) } else { 0 }
+    }
+
+    /// Sends files and folders to connections, saving them into `folder` on each remote
+    /// (`Desktop`, `Downloads`, `Documents`, optionally with a subfolder, or a full path).
+    /// A connection that isn't connected is connected first; each send starts once its
+    /// companion attaches. Progress arrives as `transfer` events. Blocking (lists the
+    /// files).
+    pub fn send_files(
+        self: &Arc<Self>,
+        ids: &[String],
+        paths: &[std::path::PathBuf],
+        folder: &str,
+    ) -> anyhow::Result<Vec<u64>> {
+        use rdp_companion_proto::Entry;
+
+        anyhow::ensure!(!ids.is_empty(), "no connections to send to");
+        let listing = rdp_companion_proto::transfer::list(paths);
+        anyhow::ensure!(!listing.entries.is_empty(), "nothing to send");
+        let entries: Arc<[Entry]> = listing.entries.clone().into();
+        let folder = if folder.trim().is_empty() {
+            "Desktop"
+        } else {
+            folder.trim()
+        };
+        let mut started = Vec::new();
+        for id in ids {
+            self.connection(id)?;
+            let transfer = self.companions.register(id, &listing, folder);
+            started.push(transfer);
+            if self.effective_settings(id).get("companion").and_then(Value::as_bool) != Some(true) {
+                self.companions.fail(
+                    transfer,
+                    "Turn on the companion for this connection to send files to it",
+                );
+                continue;
+            }
+            if self.companions.is_attached(id) {
+                if let Err(e) = self
+                    .companions
+                    .start(transfer, Arc::clone(&entries), listing.paths.clone(), folder)
+                {
+                    self.companions.fail(transfer, &e.to_string());
+                }
+                continue;
+            }
+            if !self.engine.running().contains(id) {
+                self.connect(std::slice::from_ref(id));
+            }
+            let (core, id, entries, paths, folder) = (
+                Arc::clone(self),
+                id.clone(),
+                Arc::clone(&entries),
+                listing.paths.clone(),
+                folder.to_owned(),
+            );
+            tauri::async_runtime::spawn(async move {
+                // Connecting can include installing the companion; give it a while.
+                let deadline = tokio::time::Instant::now() + Duration::from_secs(150);
+                loop {
+                    if core.companions.state(transfer) != Some(crate::companion_link::TransferState::Waiting) {
+                        return; // cancelled meanwhile
+                    }
+                    if core.companions.is_attached(&id) {
+                        if let Err(e) = core.companions.start(transfer, entries, paths, &folder) {
+                            core.companions.fail(transfer, &e.to_string());
+                        }
+                        return;
+                    }
+                    if tokio::time::Instant::now() >= deadline || !core.engine.running().contains(&id) {
+                        core.companions
+                            .fail(transfer, "The companion didn't attach (is it installed on that host?)");
+                        return;
+                    }
+                    tokio::time::sleep(Duration::from_millis(400)).await;
+                }
+            });
+        }
+        Ok(started)
     }
 
     /// Installs the companion on a connection's host over WinRM (experimental). Blocking.
@@ -683,8 +782,12 @@ impl Core {
         let clipboard = s.get("clipboardSync").and_then(Value::as_bool).unwrap_or(true);
         #[cfg(windows)]
         self.engine.set_clipboard_host(clipboard.then(|| {
-            Arc::new(crate::clipboard::NativeClipboard::new(self.app.clone())) as Arc<dyn rdp_engine::ClipboardHost>
+            Arc::new(crate::clipboard::NativeClipboard::new(
+                self.app.clone(),
+                Arc::clone(&self.companions),
+            )) as Arc<dyn rdp_engine::ClipboardHost>
         }));
+        self.companions.refresh_intervals();
         #[cfg(not(windows))]
         let _ = clipboard;
 

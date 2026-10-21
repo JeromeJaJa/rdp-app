@@ -178,6 +178,11 @@ fn router(core: AppState, port: u16) -> Router {
         .route("/sessions/{id}/mouse", post(mouse))
         .route("/sessions/{id}/input", post(raw_input))
         .route("/sessions/{id}/ctrl-alt-del", post(ctrl_alt_del))
+        .route("/sessions/{id}/stats", get(session_stats))
+        .route("/stats", get(all_stats))
+        .route("/files/send", post(send_files))
+        .route("/transfers", get(list_transfers))
+        .route("/transfers/{id}/cancel", post(cancel_transfer))
         .route("/certificates", get(list_certificates))
         .route("/certificates/trust", post(trust_certificate))
         .route("/certificates/{endpoint}", axum::routing::delete(forget_certificate))
@@ -864,6 +869,56 @@ async fn raw_input(
 async fn ctrl_alt_del(State(core): State<AppState>, Path(id): Path<String>) -> ApiResult<Json<Value>> {
     core.connection(&id)?;
     core.engine.ctrl_alt_del(&id);
+    Ok(ok())
+}
+
+// ── Companion: host stats and file sends ───────────────────────────────────
+
+async fn all_stats(State(core): State<AppState>) -> Json<Value> {
+    Json(serde_json::to_value(core.companions.stats()).unwrap_or_default())
+}
+
+async fn session_stats(State(core): State<AppState>, Path(id): Path<String>) -> ApiResult<Json<Value>> {
+    core.connection(&id)?;
+    let stats = core.companions.stats().remove(&id).ok_or_else(|| {
+        ApiError(
+            StatusCode::NOT_FOUND,
+            "no host stats for this session (no companion attached, or host stats are off)".into(),
+        )
+    })?;
+    Ok(Json(serde_json::to_value(stats).unwrap_or_default()))
+}
+
+#[derive(Deserialize)]
+struct SendBody {
+    ids: Vec<String>,
+    paths: Vec<String>,
+    #[serde(default)]
+    folder: String,
+}
+
+async fn send_files(State(core): State<AppState>, Json(body): Json<SendBody>) -> ApiResult<Json<Value>> {
+    if body.ids.is_empty() || body.paths.is_empty() {
+        return Err(bad("ids and paths are required"));
+    }
+    let paths: Vec<std::path::PathBuf> = body.paths.into_iter().map(Into::into).collect();
+    let (ids, folder) = (body.ids, body.folder);
+    let transfers = tokio::task::spawn_blocking(move || core.send_files(&ids, &paths, &folder))
+        .await
+        .map_err(|e| bad(e.to_string()))?
+        .map_err(|e| bad(format!("{e:#}")))?;
+    Ok(Json(json!({ "transfers": transfers })))
+}
+
+async fn list_transfers(State(core): State<AppState>) -> Json<Value> {
+    Json(serde_json::to_value(core.companions.transfers()).unwrap_or_default())
+}
+
+async fn cancel_transfer(State(core): State<AppState>, Path(id): Path<u64>) -> ApiResult<Json<Value>> {
+    if core.companions.state(id).is_none() {
+        return Err(ApiError(StatusCode::NOT_FOUND, "transfer not found".into()));
+    }
+    core.companions.cancel(id);
     Ok(ok())
 }
 

@@ -4,6 +4,7 @@ mod certs;
 #[cfg(windows)]
 mod clipboard;
 mod companion;
+mod companion_link;
 mod core;
 mod dpapi;
 #[cfg(windows)]
@@ -327,6 +328,47 @@ fn window_close_tabs(state: State<'_, AppState>, ids: Vec<String>) {
     state.tearoff.close_tabs(&ids);
 }
 
+/// Sends files and folders to connections, into `folder` on each remote (see
+/// `Core::send_files`). Returns the transfer ids; progress arrives as `transfer` events.
+#[tauri::command]
+async fn send_files(
+    state: State<'_, AppState>,
+    ids: Vec<String>,
+    paths: Vec<String>,
+    folder: String,
+) -> CmdResult<Vec<u64>> {
+    let core = std::sync::Arc::clone(&state.core);
+    let paths: Vec<std::path::PathBuf> = paths.into_iter().map(Into::into).collect();
+    tauri::async_runtime::spawn_blocking(move || core.send_files(&ids, &paths, &folder))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(err)
+}
+
+/// Stops a send.
+#[tauri::command]
+fn cancel_transfer(state: State<'_, AppState>, id: u64) {
+    state.core.companions.cancel(id);
+}
+
+/// Forgets finished sends.
+#[tauri::command]
+fn clear_transfers(state: State<'_, AppState>) {
+    state.core.companions.clear_finished();
+}
+
+/// Sends in progress or recently finished (for a UI that just loaded).
+#[tauri::command]
+fn transfers(state: State<'_, AppState>) -> Vec<companion_link::TransferView> {
+    state.core.companions.transfers()
+}
+
+/// The latest host stats per session (for a UI that just loaded).
+#[tauri::command]
+fn host_stats(state: State<'_, AppState>) -> std::collections::HashMap<String, companion_link::StatsView> {
+    state.core.companions.stats()
+}
+
 /// Installs the companion on a connection's host over WinRM (experimental, manual trigger).
 #[tauri::command]
 async fn companion_install(state: State<'_, AppState>, id: String) -> CmdResult<String> {
@@ -547,6 +589,10 @@ pub fn run() {
             let engine = Engine::new(provider, events, EngineSettings::default());
             engine.set_certificate_store(Some(certs.clone() as Arc<dyn rdp_engine::CertificateStore>));
             let core = Arc::new(Core::new(store, engine, app.handle().clone(), certs, bus));
+            let weak = Arc::downgrade(&core);
+            core.companions.set_interval_source(Arc::new(move |id: &str| {
+                weak.upgrade().map_or(0, |c| c.stats_interval(id))
+            }));
             core.apply_settings();
 
             let tearoff = tearoff::Tearoff::new(
@@ -624,6 +670,11 @@ pub fn run() {
             window_open_tabs,
             window_close_tabs,
             companion_install,
+            send_files,
+            cancel_transfer,
+            clear_transfers,
+            transfers,
+            host_stats,
             companion_uninstall,
             companion_trust_host,
             engine_send_keys,
