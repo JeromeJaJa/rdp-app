@@ -210,7 +210,9 @@ pattern-matching against it.
   The channel, WinRM install and auto-install are verified against a live host; **stats, fast
   copies, sends and drags are unit/mock tested but not yet verified against a live host**. Still to
   build: a no-WinRM delivery path. Release builds bundle `rdp-companion.exe` next to the app.
-  Enabled by the layered `companion` setting (off by default); `hostStatsInterval` (s) too.
+  Enabled by the layered `companion` setting (off by default); `hostStatsInterval` (s) too: the
+  companion samples every 5 s and sends the batch at that interval, so trend lines have detail
+  without a message every few seconds. `tabStats` picks what tabs show.
 
 ## Conventions and constraints
 
