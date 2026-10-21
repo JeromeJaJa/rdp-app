@@ -438,6 +438,8 @@ async fn run(
         let stats = Arc::new(GfxStats::default());
         let cert_issue: Arc<parking_lot::Mutex<Option<crate::certs::CertIssue>>> = Arc::default();
         let gfx_out: SharedOutput = Arc::new(parking_lot::Mutex::new(GfxOutput::new()));
+        // Per connection: a link to an earlier connection's companion stops working.
+        let (bulk_tx, bulk_rx) = mpsc::unbounded_channel::<Vec<ironrdp_svc::SvcMessage>>();
         let started = Instant::now();
         let attempt_result = {
             let params = s.params.clone();
@@ -459,6 +461,9 @@ async fn run(
                             .flatten(),
                         audible: Arc::clone(&s.audible),
                         commands: init_commands.clone(),
+                        session: s.id.clone(),
+                        bulk: bulk_tx,
+                        companion_host: shared.companion.lock().clone(),
                         cert_store: shared.certificates.lock().clone(),
                         cert_issue: Arc::clone(&cert_issue),
                     },
@@ -528,7 +533,7 @@ async fn run(
         let connected_at = Instant::now();
         s.status(SessionStatus::Connected, None);
 
-        let exit = active(&mut s, connected, stats, gfx_out, &mut rx).await;
+        let exit = active(&mut s, connected, stats, gfx_out, &mut rx, bulk_rx).await;
         if let Some(host) = shared.clipboard.lock().clone() {
             host.detach(&s.id);
         }
@@ -826,6 +831,7 @@ async fn active(
     stats: Arc<GfxStats>,
     gfx: SharedOutput,
     rx: &mut mpsc::UnboundedReceiver<Command>,
+    mut bulk_rx: mpsc::UnboundedReceiver<Vec<ironrdp_svc::SvcMessage>>,
 ) -> Exit {
     let Connected { result, framed } = connected;
     let ConnectionResult {
@@ -1101,6 +1107,17 @@ async fn active(
                             }
                         }
                     }
+                    // A busy screen mustn't starve companion transfers: one batch per server PDU.
+                    if let Ok(messages) = bulk_rx.try_recv() {
+                        let frame = live.stage.encode_dvc_messages(messages).context("encode companion data")?;
+                        live.send(&frame).await?;
+                    }
+                }
+
+                // Companion transfers: after input and server data (both above).
+                Some(messages) = bulk_rx.recv() => {
+                    let frame = live.stage.encode_dvc_messages(messages).context("encode companion data")?;
+                    live.send(&frame).await?;
                 }
 
                 _ = thumb_tick.tick(), if s.thumb.is_some() => {

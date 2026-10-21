@@ -117,6 +117,11 @@ pub(crate) struct ConnectContext {
     pub audible: Arc<std::sync::atomic::AtomicBool>,
     /// The session's command queue (microphone uplink).
     pub commands: tokio::sync::mpsc::UnboundedSender<Command>,
+    /// The session's id, for the companion host.
+    pub session: String,
+    /// Bulk channel data (companion transfers), sent after the session's own traffic.
+    pub bulk: tokio::sync::mpsc::UnboundedSender<Vec<ironrdp_svc::SvcMessage>>,
+    pub companion_host: Option<Arc<dyn crate::CompanionHost>>,
     pub cert_store: Option<Arc<dyn CertificateStore>>,
     /// Set when a certificate was refused (so the session can ask the user).
     pub cert_issue: Arc<Mutex<Option<CertIssue>>>,
@@ -249,7 +254,12 @@ pub(crate) async fn connect(
         });
     }
     if params.companion {
-        drdynvc = drdynvc.with_listener(crate::companion::CompanionListener::new(ctx.commands.clone()));
+        drdynvc = drdynvc.with_listener(crate::companion::CompanionListener::new(
+            ctx.session.clone(),
+            ctx.commands.clone(),
+            ctx.bulk.clone(),
+            ctx.companion_host.clone(),
+        ));
     }
 
     let config = connector_config(params, viewport);

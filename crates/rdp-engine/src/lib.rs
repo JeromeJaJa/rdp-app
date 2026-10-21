@@ -32,6 +32,7 @@ use tracing::{info, warn};
 
 pub use certs::{CertDecision, CertPolicy, CertificateStore};
 pub use clipboard::{ClipboardHost, SessionClipboard};
+pub use companion::{CompanionHandler, CompanionHost, CompanionLink};
 pub use surface::{HeapSurface, SurfaceKind, SurfaceMemory, SurfaceProvider};
 
 /// Identifier of a session; the host uses its connection id.
@@ -342,6 +343,7 @@ pub(crate) struct Shared {
     snapshot: Mutex<HashMap<SessionId, Snapshot>>,
     pub clipboard: Mutex<Option<Arc<dyn ClipboardHost>>>,
     pub certificates: Mutex<Option<Arc<dyn CertificateStore>>>,
+    pub companion: Mutex<Option<Arc<dyn CompanionHost>>>,
 }
 
 #[derive(Default)]
@@ -413,6 +415,7 @@ impl Engine {
                 snapshot: Mutex::new(HashMap::new()),
                 clipboard: Mutex::new(None),
                 certificates: Mutex::new(None),
+                companion: Mutex::new(None),
             }),
             state: Arc::new(Mutex::new(State {
                 sessions: HashMap::new(),
@@ -430,6 +433,11 @@ impl Engine {
     /// Enables clipboard redirection for connections started from now on.
     pub fn set_clipboard_host(&self, host: Option<Arc<dyn ClipboardHost>>) {
         *self.shared.clipboard.lock() = host;
+    }
+
+    /// Who handles companions as they attach (for connections started from now on).
+    pub fn set_companion_host(&self, host: Option<Arc<dyn CompanionHost>>) {
+        *self.shared.companion.lock() = host;
     }
 
     /// Where pinned server certificates live (required for TOFU / prompt policies).
