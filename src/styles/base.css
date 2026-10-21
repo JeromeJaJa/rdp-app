@@ -89,6 +89,16 @@ textarea {
   backdrop-filter: var(--glass-filter);
   pointer-events: none;
 }
+/* Acrylic only: an opaque patch under a glass surface, at the very bottom of the page, so
+   its blur has opaque content to work on (see useGlassUnderlay). */
+.glass-underlay {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--glass-underlay);
+}
 /* Always dark (surfaces drawn over a remote screen). */
 .glass--dark {
   --glass-bg: var(--glass-dark-bg);

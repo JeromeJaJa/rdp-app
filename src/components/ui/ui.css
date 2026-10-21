@@ -109,7 +109,7 @@
   font-weight: 500;
   line-height: 1.3;
   color: var(--text);
-  background: var(--glass-bg);
+  background: var(--tip-bg, var(--glass-bg));
   backdrop-filter: var(--glass-filter);
   box-shadow: var(--glass-shadow);
   opacity: 0;

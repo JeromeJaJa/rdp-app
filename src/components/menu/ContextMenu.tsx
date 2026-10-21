@@ -53,6 +53,7 @@ import {
   windowTabs,
 } from "../../state/store";
 import { ConnectIcon, DisconnectIcon } from "../common/SessionIcons";
+import { useGlassUnderlay } from "../ui/useGlassUnderlay";
 import "./menu.css";
 
 interface ItemProps {
@@ -100,7 +101,17 @@ function Item({ icon, label, hint, danger, disabled, checked, onSelect, submenu 
       <span className="menu__label">{label}</span>
       {hint && <span className="menu__hint">{hint}</span>}
       {submenu && <ChevronRight size={13} className="menu__chev" />}
-      {submenu && open && <div className={`menu menu--sub glass ${flip ? "is-flipped" : ""}`}>{submenu}</div>}
+      {submenu && open && <Submenu flip={flip}>{submenu}</Submenu>}
+    </div>
+  );
+}
+
+function Submenu({ flip, children }: { flip: boolean; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useGlassUnderlay(ref);
+  return (
+    <div ref={ref} className={`menu menu--sub glass ${flip ? "is-flipped" : ""}`}>
+      {children}
     </div>
   );
 }
@@ -251,6 +262,7 @@ function GroupMenu({ id }: { id: string }) {
 function MenuPanel({ menu }: { menu: MenuState }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ x: menu.x, y: menu.y, ready: false });
+  useGlassUnderlay(ref);
 
   useLayoutEffect(() => {
     const el = ref.current;

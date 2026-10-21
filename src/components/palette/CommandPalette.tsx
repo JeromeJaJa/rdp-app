@@ -36,6 +36,7 @@ import {
 import { displayName, getState, isLive, setState, useStore } from "../../state/store";
 import { ConnectIcon, DisconnectIcon } from "../common/SessionIcons";
 import { StatusDot } from "../common/StatusDot";
+import { useGlassUnderlay } from "../ui/useGlassUnderlay";
 import "./palette.css";
 
 const OFFSET_KEY = "rdp-app:palette-offset";
@@ -188,6 +189,7 @@ function Palette() {
   const [active, setActive] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  useGlassUnderlay(panelRef);
   const drag = usePaletteDrag(panelRef);
   const close = () => setState({ paletteOpen: false });
 
