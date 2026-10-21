@@ -11,14 +11,24 @@ $opt = New-PSSessionOption -OpenTimeout 20000 -OperationTimeout 60000
 
 $session = New-PSSession -ComputerName $env:RDPAPP_HOST -Credential $cred -Authentication Negotiate -SessionOption $opt
 try {
-  Invoke-Command -Session $session -ScriptBlock {
-    New-Item -ItemType Directory -Force -Path 'C:\ProgramData\RdpApp' | Out-Null
-    # Replace any instance already running (a redeploy, or a stale one), so the copy
-    # below isn't blocked by the file being in use.
-    Get-Process rdp-companion -ErrorAction SilentlyContinue | Stop-Process -Force
-    Start-Sleep -Milliseconds 300
+  # Replace any instance already running (a redeploy, or a stale one), so the copy isn't
+  # blocked by the file being in use. One may start meanwhile (an install from another
+  # window, say): stop it again and retry, a few times.
+  for ($attempt = 1; ; $attempt++) {
+    Invoke-Command -Session $session -ScriptBlock {
+      New-Item -ItemType Directory -Force -Path 'C:\ProgramData\RdpApp' | Out-Null
+      Get-Process rdp-companion -ErrorAction SilentlyContinue | Stop-Process -Force
+      Start-Sleep -Milliseconds 300
+    }
+    try {
+      Copy-Item -ToSession $session -Path $env:RDPAPP_EXE -Destination 'C:\ProgramData\RdpApp\rdp-companion.exe' -Force
+      break
+    }
+    catch {
+      if ($attempt -ge 4) { throw }
+      Start-Sleep -Milliseconds 700
+    }
   }
-  Copy-Item -ToSession $session -Path $env:RDPAPP_EXE -Destination 'C:\ProgramData\RdpApp\rdp-companion.exe' -Force
 
   Invoke-Command -Session $session -ScriptBlock {
     $exe = 'C:\ProgramData\RdpApp\rdp-companion.exe'

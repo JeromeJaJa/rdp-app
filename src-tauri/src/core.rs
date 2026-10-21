@@ -212,8 +212,11 @@ pub struct Core {
 struct CompanionState {
     attached: std::collections::HashSet<String>,
     pending: std::collections::HashSet<String>,
-    /// Sessions whose outdated companion we're replacing (once per connection).
-    updating: std::collections::HashSet<String>,
+    /// Sessions with an install under way (an auto-install or an update): one at a time,
+    /// or the second's copy hits the companion the first just started.
+    installing: std::collections::HashSet<String>,
+    /// Sessions whose outdated companion we've tried replacing (once per connection).
+    updated: std::collections::HashSet<String>,
     /// Sessions we installed the companion on this connection.
     installed: std::collections::HashSet<String>,
 }
@@ -276,7 +279,8 @@ impl Core {
                     let mut c = self.companion.lock();
                     c.attached.remove(id);
                     c.pending.remove(id);
-                    c.updating.remove(id);
+                    c.installing.remove(id);
+                    c.updated.remove(id);
                     c.installed.remove(id);
                 }
                 _ => {}
@@ -298,10 +302,16 @@ impl Core {
         let core = Arc::clone(self);
         tauri::async_runtime::spawn(async move {
             tokio::time::sleep(Duration::from_secs(COMPANION_INSTALL_DELAY)).await;
-            let attached = core.companion.lock().attached.contains(&id);
-            // Gone already, or the resident companion attached on its own: nothing to do.
-            if attached || !core.engine.running().contains(&id) {
-                return;
+            if !core.engine.running().contains(&id) {
+                return; // gone already
+            }
+            {
+                let mut c = core.companion.lock();
+                // The resident companion attached on its own, or another install (an update)
+                // is under way or already ran: nothing to do.
+                if c.attached.contains(&id) || c.installed.contains(&id) || !c.installing.insert(id.clone()) {
+                    return;
+                }
             }
             core.emit_companion("installing", &id, None);
             let outcome = {
@@ -309,6 +319,7 @@ impl Core {
                 let id = id.clone();
                 tauri::async_runtime::spawn_blocking(move || core.install_companion(&id)).await
             };
+            core.companion.lock().installing.remove(&id);
             match outcome {
                 Ok(Ok(crate::companion::Outcome::Installed)) => {
                     // The attach event will follow.
@@ -343,8 +354,14 @@ impl Core {
         if self.effective_settings(&id).get("companion").and_then(Value::as_bool) != Some(true) {
             return;
         }
-        if !self.companion.lock().updating.insert(id.clone()) {
-            return;
+        {
+            let mut c = self.companion.lock();
+            // Once per connection, and not while another install runs (it deploys this
+            // build anyway).
+            if c.installing.contains(&id) || !c.updated.insert(id.clone()) {
+                return;
+            }
+            c.installing.insert(id.clone());
         }
         tracing::info!(session = %id, running = %build, bundled = %bundled, "replacing an outdated companion");
         let core = Arc::clone(self);
@@ -354,6 +371,13 @@ impl Core {
                 let id = id.clone();
                 tauri::async_runtime::spawn_blocking(move || core.install_companion(&id)).await
             };
+            {
+                let mut c = core.companion.lock();
+                c.installing.remove(&id);
+                if matches!(outcome, Ok(Ok(crate::companion::Outcome::Installed))) {
+                    c.installed.insert(id.clone());
+                }
+            }
             match outcome {
                 Ok(Ok(outcome)) => tracing::info!(session = %id, ?outcome, "companion update"),
                 Ok(Err(e)) => tracing::warn!(session = %id, error = %format!("{e:#}"), "companion update failed"),
