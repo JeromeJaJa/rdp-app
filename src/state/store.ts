@@ -4,7 +4,7 @@ import {
   DEFAULT_SETTINGS,
   type Connection,
   type ConnectionId,
-  type DockPreview,
+  type ContinueDrag,
   type Group,
   type GroupId,
   type SessionStatus,
@@ -96,8 +96,10 @@ export interface AppState {
   windows: WindowTabs[];
   /** The left library sidebar is shown (main window only). */
   sidebarShown: boolean;
-  /** A tab is being dragged over this window's strip: which tab, and where it would land. */
-  dockPreview: DockPreview | null;
+  /** A tab re-entered this window mid-drag: the strip picks the drag up (then clears this). */
+  continueDrag: ContinueDrag | null;
+  /** Bumped when the button goes up after a drag was handed to this window. */
+  dragRelease: number;
   toasts: Toast[];
   fullscreen: boolean;
   /** Keyboard focus is inside a RemoteSurface: app shortcuts are suspended. */
@@ -128,7 +130,8 @@ export const useStore = create<AppState>(() => ({
   mainTabs: [],
   windows: [],
   sidebarShown: true,
-  dockPreview: null,
+  continueDrag: null,
+  dragRelease: 0,
   toasts: [],
   fullscreen: false,
   remoteFocused: false,

@@ -19,7 +19,7 @@ import type {
   Settings,
   TrustedCertificate,
   CompanionStatus,
-  DockPreview,
+  ContinueDrag,
   UiCommand,
   UiState,
   WindowLayout,
@@ -118,11 +118,10 @@ export interface Backend {
   onWindowLayout(cb: (layout: WindowLayout) => void): Unsubscribe;
   /** Another window asked this one to show a tab. */
   onSelectTab(cb: (id: ConnectionId) => void): Unsubscribe;
-  /**
-   * A tab is being dragged over this window's strip: where it would land (the real tab
-   * shows there, Chrome-style), or `null` when it leaves.
-   */
-  onDockPreview(cb: (preview: DockPreview | null) => void): Unsubscribe;
+  /** A tab dragged out of a window re-entered this one while held: carry the drag on here. */
+  onContinueDrag(cb: (drag: ContinueDrag) => void): Unsubscribe;
+  /** The button went up after a drag was handed to this window (it may not see the release). */
+  onDragRelease(cb: () => void): Unsubscribe;
   /** Opens a connection as a tab in the main window (or focuses it if already open). */
   openTab(id: ConnectionId, select: boolean): Promise<void>;
   /** Closes a connection's tab (the session is disconnected separately). */

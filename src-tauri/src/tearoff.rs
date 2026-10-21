@@ -57,13 +57,14 @@ pub struct WindowTabs {
     pub tabs: Vec<String>,
 }
 
-/// Where a tab being dragged over a window's strip would land: its index, and the tab
-/// itself so the strip can show the real tab sitting there (not a blank gap).
+/// A tab that just re-entered a window mid-drag: that window picks the drag up as an
+/// ordinary drag of the tab, under the pointer (CSS px in its client area).
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct DockPreview {
-    index: usize,
+struct ContinueDrag {
     id: String,
+    x: f64,
+    y: f64,
 }
 
 impl Layout {
@@ -394,81 +395,83 @@ impl Tearoff {
     pub fn tear(&self, session: &str, source: &str) -> anyhow::Result<String> {
         let cursor = self.app.cursor_position().context("pointer position")?;
         let (label, window) = self.open(session, source, true, |w| place_at(w, cursor))?;
-        Ok(self.follow_pointer(&label, &window, cursor))
+        // It was placed with the pointer on its tab.
+        let scale = window.scale_factor().unwrap_or(1.0);
+        let grab = ((GRAB.0 * scale).round() as i32, (GRAB.1 * scale).round() as i32);
+        Ok(self.follow_pointer(&label, &window, Some(grab)))
     }
 
     /// Drags a detached window by its only tab. Returns the window the tab ends up in.
     /// Blocking.
     pub fn drag(&self, label: &str) -> anyhow::Result<String> {
         let window = self.app.get_webview_window(label).context("window")?;
-        let cursor = self.app.cursor_position().context("pointer position")?;
         self.state.lock().held.insert(label.to_owned());
-        Ok(self.follow_pointer(label, &window, cursor))
+        // Held wherever it was picked up, so the window doesn't jump under the pointer.
+        Ok(self.follow_pointer(label, &window, None))
     }
 
-    /// Drags a held window with the pointer, showing the tab land live in whatever window's
-    /// strip it is over (Chrome-style), then merges its tabs into that window on release (or
-    /// lets its sessions take its own size if it was dropped on nothing).
-    fn follow_pointer(&self, label: &str, window: &WebviewWindow, cursor: PhysicalPosition<f64>) -> String {
-        // The tab this drag carries (shown landing in whatever strip it's over).
-        let dragged = self.tabs_of(label).into_iter().next();
-        // The window the tab is hovering, and where it would land there, as it moves.
-        let mut last: Option<(String, usize)> = None;
+    /// Drags a held window with the pointer. The moment it is over another window's strip,
+    /// its tab goes into that window and the drag carries on there as an ordinary drag of the
+    /// tab — exactly as if it had never left (that window can tear it out again). Released in
+    /// the open, the window stays put and its sessions take its size. Blocks until release.
+    fn follow_pointer(&self, label: &str, window: &WebviewWindow, grab: Option<(i32, i32)>) -> String {
+        // Where the tab entered another window's strip: (index there, that window).
+        let mut entered: Option<(usize, String)> = None;
         #[cfg(windows)]
-        {
-            let mut on_frame = |at: PhysicalPosition<f64>| {
-                let cur = self.drop_target(label, window, at).map(|t| {
-                    let idx = self.dock_index(&t, at);
-                    (t, idx)
-                });
-                if cur == last {
-                    return;
-                }
-                // Moved to a different window: clear the gap in the old one.
-                if let Some((old, _)) = &last
-                    && last.as_ref().map(|(l, _)| l) != cur.as_ref().map(|(l, _)| l)
-                {
-                    self.emit_dock(old, None);
-                }
-                if let (Some((t, idx)), Some(id)) = (&cur, &dragged) {
-                    self.emit_dock(t, Some(DockPreview { index: *idx, id: id.clone() }));
-                }
-                // Hide the follow window while it's "in" a strip; show it again out in the open.
-                if last.is_some() != cur.is_some() {
-                    native::show_window(window, cur.is_none());
-                }
-                last = cur;
-            };
-            native::drag_loop(&self.app, window, cursor, &mut on_frame);
-        }
-        let _ = cursor;
-        // Where it ended up.
-        let drop = self
-            .app
-            .cursor_position()
-            .ok()
-            .and_then(|at| self.drop_target(label, window, at).map(|t| (self.dock_index(&t, at), t)));
-        // Clear any live gap before the real tabs arrive.
-        if let Some((old, _)) = &last {
-            self.emit_dock(old, None);
-        }
-        let result = match drop {
-            Some((index, target)) => {
-                // The follow window stays hidden; it empties and closes as the tabs move.
-                for (i, tab) in self.tabs_of(label).into_iter().enumerate() {
-                    let _ = self.move_tab(&tab, &target, Some(index + i));
-                }
-                self.focus(&target);
-                target
+        native::drag_loop(&self.app, window, grab, &mut |at, moved| {
+            // Only once the pointer really moves: pressing the only tab of a window that
+            // happens to sit over another window's strip mustn't merge it.
+            if !moved {
+                return true;
             }
-            None => {
-                #[cfg(windows)]
-                native::show_window(window, true);
-                label.to_owned()
+            match self.drop_target(label, window, at) {
+                Some(target) => {
+                    entered = Some((self.dock_index(&target, at), target));
+                    false
+                }
+                None => true,
             }
+        });
+        let _ = grab;
+        let Some((index, target)) = entered else {
+            self.release(label);
+            return label.to_owned();
         };
+        // Hand the tabs over (the emptied window closes) and let the target carry the drag.
+        #[cfg(windows)]
+        native::show_window(window, false);
+        let tabs = self.tabs_of(label);
+        for (i, tab) in tabs.iter().enumerate() {
+            let _ = self.move_tab(tab, &target, Some(index + i));
+        }
         self.release(label);
-        result
+        self.focus(&target);
+        if let Some(id) = tabs.first() {
+            self.continue_drag(&target, id);
+        }
+        // The press began in another window, so the release may never reach the target's
+        // page; tell it when the button goes up so it can't be left mid-drag.
+        #[cfg(windows)]
+        native::wait_for_release();
+        let _ = self.app.emit_to(target.as_str(), "drag-release", ());
+        target
+    }
+
+    /// Tells `target` to carry on dragging tab `id` from where the pointer is now.
+    fn continue_drag(&self, target: &str, id: &str) {
+        let Some(window) = self.app.get_webview_window(target) else {
+            return;
+        };
+        let (Ok(at), Ok(origin), Ok(scale)) = (self.app.cursor_position(), window.inner_position(), window.scale_factor())
+        else {
+            return;
+        };
+        let drag = ContinueDrag {
+            id: id.to_owned(),
+            x: (at.x - f64::from(origin.x)) / scale,
+            y: (at.y - f64::from(origin.y)) / scale,
+        };
+        let _ = self.app.emit_to(target, "continue-drag", drag);
     }
 
     /// Ends a hold: the window's sessions take its current size.
@@ -557,11 +560,6 @@ impl Tearoff {
             }
         }
         idx.min(slots.len())
-    }
-
-    /// Tells `label`'s window where a dragged tab would land right now (`None` clears it).
-    fn emit_dock(&self, label: &str, preview: Option<DockPreview>) {
-        let _ = self.app.emit_to(label, "dock-preview", preview);
     }
 
     // ── Closing, visibility, sizes ──────────────────────────────────────────
@@ -726,8 +724,10 @@ mod native {
         }
     }
 
-    /// Shows or hides `window` without activating it (a dragged tab's follow window hides
-    /// while it is "inside" another window's strip).
+    /// The pointer counts as moved once it travels this far (physical px) from the press.
+    const MOVE_SLOP: i32 = 4;
+
+    /// Shows or hides `window` without activating it.
     pub(super) fn show_window(window: &WebviewWindow, show: bool) {
         let Some(hwnd) = hwnd(window) else { return };
         // SAFETY: toggles our own window's visibility; never steals focus.
@@ -736,21 +736,28 @@ mod native {
         }
     }
 
-    /// Drags `window` with the pointer until the button is released, calling `on_frame` with
-    /// the pointer each tick (to preview where the tab would land). Our own loop, not the
-    /// system move loop, so the rest of the app keeps updating live. Blocks: call off the UI
-    /// thread.
+    /// Blocks until the primary button is up.
+    pub(super) fn wait_for_release() {
+        while primary_button_down() {
+            std::thread::sleep(Duration::from_millis(16));
+        }
+    }
+
+    /// Drags `window` with the pointer until the button is released or `on_frame` returns
+    /// false. `on_frame` gets the pointer and whether it has moved since the press. `grab` is
+    /// where the pointer holds the window (window px); measured when not given, so a window
+    /// picked up by its tab doesn't jump. Our own loop, not the system move loop, so the rest
+    /// of the app keeps updating. Blocks: call off the UI thread.
     pub(super) fn drag_loop(
         app: &AppHandle,
         window: &WebviewWindow,
-        _cursor: PhysicalPosition<f64>,
-        on_frame: &mut dyn FnMut(PhysicalPosition<f64>),
+        grab: Option<(i32, i32)>,
+        on_frame: &mut dyn FnMut(PhysicalPosition<f64>, bool) -> bool,
     ) {
         let Some(hwnd) = hwnd(window) else { return };
         if !primary_button_down() {
             return;
         }
-        let scale = window.scale_factor().unwrap_or(1.0);
         // The press began in another window (the tab strip), which holds the capture.
         let (tx, rx) = std::sync::mpsc::channel();
         let _ = app.run_on_main_thread(move || {
@@ -761,7 +768,18 @@ mod native {
             let _ = tx.send(());
         });
         let _ = rx.recv_timeout(Duration::from_secs(1));
-        // Keep the dragged window on top so hit-testing finds the window below it.
+        let mut start = POINT::default();
+        // SAFETY: reads the global cursor position.
+        if unsafe { GetCursorPos(&mut start) }.is_err() {
+            return;
+        }
+        let grab = grab.unwrap_or_else(|| {
+            let mut r = RECT::default();
+            // SAFETY: our own window's rectangle.
+            let _ = unsafe { GetWindowRect(hwnd, &mut r) };
+            (start.x - r.left, start.y - r.top)
+        });
+        let mut moved = false;
         loop {
             if !primary_button_down() {
                 break;
@@ -771,20 +789,23 @@ mod native {
             if unsafe { GetCursorPos(&mut pt) }.is_err() {
                 break;
             }
-            let at = PhysicalPosition::new(f64::from(pt.x), f64::from(pt.y));
-            // SAFETY: moves our own window so the pointer stays on its tab; no activation.
+            moved |= (pt.x - start.x).abs() > MOVE_SLOP || (pt.y - start.y).abs() > MOVE_SLOP;
+            // SAFETY: moves our own window so the pointer keeps its hold; no activation. On
+            // top, so hit-testing finds the window below it.
             unsafe {
                 let _ = SetWindowPos(
                     hwnd,
                     Some(HWND_TOPMOST),
-                    (at.x - super::GRAB.0 * scale) as i32,
-                    (at.y - super::GRAB.1 * scale) as i32,
+                    pt.x - grab.0,
+                    pt.y - grab.1,
                     0,
                     0,
                     SWP_NOSIZE | SWP_NOACTIVATE,
                 );
             }
-            on_frame(at);
+            if !on_frame(PhysicalPosition::new(f64::from(pt.x), f64::from(pt.y)), moved) {
+                break;
+            }
             std::thread::sleep(Duration::from_millis(8));
         }
         // Back to a normal z-order once dropped (if it survives as its own window).

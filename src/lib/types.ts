@@ -365,10 +365,14 @@ export interface WindowLayout {
   windows: WindowTabs[];
 }
 
-/** A tab being dragged over this window's strip: where it would land, and which tab it is. */
-export interface DockPreview {
-  index: number;
+/**
+ * A tab dragged out of a window just re-entered this one while still held: carry on
+ * dragging it here, from the pointer (CSS px in this window's client area).
+ */
+export interface ContinueDrag {
   id: ConnectionId;
+  x: number;
+  y: number;
 }
 
 /** Progress of the companion auto-install for a connection (experimental). */

@@ -155,10 +155,16 @@ export function useTabAreaReporter() {
         schedule();
       }
     });
+    // The strip scrolled: its tabs moved on screen. (Scroll doesn't bubble; capture it.)
+    const onScroll = (e: Event) => {
+      if (e.target instanceof Element && e.target.classList.contains("top-tabs")) schedule();
+    };
+    document.addEventListener("scroll", onScroll, { capture: true, passive: true });
     schedule();
     return () => {
       ro.disconnect();
       unsubscribe();
+      document.removeEventListener("scroll", onScroll, { capture: true });
       cancelAnimationFrame(frame);
     };
   }, []);

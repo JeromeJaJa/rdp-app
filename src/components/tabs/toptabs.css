@@ -58,27 +58,6 @@
   width: 1px;
   background: var(--border-strong);
 }
-/* The tab from another window shown landing in this strip, opened live as it's dragged over.
-   It looks like an ordinary resting tab — as if it had never left. */
-.tab--top.is-ghost {
-  pointer-events: none;
-  overflow: hidden;
-  background: var(--active);
-  animation: top-dock-grow var(--t-fast) cubic-bezier(0.16, 1, 0.3, 1);
-}
-@keyframes top-dock-grow {
-  from {
-    max-width: 0;
-    opacity: 0;
-    margin-inline: -1px;
-  }
-  to {
-    max-width: 220px;
-    opacity: 1;
-    margin-inline: 0;
-  }
-}
-
 .top-seg.is-empty {
   min-width: 60px;
   border: 1px dashed var(--border-strong);

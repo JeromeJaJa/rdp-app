@@ -16,8 +16,8 @@ import { arrayMove, horizontalListSortingStrategy, SortableContext } from "@dnd-
 import { useShallow } from "zustand/react/shallow";
 import { isMainWindow, windowLabel } from "../../lib/env";
 import { closeTab, reorderWindowTabs } from "../../state/actions";
-import { useStore, windowTabs } from "../../state/store";
-import { DockGhost, SoloTab, TabItem, TabOverlay } from "./TabItem";
+import { getState, setState, useStore, windowTabs } from "../../state/store";
+import { SoloTab, TabItem, TabOverlay } from "./TabItem";
 import { pastStrip, stripWheel, useTearOff } from "./useTabsDnd";
 import "./toptabs.css";
 
@@ -25,19 +25,36 @@ import "./toptabs.css";
 // vertical freedom once it tears off into a window of its own (handled natively).
 const horizontalOnly: Modifier = ({ transform }) => ({ ...transform, y: 0 });
 
+/** A primary-button pointer event, for a drag whose real press happened in another window. */
+function firePointer(type: "pointerdown" | "pointerup", target: EventTarget, x: number, y: number) {
+  target.dispatchEvent(
+    new PointerEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      clientX: x,
+      clientY: y,
+      button: 0,
+      buttons: type === "pointerdown" ? 1 : 0,
+      pointerId: 1,
+      pointerType: "mouse",
+      isPrimary: true,
+    }),
+  );
+}
+
 /**
  * A window's tab strip (the main window and detached windows alike): a flat row of the
  * window's open tabs. Reorder them, pull one out into a window of its own (or onto another
- * window's strip), × closes and disconnects. A detached window with a single tab lets you
- * drag it to move the window.
+ * window's strip), × closes and disconnects. A detached window with a single
+ * tab lets you drag it to move the window.
  */
 function WindowTabStripInner() {
   const label = windowLabel();
   const main = isMainWindow();
   const tabs = useStore(useShallow((s) => windowTabs(s, label)));
-  // A tab from another window is being dragged over this strip: show it landing where it'd go.
-  const dock = useStore((s) => s.dockPreview);
-  const ghost = dock !== null && !tabs.includes(dock.id);
+  const continueDrag = useStore((s) => s.continueDrag);
+  const dragRelease = useStore((s) => s.dragRelease);
   const [activeId, setActiveId] = useState<string | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const tear = useTearOff(pastStrip);
@@ -51,33 +68,35 @@ function WindowTabStripInner() {
     pointer.current = { x: e.clientX, y: e.clientY };
   }, []);
 
-  // While a tab from another window is dragged over this strip, its ghost follows the real
-  // cursor (not the insertion slot), so it stays under the pointer like an ordinary drag.
-  const ghostRef = useRef<HTMLDivElement>(null);
+  // A detached window's single tab is a handle to move the window.
+  const soloWindowDrag = !main && tabs.length === 1;
+
+  // A tab dragged out of a window came back into this one while still held. It's simply one
+  // of this window's tabs now, being dragged: press it where the pointer is, and the held
+  // mouse carries on an ordinary drag from there (reorder, tear out again, drop).
+  const handedOver = useRef(false);
   useEffect(() => {
-    if (!ghost) return;
-    let raf = 0;
-    let at = 0;
-    const apply = () => {
-      raf = 0;
-      const g = ghostRef.current;
-      if (!g) return;
-      // Measure the natural centre (transform cleared) in viewport space, then shift it
-      // onto the cursor. Both are viewport coords, so scroll/offset don't matter.
-      g.style.transform = "none";
-      const r = g.getBoundingClientRect();
-      g.style.transform = `translateX(${Math.round(at - (r.left + r.width / 2))}px)`;
-    };
-    const follow = (e: PointerEvent) => {
-      at = e.clientX;
-      if (!raf) raf = requestAnimationFrame(apply);
-    };
-    window.addEventListener("pointermove", follow);
-    return () => {
-      window.removeEventListener("pointermove", follow);
-      if (raf) cancelAnimationFrame(raf);
-    };
-  }, [ghost]);
+    if (!continueDrag || soloWindowDrag || !tabs.includes(continueDrag.id)) return;
+    setState({ continueDrag: null });
+    const el = scrollRef.current?.querySelector<HTMLElement>(`[data-tab-id="${CSS.escape(continueDrag.id)}"]`);
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    // On the tab (under the pointer if it's over it), so the tab lands under the cursor.
+    const x = Math.min(Math.max(continueDrag.x, r.left + 8), r.right - 8);
+    pointer.current = { x: continueDrag.x, y: continueDrag.y };
+    handedOver.current = true;
+    firePointer("pointerdown", el, x, r.top + r.height / 2);
+  }, [continueDrag, tabs, soloWindowDrag]);
+
+  // The button went up after a drag was handed to this window. The press began elsewhere,
+  // so the page may never see the release: end the drag here so it can't stay stuck.
+  useEffect(() => {
+    if (!dragRelease) return;
+    if (getState().continueDrag) setState({ continueDrag: null });
+    if (!handedOver.current) return;
+    handedOver.current = false;
+    firePointer("pointerup", document, pointer.current.x, pointer.current.y);
+  }, [dragRelease]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -98,8 +117,14 @@ function WindowTabStripInner() {
     };
   }, [tabs.length]);
 
-  const onDragEnd = (e: DragEndEvent) => {
+  const endDrag = () => {
+    window.removeEventListener("pointermove", trackPointer);
+    handedOver.current = false;
     setActiveId(null);
+  };
+
+  const onDragEnd = (e: DragEndEvent) => {
+    endDrag();
     const id = String(e.active.id);
     const over = e.over ? String(e.over.id) : null;
     const from = tabs.indexOf(id);
@@ -107,10 +132,6 @@ function WindowTabStripInner() {
     if (from < 0 || to < 0 || from === to) return;
     reorderWindowTabs(arrayMove(tabs, from, to));
   };
-
-  // A detached window's single tab is a handle to move the window — unless a tab from
-  // another window is being dragged in, when the strip must show it landing.
-  const soloWindowDrag = !main && tabs.length === 1 && !ghost;
 
   return (
     <div
@@ -130,31 +151,22 @@ function WindowTabStripInner() {
             modifiers={[horizontalOnly]}
             onDragStart={(e: DragStartEvent) => {
               tear.onStart();
-              const ev = e.activatorEvent as PointerEvent | null;
-              if (ev) pointer.current = { x: ev.clientX, y: ev.clientY };
+              if (!handedOver.current) {
+                const ev = e.activatorEvent as PointerEvent | null;
+                if (ev) pointer.current = { x: ev.clientX, y: ev.clientY };
+              }
               window.addEventListener("pointermove", trackPointer);
               setActiveId(String(e.active.id));
             }}
             onDragMove={(e: DragMoveEvent) => tear.onMove(String(e.active.id), pointer.current)}
-            onDragEnd={(e: DragEndEvent) => {
-              window.removeEventListener("pointermove", trackPointer);
-              onDragEnd(e);
-            }}
-            onDragCancel={() => {
-              window.removeEventListener("pointermove", trackPointer);
-              setActiveId(null);
-            }}
+            onDragEnd={onDragEnd}
+            onDragCancel={endDrag}
           >
             <div className="top-seg">
               <SortableContext items={tabs} strategy={horizontalListSortingStrategy}>
-                {tabs.flatMap((id, i) => {
-                  const tab = <TabItem key={id} id={id} variant="top" onClose={() => closeTab(id)} />;
-                  // Stable key so React moves the ghost between slots (no re-grow) as the index changes.
-                  return ghost && dock!.index === i
-                    ? [<DockGhost key="dock-ghost" ref={ghostRef} id={dock!.id} />, tab]
-                    : [tab];
-                })}
-                {ghost && dock!.index >= tabs.length && <DockGhost key="dock-ghost" ref={ghostRef} id={dock!.id} />}
+                {tabs.map((id) => (
+                  <TabItem key={id} id={id} variant="top" onClose={() => closeTab(id)} />
+                ))}
               </SortableContext>
             </div>
             {createPortal(

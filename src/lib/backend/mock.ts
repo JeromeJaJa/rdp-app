@@ -30,7 +30,7 @@ import {
   type CompanionStatus,
   type UiCommand,
   type UiState,
-  type DockPreview,
+  type ContinueDrag,
   type WindowLayout,
 } from "../types";
 import { gatewayFromInput } from "../gateway";
@@ -817,7 +817,11 @@ export class MockBackend implements Backend {
     return () => {};
   }
 
-  onDockPreview(_cb: (preview: DockPreview | null) => void): Unsubscribe {
+  onContinueDrag(_cb: (drag: ContinueDrag) => void): Unsubscribe {
+    return () => {};
+  }
+
+  onDragRelease(_cb: () => void): Unsubscribe {
     return () => {};
   }
 

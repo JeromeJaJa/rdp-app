@@ -17,14 +17,12 @@ interface ViewProps extends HTMLAttributes<HTMLDivElement> {
   variant: Variant;
   dragging?: boolean;
   overlay?: boolean;
-  /** A read-only tab shown landing in a strip during a cross-window drag. */
-  ghost?: boolean;
-  /** Shows an × that calls this (detached windows: send the tab back). */
+  /** Shows an × that calls this (closes the tab and disconnects). */
   onClose?: () => void;
 }
 
 const TabView = forwardRef<HTMLDivElement, ViewProps>(function TabView(
-  { id, variant, dragging, overlay, ghost, onClose, style, ...rest },
+  { id, variant, dragging, overlay, onClose, style, ...rest },
   ref,
 ) {
   const conn = useConnection(id);
@@ -46,25 +44,23 @@ const TabView = forwardRef<HTMLDivElement, ViewProps>(function TabView(
     <div
       ref={ref}
       style={style as CSSProperties}
-      className={`tab tab--${variant} ${selected && !ghost ? "is-selected" : ""} ${
-        dragging ? "is-dragging" : ""
-      } ${overlay ? "is-overlay" : ""} ${ghost ? "is-ghost" : ""} ${elsewhere && !ghost ? "is-elsewhere" : ""} ${
-        variant === "side" && open ? "is-open" : ""
-      }`}
+      className={`tab tab--${variant} ${selected ? "is-selected" : ""} ${dragging ? "is-dragging" : ""} ${
+        overlay ? "is-overlay" : ""
+      } ${elsewhere ? "is-elsewhere" : ""} ${variant === "side" && open ? "is-open" : ""}`}
       role="tab"
       aria-selected={selected}
-      aria-hidden={ghost || undefined}
-      title={variant === "top" && !ghost ? `${name} — ${conn.host}` : undefined}
+      title={variant === "top" ? `${name} — ${conn.host}` : undefined}
+      data-tab-id={overlay ? undefined : id}
       {...rest}
     >
       <StatusDot status={status} />
       <span className="tab__name">{name}</span>
-      {companion && !ghost && (
+      {companion && (
         <span className="tab__companion" title="Companion connected">
           <Zap size={11} />
         </span>
       )}
-      {elsewhere && !ghost && (
+      {elsewhere && (
         <span className="tab__elsewhere" title="Open in another window">
           <AppWindow size={12} />
         </span>
@@ -149,11 +145,6 @@ export const TabItem = memo(SortableTab);
 export function TabOverlay({ id, variant }: { id: ConnectionId; variant: Variant }) {
   return <TabView id={id} variant={variant} overlay />;
 }
-
-/** The real tab shown landing in a strip while a tab from another window is dragged over it. */
-export const DockGhost = forwardRef<HTMLDivElement, { id: ConnectionId }>(function DockGhost({ id }, ref) {
-  return <TabView ref={ref} id={id} variant="top" ghost />;
-});
 
 /** A detached window's only tab: dragging it moves the window (Chrome-style). */
 export function SoloTab({ id, onClose }: { id: ConnectionId; onClose: () => void }) {

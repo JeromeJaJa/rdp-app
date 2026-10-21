@@ -104,8 +104,10 @@ export async function initApp(): Promise<void> {
     if (!isMainWindow()) keepDetachedSelection(getState().windows);
   });
   backend.onWindowLayout(onWindowLayout);
-  // A tab dragged over this window's strip opens a gap where it would land (Chrome-style).
-  backend.onDockPreview((dockPreview) => setState({ dockPreview }));
+  // A tab dragged out of a window re-entered this one while held: it's this window's tab
+  // now (selected, like Chrome), and the strip carries on dragging it.
+  backend.onContinueDrag((drag) => setState({ selectedId: drag.id, continueDrag: drag }));
+  backend.onDragRelease(() => setState({ dragRelease: getState().dragRelease + 1 }));
   if (main) {
     // The REST API drives (and reads) the main window.
     backend.onUiCommand(onUiCommand);
