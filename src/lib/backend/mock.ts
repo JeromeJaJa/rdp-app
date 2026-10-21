@@ -2,6 +2,7 @@
 // Persists to localStorage and simulates the connect lifecycle with a queue.
 
 import type { Backend, Unsubscribe } from "./types";
+import type { AppAction, AppOutcome } from "../types";
 import {
   DEFAULT_GROUP_ID,
   DEFAULT_SETTINGS,
@@ -807,6 +808,17 @@ export class MockBackend implements Backend {
     this.transfersById.set(t.id, t);
     const copy = { ...t };
     this.transferListeners.forEach((cb) => cb(copy));
+  }
+
+  /** Simulated hosts: a connected one answers after a moment; others "connect" first. */
+  async controlApp(ids: ConnectionId[], _action: AppAction, _path: string): Promise<AppOutcome[]> {
+    return Promise.all(
+      ids.map(async (id) => {
+        const live = this.sessions.has(id);
+        await new Promise((r) => setTimeout(r, live ? 500 : 1600));
+        return { id, error: null, wasRunning: Math.random() > 0.5 };
+      }),
+    );
   }
 
   async sendFiles(ids: ConnectionId[], paths: string[], folder: string): Promise<number[]> {

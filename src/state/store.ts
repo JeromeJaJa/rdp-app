@@ -66,7 +66,11 @@ export type DialogState =
     }
   | null;
 
-export type MenuTarget = { kind: "connection"; id: ConnectionId } | { kind: "group"; id: GroupId };
+export type MenuTarget =
+  | { kind: "connection"; id: ConnectionId }
+  | { kind: "group"; id: GroupId }
+  /** Several connections picked in the sidebar. */
+  | { kind: "connections"; ids: ConnectionId[] };
 
 export interface MenuState {
   x: number;
@@ -110,6 +114,10 @@ export interface AppState {
   droppedPaths: { paths: string[]; seq: number } | null;
 
   selectedId: ConnectionId | null;
+  /** Connections picked in the sidebar (Ctrl/Shift+click), for actions on several at once. */
+  picked: ConnectionId[];
+  /** Where a Shift+click range starts (the last plain or Ctrl click). */
+  pickAnchor: ConnectionId | null;
   view: View;
   dialog: DialogState;
   menu: MenuState | null;
@@ -151,6 +159,8 @@ export const useStore = create<AppState>(() => ({
   droppedPaths: null,
 
   selectedId: null,
+  picked: [],
+  pickAnchor: null,
   view: "session",
   dialog: null,
   menu: null,

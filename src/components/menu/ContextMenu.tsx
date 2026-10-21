@@ -11,7 +11,9 @@ import {
   ListRestart,
   Network,
   Pencil,
+  Play,
   Plus,
+  Power,
   RotateCw,
   Send,
   SlidersHorizontal,
@@ -25,6 +27,7 @@ import {
   confirm,
   connect,
   connectAll,
+  controlApp,
   createGroup,
   deleteConnections,
   disconnect,
@@ -42,6 +45,7 @@ import {
   toggleConnectionMute,
 } from "../../state/actions";
 import { isMainWindow, isTauri, windowLabel } from "../../lib/env";
+import { REMOTE_APPS } from "../../lib/remoteApps";
 import { FEATURES } from "../../lib/features";
 import {
   displayName,
@@ -120,6 +124,30 @@ function Submenu({ flip, children }: { flip: boolean; children: ReactNode }) {
 
 const Sep = () => <div className="menu__sep" />;
 
+/** Each remote program (Valor…), with Launch / Restart / Close for `ids`' hosts. */
+function AppItems({ ids }: { ids: string[] }) {
+  if (!ids.length || !REMOTE_APPS.length) return null;
+  return (
+    <>
+      {REMOTE_APPS.map((app) => (
+        <Item
+          key={app.id}
+          icon={<img src={app.icon} alt="" className="menu__app-icon" />}
+          label={app.name}
+          submenu={
+            <>
+              <Item icon={<Play size={14} />} label="Launch" onSelect={() => controlApp(ids, app, "launch")} />
+              <Item icon={<RotateCw size={14} />} label="Restart" onSelect={() => controlApp(ids, app, "restart")} />
+              <Item icon={<Power size={14} />} label="Close" onSelect={() => controlApp(ids, app, "close")} />
+            </>
+          }
+        />
+      ))}
+      <Sep />
+    </>
+  );
+}
+
 /** Where the tab lives: its own window, back to the main one, or to the front. */
 function WindowItems({ id }: { id: string }) {
   const host = useStore((s) => hostOf(s, id));
@@ -163,6 +191,7 @@ function ConnectionMenu({ id }: { id: string }) {
       )}
       <Sep />
       <WindowItems id={id} />
+      <AppItems ids={[id]} />
       <Item icon={<Send size={14} />} label="Send files…" onSelect={() => openSendDialog([id])} />
       <Item icon={<Pencil size={14} />} label="Edit…" onSelect={() => openDialog({ kind: "edit", id })} />
       <Item icon={<Copy size={14} />} label="Duplicate" onSelect={() => duplicateConnection(id)} />
@@ -229,6 +258,7 @@ function GroupMenu({ id }: { id: string }) {
         />
       )}
       {(canConnect || canDisconnect) && <Sep />}
+      <AppItems ids={members} />
       {members.length > 0 && (
         <Item icon={<Send size={14} />} label="Send files to group…" onSelect={() => openSendDialog(groupMembers(id))} />
       )}
@@ -263,6 +293,63 @@ function GroupMenu({ id }: { id: string }) {
           />
         </>
       )}
+    </>
+  );
+}
+
+/** Several connections picked in the sidebar: what can be done to all of them at once. */
+function SelectionMenu({ ids: all }: { ids: string[] }) {
+  // Picks of connections deleted meanwhile drop out.
+  const known = useStore((s) => s.connById);
+  const ids = useMemo(() => all.filter((id) => known[id]), [all, known]);
+  const groups = useStore((s) => s.groups);
+  const { canConnect, canDisconnect } = useBulkActions(ids);
+  const count = `${ids.length} connection${ids.length === 1 ? "" : "s"}`;
+  return (
+    <>
+      <div className="menu__title">{count}</div>
+      {canConnect && <Item icon={<ConnectIcon size={13} />} label="Connect" onSelect={() => connectAll(ids)} />}
+      {canDisconnect && (
+        <Item icon={<DisconnectIcon size={13} />} label="Disconnect" onSelect={() => disconnectAll(ids)} />
+      )}
+      {(canConnect || canDisconnect) && <Sep />}
+      <AppItems ids={ids} />
+      <Item icon={<Send size={14} />} label={`Send files to ${count}…`} onSelect={() => openSendDialog(ids)} />
+      <Item
+        icon={<FolderInput size={14} />}
+        label="Move to group"
+        submenu={
+          <>
+            {groups.map((g) => (
+              <Item key={g.id} label={g.name} onSelect={() => moveToGroup(ids, g.id)} />
+            ))}
+            <Sep />
+            <Item
+              icon={<FolderPlus size={14} />}
+              label="New group…"
+              onSelect={() => {
+                const gid = createGroup("New group", { rename: true });
+                moveToGroup(ids, gid);
+              }}
+            />
+          </>
+        }
+      />
+      <Sep />
+      <Item
+        icon={<Trash2 size={14} />}
+        label={`Delete ${count}…`}
+        danger
+        onSelect={() =>
+          confirm({
+            title: `Delete ${count}?`,
+            message: "They and their saved passwords will be removed. This can't be undone.",
+            confirmLabel: "Delete",
+            danger: true,
+            onConfirm: () => deleteConnections(ids),
+          })
+        }
+      />
     </>
   );
 }
@@ -315,7 +402,13 @@ function MenuPanel({ menu }: { menu: MenuState }) {
       onMouseDown={(e) => e.stopPropagation()}
       onContextMenu={(e) => e.preventDefault()}
     >
-      {menu.target.kind === "connection" ? <ConnectionMenu id={menu.target.id} /> : <GroupMenu id={menu.target.id} />}
+      {menu.target.kind === "connection" ? (
+        <ConnectionMenu id={menu.target.id} />
+      ) : menu.target.kind === "group" ? (
+        <GroupMenu id={menu.target.id} />
+      ) : (
+        <SelectionMenu ids={menu.target.ids} />
+      )}
     </div>
   );
 }
@@ -323,5 +416,6 @@ function MenuPanel({ menu }: { menu: MenuState }) {
 export function ContextMenu() {
   const menu = useStore((s) => s.menu);
   if (!menu) return null;
-  return <MenuPanel key={`${menu.x},${menu.y},${menu.target.id}`} menu={menu} />;
+  const target = menu.target.kind === "connections" ? menu.target.ids.join(",") : menu.target.id;
+  return <MenuPanel key={`${menu.x},${menu.y},${target}`} menu={menu} />;
 }

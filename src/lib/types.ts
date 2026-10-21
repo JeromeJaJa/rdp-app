@@ -473,3 +473,14 @@ export interface CompanionStatus {
   /** The host, when the UI needs it (e.g. to add it to TrustedHosts). */
   host: string | null;
 }
+
+/** What to do with a program on a remote host (see `REMOTE_APPS`). */
+export type AppAction = "launch" | "restart" | "close";
+
+/** How an app control went on one connection. */
+export interface AppOutcome {
+  id: ConnectionId;
+  error?: string | null;
+  /** The program was running before. */
+  wasRunning: boolean;
+}

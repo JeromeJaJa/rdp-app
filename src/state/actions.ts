@@ -25,7 +25,10 @@ import {
   type WindowMaterial,
   type WindowLayout,
   type WindowTabs,
+  type AppAction,
+  type AppOutcome,
 } from "../lib/types";
+import type { RemoteApp } from "../lib/remoteApps";
 import { gatewayFromInput } from "../lib/gateway";
 import { isMainWindow, isTauri, windowLabel } from "../lib/env";
 import { morphView } from "../lib/morph";
@@ -1128,4 +1131,82 @@ export async function replaceGroup(groupId: GroupId, items: NewConnection[]): Pr
   const result = await be().replaceGroup(groupId, items.map((it) => ({ ...it, groupId })));
   applyLibrary(result.library);
   return result;
+}
+
+// ── Sidebar multi-selection ──────────────────────────────────────────────────
+
+/** Sidebar rows in the order they show (filtered, collapsed groups left out). */
+function sidebarOrder(): ConnectionId[] {
+  return [...document.querySelectorAll<HTMLElement>(".tab--side[data-tab-id]")]
+    .map((el) => el.dataset.tabId ?? "")
+    .filter(Boolean);
+}
+
+/**
+ * A Ctrl or Shift click on a sidebar row: Ctrl adds or removes it, Shift picks the rows
+ * from the last click to it (adding to what's picked with Ctrl too). The first pick
+ * includes the connection that was already selected, as in Explorer.
+ */
+export function pick(id: ConnectionId, { toggle, range }: { toggle: boolean; range: boolean }) {
+  const s = getState();
+  const order = sidebarOrder();
+  const start = s.picked.length ? s.picked : s.selectedId && order.includes(s.selectedId) ? [s.selectedId] : [];
+  if (range) {
+    const anchor = s.pickAnchor ?? s.selectedId ?? id;
+    const a = order.indexOf(anchor);
+    const b = order.indexOf(id);
+    const span = a < 0 || b < 0 ? [id] : order.slice(Math.min(a, b), Math.max(a, b) + 1);
+    const picked = toggle ? [...start, ...span.filter((x) => !start.includes(x))] : span;
+    setState({ picked, menu: null });
+    return;
+  }
+  const picked = start.includes(id) ? start.filter((x) => x !== id) : [...start, id];
+  setState({ picked, pickAnchor: id, menu: null });
+}
+
+/** A plain click: nothing picked; the next Shift+click range starts here. */
+export function clearPicked(anchor: ConnectionId | null = getState().pickAnchor) {
+  const s = getState();
+  if (s.picked.length || s.pickAnchor !== anchor) setState({ picked: [], pickAnchor: anchor });
+}
+
+// ── Programs on the remote (Launch / Restart / Close) ────────────────────────
+
+const APP_VERB: Record<AppAction, [string, string, string]> = {
+  launch: ["Launching", "launched", "launch"],
+  restart: ["Restarting", "restarted", "restart"],
+  close: ["Closing", "closed", "close"],
+};
+
+/** Launches, restarts or closes `app` on each connection's host, and says how it went. */
+export async function controlApp(ids: ConnectionId[], app: RemoteApp, action: AppAction) {
+  if (!ids.length) return;
+  const name = (id: ConnectionId) => {
+    const c = getState().connById[id];
+    return c ? displayName(c) : id;
+  };
+  const [doing, done, verb] = APP_VERB[action];
+  const target = ids.length === 1 ? name(ids[0]) : `${ids.length} connections`;
+  toast("info", `${doing} ${app.name} on ${target}…`);
+  let results: AppOutcome[];
+  try {
+    results = await be().controlApp(ids, action, app.path);
+  } catch (e) {
+    toast("error", `Couldn't ${verb} ${app.name}`, errorText(e));
+    return;
+  }
+  const failed = results.filter((r) => r.error);
+  const ok = results.length - failed.length;
+  if (!failed.length) {
+    const already = action === "close" && results.every((r) => !r.wasRunning);
+    toast("success", already ? `${app.name} wasn't running on ${target}` : `${app.name} ${done} on ${target}`);
+    return;
+  }
+  const first = `${name(failed[0].id)}: ${failed[0].error}`;
+  const more = failed.length > 1 ? ` (and ${failed.length - 1} more)` : "";
+  toast(
+    "error",
+    ok ? `${app.name} ${done} on ${ok} of ${results.length}` : `Couldn't ${verb} ${app.name}`,
+    first + more,
+  );
 }

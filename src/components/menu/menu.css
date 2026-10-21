@@ -108,3 +108,17 @@
 .menu--sub.glass::before {
   display: none;
 }
+
+/* A remote program's own logo, sized like the icons beside it. */
+.menu__app-icon {
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
+}
+/* What a menu acts on ("3 connections"), above its items. */
+.menu__title {
+  padding: 4px 10px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-3);
+}

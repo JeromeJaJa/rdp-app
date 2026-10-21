@@ -5,6 +5,8 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import type { Backend, Unsubscribe } from "./types";
 import {
   DEFAULT_SETTINGS,
+  type AppAction,
+  type AppOutcome,
   type ApiInfo,
   type Connection,
   type ConnectionId,
@@ -252,6 +254,10 @@ export class TauriBackend implements Backend {
 
   sendFiles(ids: ConnectionId[], paths: string[], folder: string): Promise<number[]> {
     return invoke("send_files", { ids, paths, folder });
+  }
+
+  controlApp(ids: ConnectionId[], action: AppAction, path: string): Promise<AppOutcome[]> {
+    return invoke("control_app", { ids, action, path });
   }
 
   cancelTransfer(id: number): Promise<void> {

@@ -1,9 +1,9 @@
-import { memo, useCallback, useMemo, useRef } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { DndContext, DragOverlay, useDroppable } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { FolderPlus, Search, X } from "lucide-react";
-import { createGroup, updateSettings } from "../../state/actions";
+import { clearPicked, createGroup, updateSettings } from "../../state/actions";
 import { displayName, getState, isBusy, isLive, setState, useStore } from "../../state/store";
 import { IconButton } from "../ui/ui";
 import { BulkSessionButtons, NewConnectionButton, TransferButtons, ViewToggle } from "../common/GlobalActions";
@@ -125,7 +125,22 @@ function Summary() {
   );
 }
 
+/** Esc drops the sidebar's picks (when nothing else, like a menu or dialog, takes it). */
+function usePickEscape() {
+  const any = useStore((s) => s.picked.length > 0);
+  useEffect(() => {
+    if (!any) return;
+    const onKey = (e: KeyboardEvent) => {
+      const s = getState();
+      if (e.key === "Escape" && !s.menu && !s.dialog && !s.paletteOpen && !s.remoteFocused) clearPicked();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [any]);
+}
+
 function SidebarInner() {
+  usePickEscape();
   const width = useStore((s) => s.settings.sidebarWidth);
   const filter = useStore((s) => s.filter);
   const inputRef = useRef<HTMLInputElement>(null);

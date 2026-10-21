@@ -1,8 +1,18 @@
 import { forwardRef, memo, useEffect, useRef, type CSSProperties, type HTMLAttributes } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { connect, disconnect, dragWindow, openMenu, select } from "../../state/actions";
-import { displayName, hostOf, inDetachedWindow, isBusy, isLive, useConnection, useStatus, useStore } from "../../state/store";
+import { clearPicked, connect, disconnect, dragWindow, openMenu, pick, select } from "../../state/actions";
+import {
+  displayName,
+  getState,
+  hostOf,
+  inDetachedWindow,
+  isBusy,
+  isLive,
+  useConnection,
+  useStatus,
+  useStore,
+} from "../../state/store";
 import { isMainWindow } from "../../lib/env";
 import { AppWindow, X, Zap } from "lucide-react";
 import { StatusDot } from "../common/StatusDot";
@@ -45,6 +55,8 @@ const TabView = forwardRef<HTMLDivElement, ViewProps>(function TabView(
   const conn = useConnection(id);
   const status = useStatus(id);
   const selected = useStore((s) => s.selectedId === id);
+  // Picked in the sidebar for an action on several connections (Ctrl/Shift+click).
+  const picked = useStore((s) => variant === "side" && s.picked.includes(id));
   // In the library (sidebar): this connection already has an open tab somewhere.
   const open = useStore((s) => hostOf(s, id) !== null);
   // In the main window, a tab that lives in another window.
@@ -66,7 +78,7 @@ const TabView = forwardRef<HTMLDivElement, ViewProps>(function TabView(
     <div
       ref={ref}
       style={style as CSSProperties}
-      className={`tab tab--${variant} ${selected ? "is-selected" : ""} ${dragging ? "is-dragging" : ""} ${
+      className={`tab tab--${variant} ${selected ? "is-selected" : ""} ${picked ? "is-picked" : ""} ${dragging ? "is-dragging" : ""} ${
         overlay ? "is-overlay" : ""
       } ${elsewhere ? "is-elsewhere" : ""} ${variant === "side" && open ? "is-open" : ""}`}
       role="tab"
@@ -156,10 +168,29 @@ function SortableTab({ id, variant, onClose }: { id: ConnectionId; variant: Vari
       {...listeners}
       {...middleClickCloses(onClose)}
       tabIndex={-1}
-      onClick={() => select(id)}
-      onDoubleClick={() => select(id, { connect: true })}
+      onClick={(e) => {
+        // In the sidebar, Ctrl/Shift+click picks connections (as in Explorer) without
+        // opening them; a plain click opens one and drops the picks.
+        if (variant === "side" && (e.ctrlKey || e.metaKey || e.shiftKey)) {
+          pick(id, { toggle: e.ctrlKey || e.metaKey, range: e.shiftKey });
+          return;
+        }
+        clearPicked(id);
+        select(id);
+      }}
+      onDoubleClick={(e) => {
+        if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+        select(id, { connect: true });
+      }}
       onContextMenu={(e) => {
         e.preventDefault();
+        const picks = getState().picked;
+        // A right click on one of several picks acts on all of them.
+        if (variant === "side" && picks.length > 1 && picks.includes(id)) {
+          openMenu({ x: e.clientX, y: e.clientY, target: { kind: "connections", ids: picks } });
+          return;
+        }
+        clearPicked(id);
         select(id, { connect: false });
         openMenu({ x: e.clientX, y: e.clientY, target: { kind: "connection", id } });
       }}

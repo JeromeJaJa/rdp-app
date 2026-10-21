@@ -22,6 +22,8 @@ A fast, minimal Windows Remote Desktop client for managing many connections at o
     connection itself caps uploads near 1 MB/s on a distant host.
   - **Drag and drop** files between this PC and a session, both ways, behaving like a normal Windows drag (remote
     folders highlight, the cursor shows what a drop would do).
+  - **Program controls**: launch, restart or close a program (Valor, say) on one connection, a group, or a
+    selection, from the context menu.
   - **Send files** to one connection, a group, or a selection: right-click → Send files…, or drop files on a tab, a
     group or a grid tile. Hosts that aren't connected are connected first.
   - **Host stats**: one labelled stat on each sidebar row and grid tile (CPU by default; memory, network or disk,

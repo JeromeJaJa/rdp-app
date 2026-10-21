@@ -1,4 +1,6 @@
 import type {
+  AppAction,
+  AppOutcome,
   ApiInfo,
   Connection,
   ConnectionId,
@@ -128,6 +130,12 @@ export interface Backend {
    * arrives through `onTransfer`.
    */
   sendFiles(ids: ConnectionId[], paths: string[], folder: string): Promise<number[]>;
+  /**
+   * Launches, restarts or closes the program at `path` (environment variables expand on
+   * the remote) on each connection's host, through its companion, connecting first where
+   * needed. Resolves once every host has answered.
+   */
+  controlApp(ids: ConnectionId[], action: AppAction, path: string): Promise<AppOutcome[]>;
   cancelTransfer(id: number): Promise<void>;
   /** Forgets finished transfers. */
   clearTransfers(): Promise<void>;

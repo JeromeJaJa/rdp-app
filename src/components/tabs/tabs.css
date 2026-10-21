@@ -38,6 +38,13 @@
   background: var(--active);
   color: var(--text);
 }
+/* Picked for an action on several connections (Ctrl/Shift+click): an accent wash, which
+   shows over the selected row's own background too. */
+.tab--side.is-picked {
+  background: var(--accent-soft);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
+}
 .tab--side.is-selected::before,
 .tab--side.is-open:not(.is-selected)::before {
   content: "";
