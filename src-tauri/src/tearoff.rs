@@ -566,25 +566,38 @@ impl Tearoff {
         let _ = self.app.emit_to(target, "continue-drag", drag);
     }
 
+    /// Windows started moving or sizing `label` (its title bar or an edge is being dragged):
+    /// size changes wait for the drag to end, so the remote isn't resized mid-drag.
+    pub fn size_move_started(&self, label: &str) {
+        self.state.lock().held.insert(label.to_owned());
+    }
+
+    /// The move or size drag ended: the window's sessions take its size now.
+    pub fn size_move_ended(&self, label: &str) {
+        self.release(label);
+    }
+
     /// Ends a hold: the window's sessions take its current size.
     fn release(&self, label: &str) {
         let (viewport, tabs) = {
             let mut state = self.state.lock();
             state.held.remove(label);
-            (
-                state.viewports.get(label).copied(),
-                state
-                    .layout
-                    .windows
-                    .iter()
-                    .find(|w| w.label == label)
-                    .map(|w| w.tabs.clone()),
-            )
+            let tabs = state
+                .layout
+                .windows
+                .iter()
+                .find(|w| w.label == label)
+                .map(|w| w.tabs.clone());
+            (state.viewports.get(label).copied(), tabs)
         };
-        if let (Some(viewport), Some(tabs)) = (viewport, tabs) {
-            for tab in tabs {
-                self.engine.set_session_viewport(&tab, Some(viewport));
-            }
+        let Some(viewport) = viewport else { return };
+        // As in `set_viewport`: the main view drives the engine's default viewport.
+        if label == MAIN_WINDOW {
+            self.engine.set_viewport(viewport);
+            return;
+        }
+        for tab in tabs.into_iter().flatten() {
+            self.engine.set_session_viewport(&tab, Some(viewport));
         }
     }
 

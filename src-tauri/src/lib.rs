@@ -15,6 +15,8 @@ mod keys;
 #[cfg(windows)]
 mod material;
 mod profile;
+#[cfg(windows)]
+mod size_move;
 mod store;
 mod tearoff;
 
@@ -771,6 +773,8 @@ pub(crate) fn configure_webview(window: &tauri::WebviewWindow) {
 
     // Files dragged in from other apps come to us (with their paths), not the page.
     file_drop::install(window);
+    // Remote resizes wait until a title-bar or edge drag is let go.
+    size_move::watch(window);
     if cfg!(debug_assertions) {
         return; // keep reload/devtools while developing
     }
