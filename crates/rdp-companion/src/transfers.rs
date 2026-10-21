@@ -104,8 +104,33 @@ impl Transfers {
             Message::DragIn { id, entries, x, y } => self.drag_in(id, entries, x, y),
             Message::DragCancel { id } => self.drag_cancel(id),
             Message::DragOutProbe { id, x, y } => self.drag_out_probe(id, x, y),
+            Message::AppControl { id, action, path } => self.app_control(id, action, path),
             // Not sent to the companion.
             _ => {}
+        }
+    }
+
+    /// The client wants a program launched, restarted or closed here (off the message
+    /// thread: closing waits for the program to exit).
+    fn app_control(&self, id: u64, action: rdp_companion_proto::AppAction, path: String) {
+        let channel = Arc::clone(&self.channel);
+        let spawned = std::thread::Builder::new().name("app-control".into()).spawn(move || {
+            let result = crate::apps::control(action, &path);
+            if let Err(error) = &result {
+                tracing::info!(?action, %path, %error, "app control failed");
+            }
+            channel.send(&Message::AppControlDone {
+                id,
+                error: result.as_ref().err().cloned(),
+                was_running: result.unwrap_or(false),
+            });
+        });
+        if spawned.is_err() {
+            self.channel.send(&Message::AppControlDone {
+                id,
+                error: Some("couldn't start".into()),
+                was_running: false,
+            });
         }
     }
 

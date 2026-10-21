@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 pub const CHANNEL_NAME: &str = "RdpApp::Companion";
 
 /// Bumped on any breaking change to [`Message`]. Both sides send it in the handshake.
-pub const PROTOCOL_VERSION: u32 = 7;
+pub const PROTOCOL_VERSION: u32 = 8;
 
 /// A frame larger than this is treated as a desync and ends the channel, rather than
 /// buffering without bound.
@@ -75,6 +75,18 @@ impl ClipFormat {
             STANDARD.contains(&self.id)
         }
     }
+}
+
+/// What to do with a program on the remote ([`Message::AppControl`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AppAction {
+    /// Start it (a single-instance app that's running comes forward instead).
+    Launch,
+    /// Close it (if running), then start it.
+    Restart,
+    /// Ask its windows to close; end it if it's still running a few seconds later.
+    Close,
 }
 
 /// What the receiving side does with offered files.
@@ -281,6 +293,22 @@ pub enum Message {
     /// Companion → client: no direct link from here (why); transfers stay on this channel.
     DirectUnavailable {
         reason: String,
+    },
+
+    /// Client → companion: do `action` to the program at `path` (environment variables such
+    /// as `%LOCALAPPDATA%` expanded on the remote) in the session. Answered with
+    /// [`Message::AppControlDone`].
+    AppControl {
+        id: u64,
+        action: AppAction,
+        path: String,
+    },
+    /// Companion → client: how [`Message::AppControl`] `id` went (`error` if it failed), and
+    /// whether the program was running before.
+    AppControlDone {
+        id: u64,
+        error: Option<String>,
+        was_running: bool,
     },
 
     /// Client → companion: files from this PC are being dragged onto the session at
@@ -509,6 +537,11 @@ mod tests {
             Message::RemoteCopy {
                 formats: vec![ClipFormat { id: 13, name: None }],
                 files: false,
+            },
+            Message::AppControl {
+                id: 8,
+                action: AppAction::Restart,
+                path: "%LOCALAPPDATA%\\Programs\\app\\app.exe".into(),
             },
             Message::Close { id: 2, error: None },
             Message::Bye,

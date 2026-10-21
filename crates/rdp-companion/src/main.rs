@@ -52,6 +52,8 @@ fn use_logging() {
 }
 
 #[cfg(windows)]
+mod apps;
+#[cfg(windows)]
 mod channel;
 #[cfg(windows)]
 mod clipboard;

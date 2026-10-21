@@ -426,6 +426,19 @@ fn host_stats(state: State<'_, AppState>) -> std::collections::HashMap<String, V
     state.core.companions.stats_history()
 }
 
+/// Launches, restarts or closes a program on each connection's host through its companion
+/// (connecting first where needed). Replies once every host has answered.
+#[tauri::command]
+async fn control_app(
+    state: State<'_, AppState>,
+    ids: Vec<String>,
+    action: rdp_companion_proto::AppAction,
+    path: String,
+) -> CmdResult<Vec<core::AppOutcome>> {
+    let core = Arc::clone(&state.core);
+    Ok(core.control_app(ids, action, path).await)
+}
+
 /// Installs the companion on a connection's host over WinRM (experimental, manual trigger).
 #[tauri::command]
 async fn companion_install(state: State<'_, AppState>, id: String) -> CmdResult<String> {
@@ -750,6 +763,7 @@ pub fn run() {
             regenerate_api_token,
             report_ui_state,
             open_url,
+            control_app,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

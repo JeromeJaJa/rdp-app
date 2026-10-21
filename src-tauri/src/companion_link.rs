@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 use rdp_companion_proto::transfer::{self, CHUNK, DiskFiles, Inflow, Listing, Note, Outbox, Produced, Pump, Source};
-use rdp_companion_proto::{ClipFormat, Entry, HostStats, Intent, Message};
+use rdp_companion_proto::{AppAction, ClipFormat, Entry, HostStats, Intent, Message};
 use rdp_direct::{DirectSlot, Peer, Prepared};
 use rdp_engine::{CompanionHandler, CompanionHost, CompanionLink, Engine, InputEvent};
 use serde::Serialize;
@@ -596,6 +596,7 @@ impl CompanionHost for Companions {
             queries: Mutex::default(),
             drag: Mutex::default(),
             drag_out: Mutex::default(),
+            app_waiters: Mutex::default(),
             direct,
             preparing: Mutex::default(),
             watches_clipboard,
@@ -643,6 +644,11 @@ impl Companions {
                 attached.pump.receive(&message);
             }
             Message::Offer { id, entries, intent } => attached.offered(id, entries, intent),
+            Message::AppControlDone { id, error, was_running } => {
+                if let Some(waiter) = attached.app_waiters.lock().remove(&id) {
+                    let _ = waiter.send((error, was_running));
+                }
+            }
             #[cfg(windows)]
             Message::RemoteCopy { formats, files } => {
                 let announcer = self.announcers.lock().get(&attached.session).cloned();
@@ -745,6 +751,33 @@ impl Companions {
         let sending: Vec<u64> = attached.sources.lock().drain().collect();
         for id in sending {
             self.fail(id, "The connection closed before it finished");
+        }
+    }
+
+    /// Has `session`'s companion do `action` to the program at `path` there. `Ok(true)` if
+    /// it was running before.
+    pub async fn control_app(&self, session: &str, action: AppAction, path: &str) -> Result<bool, String> {
+        let attached = self.get(session).ok_or("the companion isn't attached")?;
+        let id = self.next_id();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        attached.app_waiters.lock().insert(id, tx);
+        let sent = attached.send(&Message::AppControl {
+            id,
+            action,
+            path: path.to_owned(),
+        });
+        if !sent {
+            attached.app_waiters.lock().remove(&id);
+            return Err("the companion went away".into());
+        }
+        // Closing gives the program a few seconds before ending it.
+        match tokio::time::timeout(Duration::from_secs(45), rx).await {
+            Ok(Ok((None, was_running))) => Ok(was_running),
+            Ok(Ok((Some(error), _))) => Err(error),
+            _ => {
+                attached.app_waiters.lock().remove(&id);
+                Err("the companion didn't answer".into())
+            }
         }
     }
 
@@ -871,6 +904,9 @@ impl Companions {
     }
 }
 
+/// Hears how an app control went: (error, whether the program was running before).
+type AppWaiter = tokio::sync::oneshot::Sender<(Option<String>, bool)>;
+
 /// One attached companion.
 struct Attached {
     session: String,
@@ -887,6 +923,8 @@ struct Attached {
     drag: Mutex<Option<RemoteDrag>>,
     /// Looking for a drag out of the session: (transfer id, where the pointer left).
     drag_out: Mutex<Option<(u64, (u16, u16))>>,
+    /// App controls waiting for the companion's answer.
+    app_waiters: Mutex<HashMap<u64, AppWaiter>>,
     /// The direct link for transfers, while it's up.
     direct: DirectSlot,
     /// This side of a direct link being set up, until the companion answers.
@@ -954,6 +992,7 @@ impl Attached {
             inflow.abort(reason);
         }
         self.queries.lock().clear();
+        self.app_waiters.lock().clear();
     }
 }
 

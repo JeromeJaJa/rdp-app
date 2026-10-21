@@ -208,6 +208,15 @@ pub struct Core {
     pub companions: Arc<crate::companion_link::Companions>,
 }
 
+/// What an app control did on one connection.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppOutcome {
+    pub id: String,
+    pub error: Option<String>,
+    pub was_running: bool,
+}
+
 #[derive(Default)]
 struct CompanionState {
     attached: std::collections::HashSet<String>,
@@ -577,6 +586,63 @@ impl Core {
             });
         }
         Ok(started)
+    }
+
+    /// Launches, restarts or closes the program at `path` on each connection's host,
+    /// through its companion, connecting first where needed. One outcome per connection.
+    pub async fn control_app(
+        self: &Arc<Self>,
+        ids: Vec<String>,
+        action: rdp_companion_proto::AppAction,
+        path: String,
+    ) -> Vec<AppOutcome> {
+        let tasks: Vec<_> = ids
+            .into_iter()
+            .map(|id| {
+                let (core, path) = (Arc::clone(self), path.clone());
+                tauri::async_runtime::spawn(async move {
+                    let result = core.control_app_on(&id, action, &path).await;
+                    AppOutcome {
+                        id,
+                        was_running: *result.as_ref().unwrap_or(&false),
+                        error: result.err(),
+                    }
+                })
+            })
+            .collect();
+        let mut out = Vec::with_capacity(tasks.len());
+        for task in tasks {
+            if let Ok(outcome) = task.await {
+                out.push(outcome);
+            }
+        }
+        out
+    }
+
+    async fn control_app_on(
+        self: &Arc<Self>,
+        id: &str,
+        action: rdp_companion_proto::AppAction,
+        path: &str,
+    ) -> Result<bool, String> {
+        self.connection(id).map_err(|e| e.to_string())?;
+        if self.effective_settings(id).get("companion").and_then(Value::as_bool) != Some(true) {
+            return Err("turn on the companion for this connection".into());
+        }
+        if !self.companions.is_attached(id) {
+            if !self.engine.running().iter().any(|r| r == id) {
+                self.connect(&[id.to_owned()]);
+            }
+            // Connecting can include installing the companion; give it a while.
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(150);
+            while !self.companions.is_attached(id) {
+                if tokio::time::Instant::now() >= deadline || !self.engine.running().iter().any(|r| r == id) {
+                    return Err("the companion didn't attach (is it installed on that host?)".into());
+                }
+                tokio::time::sleep(Duration::from_millis(400)).await;
+            }
+        }
+        self.companions.control_app(id, action, path).await
     }
 
     /// Installs the companion on a connection's host over WinRM (experimental). Blocking.

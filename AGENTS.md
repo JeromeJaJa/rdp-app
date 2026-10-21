@@ -227,6 +227,9 @@ pattern-matching against it.
     all over RDP. Layered setting `directTransfers` (on).
     Verified over loopback (including losing the link mid-transfer); NAT traversal needs a
     real host.
+  - **Program controls** (`AppControl`, `rdp-companion/src/apps.rs`): launch, restart or close a
+    program in the session by path (environment variables expand on the remote); closing posts
+    WM_CLOSE to its windows and ends it after 5 s. The UI's programs are `src/lib/remoteApps.ts`.
   - **Drag in**: the companion shows a near-invisible window under the pointer, the client presses
     the button there through the session, and the window's `DoDragDrop` follows the client's
     moves. **Drag out**: the companion puts a drop target under the remote pointer when the client
