@@ -128,17 +128,6 @@ function General() {
           ]}
         />
       </Row>
-      <Row title="Tab placement" desc="Show connections as tabs along the top, or as a sidebar.">
-        <Segmented
-          size="sm"
-          value={s.tabPlacement}
-          onChange={(tabPlacement) => updateSettings({ tabPlacement })}
-          options={[
-            { value: "left", label: "Left" },
-            { value: "top", label: "Top" },
-          ]}
-        />
-      </Row>
     </>
   );
 }

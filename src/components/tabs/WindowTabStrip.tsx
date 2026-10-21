@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   closestCenter,
@@ -13,32 +13,47 @@ import {
 } from "@dnd-kit/core";
 import { arrayMove, horizontalListSortingStrategy, SortableContext } from "@dnd-kit/sortable";
 import { useShallow } from "zustand/react/shallow";
-import { windowLabel } from "../../lib/env";
-import { moveToMainWindow, reorderWindowTabs } from "../../state/actions";
+import { isMainWindow, windowLabel } from "../../lib/env";
+import { closeTab, reorderWindowTabs } from "../../state/actions";
 import { useStore, windowTabs } from "../../state/store";
 import { SoloTab, TabItem, TabOverlay } from "./TabItem";
 import { dragPointer, pastTitlebar, stripWheel, useTearOff } from "./useTabsDnd";
 import "./toptabs.css";
 
-
 /**
- * A detached window's tabs: reorder them, pull one out into a window of its own (or onto
- * another window's tabs), × sends one back. With a single tab, dragging it moves the window.
+ * A window's tab strip (the main window and detached windows alike): a flat row of the
+ * window's open tabs. Reorder them, pull one out into a window of its own (or onto another
+ * window's strip), × closes and disconnects. A detached window with a single tab lets you
+ * drag it to move the window.
  */
-export function WindowTabStrip() {
-  const tabs = useStore(useShallow((s) => windowTabs(s, windowLabel())));
+function WindowTabStripInner() {
+  const label = windowLabel();
+  const main = isMainWindow();
+  const tabs = useStore(useShallow((s) => windowTabs(s, label)));
   const [activeId, setActiveId] = useState<string | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const tear = useTearOff(pastTitlebar);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [fade, setFade] = useState({ left: false, right: false });
 
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
+    const update = () =>
+      setFade({ left: el.scrollLeft > 2, right: el.scrollLeft + el.clientWidth < el.scrollWidth - 2 });
     const onWheel = stripWheel(el);
+    update();
+    el.addEventListener("scroll", update, { passive: true });
     el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
-  }, []);
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    for (const child of Array.from(el.children)) ro.observe(child);
+    return () => {
+      el.removeEventListener("scroll", update);
+      el.removeEventListener("wheel", onWheel);
+      ro.disconnect();
+    };
+  }, [tabs.length]);
 
   const onDragEnd = (e: DragEndEvent) => {
     setActiveId(null);
@@ -50,12 +65,19 @@ export function WindowTabStrip() {
     reorderWindowTabs(arrayMove(tabs, from, to));
   };
 
+  // A detached window's single tab is a handle to move the window.
+  const soloWindowDrag = !main && tabs.length === 1;
+
   return (
-    <div ref={scrollRef} className="top-tabs" role="tablist">
+    <div
+      ref={scrollRef}
+      className={`top-tabs ${fade.left ? "fade-left" : ""} ${fade.right ? "fade-right" : ""}`}
+      role="tablist"
+    >
       <div className="top-tabs__track">
-        {tabs.length === 1 ? (
+        {soloWindowDrag ? (
           <div className="top-seg">
-            <SoloTab id={tabs[0]} onClose={() => moveToMainWindow(tabs[0])} />
+            <SoloTab id={tabs[0]} onClose={() => closeTab(tabs[0])} />
           </div>
         ) : (
           <DndContext
@@ -72,7 +94,7 @@ export function WindowTabStrip() {
             <div className="top-seg">
               <SortableContext items={tabs} strategy={horizontalListSortingStrategy}>
                 {tabs.map((id) => (
-                  <TabItem key={id} id={id} variant="top" onClose={() => moveToMainWindow(id)} />
+                  <TabItem key={id} id={id} variant="top" onClose={() => closeTab(id)} />
                 ))}
               </SortableContext>
             </div>
@@ -88,3 +110,5 @@ export function WindowTabStrip() {
     </div>
   );
 }
+
+export const WindowTabStrip = memo(WindowTabStripInner);

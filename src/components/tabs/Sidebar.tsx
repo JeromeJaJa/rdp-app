@@ -13,9 +13,6 @@ import { containerId, useTabsDnd } from "./useTabsDnd";
 import type { GroupId } from "../../lib/types";
 import "./sidebar.css";
 
-const pastSidebar = (x: number) => x - (document.querySelector(".sidebar")?.getBoundingClientRect().right ?? Infinity);
-
-
 function DropZone({ groupId, children, empty }: { groupId: GroupId; children: React.ReactNode; empty?: boolean }) {
   const { setNodeRef, isOver } = useDroppable({ id: containerId(groupId) });
   return (
@@ -56,8 +53,8 @@ function FilteredList({ filter }: { filter: string }) {
 }
 
 function SidebarList() {
-  // Pulled out to the right of the sidebar (over the session): a window of its own.
-  const { sections, activeId, sensors, collisionDetection, handlers } = useTabsDnd(pastSidebar);
+  // The library: click a connection to open its tab. Drag reorders (within/across groups).
+  const { sections, activeId, sensors, collisionDetection, handlers } = useTabsDnd();
   const groups = useStore((s) => s.groups);
   const total = useStore((s) => s.order.length);
   const groupById = useMemo(() => new Map(groups.map((g) => [g.id, g])), [groups]);

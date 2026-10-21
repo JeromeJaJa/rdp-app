@@ -274,6 +274,24 @@ fn window_show_tab(state: State<'_, AppState>, id: String) {
     state.tearoff.show_tab(&id);
 }
 
+/// Opens a connection as a tab in the main window (or focuses it if already open).
+#[tauri::command]
+fn window_open_tab(state: State<'_, AppState>, id: String, select: bool) {
+    state.tearoff.open_tab(&id, select);
+}
+
+/// Replaces the main window's open tabs (restoring them on launch).
+#[tauri::command]
+fn window_set_main_tabs(state: State<'_, AppState>, tabs: Vec<String>) {
+    state.tearoff.set_main_tabs(tabs);
+}
+
+/// Closes a connection's tab (the session is disconnected separately).
+#[tauri::command]
+fn window_close_tab(state: State<'_, AppState>, id: String) {
+    state.tearoff.close_tab(&id);
+}
+
 /// Installs the companion on a connection's host over WinRM (experimental, manual trigger).
 #[tauri::command]
 async fn companion_install(state: State<'_, AppState>, id: String) -> CmdResult<String> {
@@ -565,6 +583,9 @@ pub fn run() {
             window_reorder_tabs,
             window_focus,
             window_show_tab,
+            window_open_tab,
+            window_set_main_tabs,
+            window_close_tab,
             companion_install,
             companion_uninstall,
             companion_trust_host,

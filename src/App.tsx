@@ -13,10 +13,11 @@ import { useStore } from "./state/store";
 import "./app.css";
 
 export function App() {
-  const placement = useStore((s) => s.settings.tabPlacement);
   const view = useStore((s) => s.view);
   const fullscreen = useStore((s) => s.fullscreen);
+  const sidebarShown = useStore((s) => s.sidebarShown);
   const mainRef = useRef<HTMLElement>(null);
+  const showSidebar = sidebarShown && !fullscreen;
 
   useShortcuts();
   useEngineSync();
@@ -24,10 +25,10 @@ export function App() {
   useTabAreaReporter();
 
   return (
-    <div className={`app app--${placement} ${fullscreen ? "is-fullscreen" : ""}`}>
+    <div className={`app app--top ${showSidebar ? "has-sidebar" : ""} ${fullscreen ? "is-fullscreen" : ""}`}>
       {!fullscreen && <Titlebar />}
       <div className="app__body">
-        {placement === "left" && !fullscreen && <Sidebar />}
+        {showSidebar && <Sidebar />}
         <main ref={mainRef} className={`app__main app__main--${view}`}>
           {view === "grid" ? <GridView /> : <SessionArea />}
         </main>

@@ -43,6 +43,8 @@ pub type Rect = [f64; 4];
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Layout {
+    /// The main window's open tabs, in order.
+    pub main_tabs: Vec<String>,
     /// Detached windows in creation order, each with its tabs in order.
     pub windows: Vec<WindowTabs>,
 }
@@ -52,6 +54,42 @@ pub struct Layout {
 pub struct WindowTabs {
     pub label: String,
     pub tabs: Vec<String>,
+}
+
+impl Layout {
+    /// A window's tab list (main or detached), mutably.
+    fn tabs_mut(&mut self, label: &str) -> Option<&mut Vec<String>> {
+        if label == MAIN_WINDOW {
+            Some(&mut self.main_tabs)
+        } else {
+            self.windows.iter_mut().find(|w| w.label == label).map(|w| &mut w.tabs)
+        }
+    }
+
+    /// Removes a session's tab from every window; returns any detached window it emptied.
+    fn remove_tab(&mut self, session: &str) -> Option<String> {
+        self.main_tabs.retain(|t| t != session);
+        let mut emptied = None;
+        for w in &mut self.windows {
+            let before = w.tabs.len();
+            w.tabs.retain(|t| t != session);
+            if w.tabs.is_empty() && before > 0 {
+                emptied = Some(w.label.clone());
+            }
+        }
+        emptied
+    }
+
+    /// The window currently holding a session's tab.
+    fn host(&self, session: &str) -> Option<&str> {
+        if let Some(w) = self.windows.iter().find(|w| w.tabs.iter().any(|t| t == session)) {
+            Some(w.label.as_str())
+        } else if self.main_tabs.iter().any(|t| t == session) {
+            Some(MAIN_WINDOW)
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Default)]
@@ -100,14 +138,70 @@ impl Tearoff {
     }
 
     fn tabs_of(&self, label: &str) -> Vec<String> {
-        let state = self.state.lock();
-        state
-            .layout
-            .windows
-            .iter()
-            .find(|w| w.label == label)
-            .map(|w| w.tabs.clone())
-            .unwrap_or_default()
+        let mut state = self.state.lock();
+        state.layout.tabs_mut(label).map(|t| t.clone()).unwrap_or_default()
+    }
+
+    /// Replaces the main window's open tabs (used to restore them on launch). Sessions
+    /// already in a detached window are ignored.
+    pub fn set_main_tabs(&self, sessions: Vec<String>) {
+        let tabs = {
+            let mut state = self.state.lock();
+            let detached: HashSet<String> =
+                state.layout.windows.iter().flat_map(|w| w.tabs.iter().cloned()).collect();
+            state.layout.main_tabs = sessions.into_iter().filter(|s| !detached.contains(s)).collect();
+            state.layout.main_tabs.clone()
+        };
+        for tab in &tabs {
+            self.apply_host(tab, MAIN_WINDOW);
+        }
+        self.apply_visibility();
+        self.broadcast();
+    }
+
+    /// Opens `session` as a tab in the main window if it isn't open anywhere yet, and
+    /// (optionally) selects it there. If it's already open elsewhere, brings that window up.
+    pub fn open_tab(&self, session: &str, select: bool) {
+        let host = {
+            let mut state = self.state.lock();
+            match state.layout.host(session) {
+                Some(label) => label.to_owned(),
+                None => {
+                    state.layout.main_tabs.push(session.to_owned());
+                    drop(state);
+                    self.apply_host(session, MAIN_WINDOW);
+                    self.apply_visibility();
+                    MAIN_WINDOW.to_owned()
+                }
+            }
+        };
+        self.broadcast();
+        if select {
+            self.focus(&host);
+            let _ = self.app.emit_to(host.as_str(), "select-tab", session);
+        }
+    }
+
+    /// Closes `session`'s tab (the caller disconnects the session). A detached window left
+    /// without tabs closes.
+    pub fn close_tab(&self, session: &str) {
+        let emptied = {
+            let mut state = self.state.lock();
+            let emptied = state.layout.remove_tab(session);
+            for active in state.active.values_mut() {
+                if active.as_deref() == Some(session) {
+                    *active = None;
+                }
+            }
+            emptied
+        };
+        self.apply_visibility();
+        self.broadcast();
+        if let Some(label) = emptied
+            && let Some(window) = self.app.get_webview_window(&label)
+        {
+            let _ = window.close();
+        }
     }
 
     /// Moves a tab into `target` (the main window or a detached one) at `index` (end if
@@ -118,17 +212,14 @@ impl Tearoff {
             if target != MAIN_WINDOW && !state.layout.windows.iter().any(|w| w.label == target) {
                 bail!("no such window");
             }
-            let mut emptied = None;
-            for w in &mut state.layout.windows {
-                let before = w.tabs.len();
-                w.tabs.retain(|t| t != session);
-                if w.tabs.is_empty() && before > 0 && w.label != target {
-                    emptied = Some(w.label.clone());
-                }
+            let mut emptied = state.layout.remove_tab(session);
+            // The target can't be the emptied one (we just inserted into it).
+            if emptied.as_deref() == Some(target) {
+                emptied = None;
             }
-            if let Some(w) = state.layout.windows.iter_mut().find(|w| w.label == target) {
-                let at = index.unwrap_or(w.tabs.len()).min(w.tabs.len());
-                w.tabs.insert(at, session.to_owned());
+            if let Some(tabs) = state.layout.tabs_mut(target) {
+                let at = index.unwrap_or(tabs.len()).min(tabs.len());
+                tabs.insert(at, session.to_owned());
             }
             // Its old window no longer shows it.
             for active in state.active.values_mut() {
@@ -149,16 +240,16 @@ impl Tearoff {
         Ok(())
     }
 
-    /// Reorders a detached window's tabs (same set, new order).
+    /// Reorders a window's tabs (same set, new order).
     pub fn reorder(&self, label: &str, tabs: Vec<String>) {
         let mut state = self.state.lock();
-        if let Some(w) = state.layout.windows.iter_mut().find(|w| w.label == label) {
-            let mut a = w.tabs.clone();
+        if let Some(current) = state.layout.tabs_mut(label) {
+            let mut a = current.clone();
             let mut b = tabs.clone();
             a.sort();
             b.sort();
             if a == b {
-                w.tabs = tabs;
+                *current = tabs;
             }
         }
         drop(state);
@@ -405,7 +496,10 @@ impl Tearoff {
             let Some(pos) = state.layout.windows.iter().position(|w| w.label == label) else {
                 return;
             };
-            state.layout.windows.remove(pos).tabs
+            let tabs = state.layout.windows.remove(pos).tabs;
+            // Its tabs return to the main window.
+            state.layout.main_tabs.extend(tabs.iter().cloned());
+            tabs
         };
         for tab in &tabs {
             self.apply_host(tab, MAIN_WINDOW);
@@ -434,20 +528,17 @@ impl Tearoff {
             if state.held.contains(label) {
                 return;
             }
-            state
-                .layout
-                .windows
-                .iter()
-                .find(|w| w.label == label)
-                .map(|w| w.tabs.clone())
+            // The main view drives the engine's default viewport; detached windows size
+            // their own tabs' sessions.
+            if label == MAIN_WINDOW {
+                self.engine.set_viewport(viewport);
+                return;
+            }
+            state.layout.windows.iter().find(|w| w.label == label).map(|w| w.tabs.clone())
         };
-        match tabs {
-            None if label == MAIN_WINDOW => self.engine.set_viewport(viewport),
-            None => {}
-            Some(tabs) => {
-                for tab in tabs {
-                    self.engine.set_session_viewport(&tab, Some(viewport));
-                }
+        if let Some(tabs) = tabs {
+            for tab in tabs {
+                self.engine.set_session_viewport(&tab, Some(viewport));
             }
         }
     }
@@ -456,18 +547,12 @@ impl Tearoff {
         let (active, thumbnails) = {
             let state = self.state.lock();
             // Only count a window's session if its tab really lives there.
-            let host = |s: &str| {
-                state
-                    .layout
-                    .windows
-                    .iter()
-                    .find(|w| w.tabs.iter().any(|t| t == s))
-                    .map_or(MAIN_WINDOW, |w| w.label.as_str())
-            };
             let active: Vec<String> = state
                 .active
                 .iter()
-                .filter_map(|(label, a)| a.as_ref().filter(|s| host(s) == label.as_str()).cloned())
+                .filter_map(|(label, a)| {
+                    a.as_ref().filter(|s| state.layout.host(s) == Some(label.as_str())).cloned()
+                })
                 .collect();
             (active, state.thumbnails.clone())
         };
@@ -498,15 +583,7 @@ impl Tearoff {
 
     /// Brings the window holding `session`'s tab to the front and selects the tab there.
     pub fn show_tab(&self, session: &str) {
-        let label = {
-            let state = self.state.lock();
-            state
-                .layout
-                .windows
-                .iter()
-                .find(|w| w.tabs.iter().any(|t| t == session))
-                .map_or_else(|| MAIN_WINDOW.to_owned(), |w| w.label.clone())
-        };
+        let label = self.state.lock().layout.host(session).unwrap_or(MAIN_WINDOW).to_owned();
         self.focus(&label);
         let _ = self.app.emit_to(label.as_str(), "select-tab", session);
     }

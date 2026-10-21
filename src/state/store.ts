@@ -89,8 +89,12 @@ export interface AppState {
   menu: MenuState | null;
   /** The command palette (Ctrl+K) is open. */
   paletteOpen: boolean;
-  /** Windows that tabs were dragged into (all other tabs live in the main window). */
+  /** The main window's open tabs, in order (connections you've opened). */
+  mainTabs: ConnectionId[];
+  /** Windows that tabs were dragged out into. */
   windows: WindowTabs[];
+  /** The left library sidebar is shown (main window only). */
+  sidebarShown: boolean;
   toasts: Toast[];
   fullscreen: boolean;
   /** Keyboard focus is inside a RemoteSurface: app shortcuts are suspended. */
@@ -118,7 +122,9 @@ export const useStore = create<AppState>(() => ({
   dialog: null,
   menu: null,
   paletteOpen: false,
+  mainTabs: [],
   windows: [],
+  sidebarShown: true,
   toasts: [],
   fullscreen: false,
   remoteFocused: false,
@@ -232,12 +238,22 @@ export function groupOf(c: Connection, groups: Group[]): GroupId {
 
 /** Flat display order (what Ctrl+Tab walks and what top tabs show). */
 /** The window a connection's tab lives in: "main" or a detached window's label. */
-export function hostOf(s: Pick<AppState, "windows">, id: ConnectionId): string {
-  return s.windows.find((w) => w.tabs.includes(id))?.label ?? "main";
+/** The window a connection's tab lives in ("main" or a detached label), or null if the
+ *  connection isn't open as a tab anywhere. */
+export function hostOf(s: Pick<AppState, "windows" | "mainTabs">, id: ConnectionId): string | null {
+  const detached = s.windows.find((w) => w.tabs.includes(id));
+  if (detached) return detached.label;
+  return s.mainTabs.includes(id) ? "main" : null;
 }
 
-/** This (detached) window's tabs, in order. */
-export function windowTabs(s: Pick<AppState, "windows">, label: string): ConnectionId[] {
+/** Whether a connection is open as a tab in any window. */
+export function isOpen(s: Pick<AppState, "windows" | "mainTabs">, id: ConnectionId): boolean {
+  return hostOf(s, id) !== null;
+}
+
+/** A window's open tabs, in order (main window or a detached label). */
+export function windowTabs(s: Pick<AppState, "windows" | "mainTabs">, label: string): ConnectionId[] {
+  if (label === "main") return s.mainTabs;
   return s.windows.find((w) => w.label === label)?.tabs ?? [];
 }
 

@@ -28,6 +28,8 @@ const TabView = forwardRef<HTMLDivElement, ViewProps>(function TabView(
   const conn = useConnection(id);
   const status = useStatus(id);
   const selected = useStore((s) => s.selectedId === id);
+  // In the library (sidebar): this connection already has an open tab somewhere.
+  const open = useStore((s) => hostOf(s, id) !== null);
   // In the main window, a tab that lives in another window.
   const elsewhere = useStore((s) => isMainWindow() && hostOf(s, id) !== "main");
   // A companion is attached on the remote (deeper integration is live).
@@ -44,7 +46,7 @@ const TabView = forwardRef<HTMLDivElement, ViewProps>(function TabView(
       style={style as CSSProperties}
       className={`tab tab--${variant} ${selected ? "is-selected" : ""} ${dragging ? "is-dragging" : ""} ${
         overlay ? "is-overlay" : ""
-      } ${elsewhere ? "is-elsewhere" : ""}`}
+      } ${elsewhere ? "is-elsewhere" : ""} ${variant === "side" && open ? "is-open" : ""}`}
       role="tab"
       aria-selected={selected}
       title={variant === "top" ? `${name} — ${conn.host}` : undefined}
@@ -65,8 +67,8 @@ const TabView = forwardRef<HTMLDivElement, ViewProps>(function TabView(
       {onClose && !overlay && (
         <button
           className="tab__close"
-          aria-label="Move back to the main window"
-          title="Move back to the main window"
+          aria-label="Close tab and disconnect"
+          title="Close tab (disconnects)"
           onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation();

@@ -21,7 +21,7 @@ import type {
   CompanionStatus,
   UiCommand,
   UiState,
-  WindowTabs,
+  WindowLayout,
 } from "../types";
 
 export type Unsubscribe = () => void;
@@ -111,12 +111,18 @@ export interface Backend {
   /** Opens an http(s) link in the default browser. */
   openExternal(url: string): Promise<void>;
 
-  // ── Windows: tabs dragged out of the main window ────────────────────────
-  /** Which tabs live in which detached window (everything else is in the main window). */
-  windowLayout(): Promise<WindowTabs[]>;
-  onWindowLayout(cb: (windows: WindowTabs[]) => void): Unsubscribe;
+  // ── Windows and tabs ────────────────────────────────────────────────────
+  /** The main window's open tabs, and which tabs live in which detached window. */
+  windowLayout(): Promise<WindowLayout>;
+  onWindowLayout(cb: (layout: WindowLayout) => void): Unsubscribe;
   /** Another window asked this one to show a tab. */
   onSelectTab(cb: (id: ConnectionId) => void): Unsubscribe;
+  /** Opens a connection as a tab in the main window (or focuses it if already open). */
+  openTab(id: ConnectionId, select: boolean): Promise<void>;
+  /** Closes a connection's tab (the session is disconnected separately). */
+  closeTab(id: ConnectionId): Promise<void>;
+  /** Replaces the main window's open tabs (restoring them on launch). */
+  setMainTabs(ids: ConnectionId[]): Promise<void>;
   /** Moves a tab into "main" or a detached window (at `index`, or the end). */
   moveTab(id: ConnectionId, target: string, index?: number): Promise<void>;
   /** A tab is being dragged out of its strip: get a window ready in case it's torn off. */

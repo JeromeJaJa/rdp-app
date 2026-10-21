@@ -26,7 +26,7 @@ import {
   type CompanionStatus,
   type UiCommand,
   type UiState,
-  type WindowTabs,
+  type WindowLayout,
 } from "../types";
 
 /** Library as sent by Rust: settings are null until first saved. */
@@ -219,12 +219,24 @@ export class TauriBackend implements Backend {
     return invoke("companion_trust_host", { id, host });
   }
 
-  windowLayout(): Promise<WindowTabs[]> {
-    return invoke<{ windows: WindowTabs[] }>("window_layout").then((l) => l.windows);
+  windowLayout(): Promise<WindowLayout> {
+    return invoke<WindowLayout>("window_layout");
   }
 
-  onWindowLayout(cb: (windows: WindowTabs[]) => void): Unsubscribe {
-    return subscribe<{ windows: WindowTabs[] }>("window-layout", (l) => cb(l.windows));
+  onWindowLayout(cb: (layout: WindowLayout) => void): Unsubscribe {
+    return subscribe<WindowLayout>("window-layout", cb);
+  }
+
+  openTab(id: ConnectionId, select: boolean): Promise<void> {
+    return invoke("window_open_tab", { id, select });
+  }
+
+  closeTab(id: ConnectionId): Promise<void> {
+    return invoke("window_close_tab", { id });
+  }
+
+  setMainTabs(ids: ConnectionId[]): Promise<void> {
+    return invoke("window_set_main_tabs", { tabs: ids });
   }
 
   onSelectTab(cb: (id: ConnectionId) => void): Unsubscribe {

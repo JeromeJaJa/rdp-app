@@ -545,11 +545,11 @@ pub const ENDPOINTS: &[Endpoint] = &[
         path: "/api/v1/settings",
         tag: "Settings",
         summary: "Current settings",
-        description: "Keys: theme (dark|light|system), tabPlacement (top|left), connectOnSelect, maxConcurrentConnects (1-32), pauseHiddenSessions, codec (auto|h264|remotefx), h264Quality (balanced|sharp: 4:4:4 when the host offers it), videoDecoder (auto|hardware|software), autoReconnect, clipboardSync, audio (off|active|all), microphone, driveRedirection (none|all|custom), drivePaths, printerRedirection, smartcardRedirection, certificatePolicy (tofu|prompt|ignore), apiEnabled, apiPort, plus UI layout values.",
+        description: "Keys: theme (dark|light|system), connectOnSelect, maxConcurrentConnects (1-32), pauseHiddenSessions, codec (auto|h264|remotefx), h264Quality (balanced|sharp: 4:4:4 when the host offers it), videoDecoder (auto|hardware|software), autoReconnect, clipboardSync, audio (off|active|all), microphone, driveRedirection (none|all|custom), drivePaths, printerRedirection, smartcardRedirection, certificatePolicy (tofu|prompt|ignore), apiEnabled, apiPort, plus UI layout values.",
         params: &[],
         body: None,
         response: Some(
-            r#"{"theme":"dark","tabPlacement":"left","codec":"auto","audio":"active","certificatePolicy":"tofu","apiEnabled":true,"apiPort":47123, "…": "…"}"#,
+            r#"{"theme":"dark","codec":"auto","audio":"active","certificatePolicy":"tofu","apiEnabled":true,"apiPort":47123, "…": "…"}"#,
         ),
         auth: true,
     },

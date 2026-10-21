@@ -30,7 +30,7 @@ import {
   type CompanionStatus,
   type UiCommand,
   type UiState,
-  type WindowTabs,
+  type WindowLayout,
 } from "../types";
 import { gatewayFromInput } from "../gateway";
 import { matchKey } from "../match";
@@ -798,13 +798,19 @@ export class MockBackend implements Backend {
   }
 
   // The browser preview has a single window.
-  async windowLayout(): Promise<WindowTabs[]> {
-    return [];
+  async windowLayout(): Promise<WindowLayout> {
+    return { mainTabs: [], windows: [] };
   }
 
-  onWindowLayout(_cb: (windows: WindowTabs[]) => void): Unsubscribe {
+  onWindowLayout(_cb: (layout: WindowLayout) => void): Unsubscribe {
     return () => {};
   }
+
+  async openTab(): Promise<void> {}
+
+  async closeTab(): Promise<void> {}
+
+  async setMainTabs(): Promise<void> {}
 
   onSelectTab(_cb: (id: ConnectionId) => void): Unsubscribe {
     return () => {};

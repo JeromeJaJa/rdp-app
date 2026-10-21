@@ -32,7 +32,8 @@
   background: var(--active);
   color: var(--text);
 }
-.tab--side.is-selected::before {
+.tab--side.is-selected::before,
+.tab--side.is-open:not(.is-selected)::before {
   content: "";
   position: absolute;
   left: 0;
@@ -41,6 +42,13 @@
   width: 2px;
   border-radius: 2px;
   background: var(--accent);
+}
+/* Open elsewhere but not selected: the accent is present but muted. */
+.tab--side.is-open:not(.is-selected)::before {
+  opacity: 0.4;
+}
+.tab--side.is-open:not(.is-selected) .tab__name {
+  color: var(--text);
 }
 /* The host gives up all its space before the name starts truncating. */
 .tab__host {

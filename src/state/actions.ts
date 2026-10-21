@@ -19,6 +19,7 @@ import {
   type CompanionStatus,
   type UiCommand,
   type WindowMaterial,
+  type WindowLayout,
   type WindowTabs,
 } from "../lib/types";
 import { gatewayFromInput } from "../lib/gateway";
@@ -79,9 +80,22 @@ export async function initApp(): Promise<void> {
   }
   const main = isMainWindow();
   applyLibrary(lib, { preferSelected: main ? selectedId : null });
-  const windows = await backend.windowLayout().catch(() => []);
-  setState({ ready: true, windows, ...(main ? {} : { view: "session" as const }) });
-  if (!main) keepDetachedSelection([]);
+  const layout = await backend.windowLayout().catch(() => ({ mainTabs: [], windows: [] }));
+  let sidebarShown = true;
+  try {
+    sidebarShown = localStorage.getItem("rdp-app:sidebar") !== "0";
+  } catch {
+    /* ignore */
+  }
+  setState({
+    ready: true,
+    mainTabs: layout.mainTabs,
+    windows: layout.windows,
+    sidebarShown,
+    ...(main ? {} : { view: "session" as const }),
+  });
+  if (main) restoreOpenTabs(lib, selectedId);
+  else keepDetachedSelection([]);
   applyTheme(lib.settings.theme, false);
   applyMaterial(lib.settings.windowMaterial);
   backend.onSessionEvent(onSessionEvent);
@@ -104,10 +118,80 @@ export async function initApp(): Promise<void> {
 // Windows: tabs dragged out of the main window
 // ---------------------------------------------------------------------------
 
-function onWindowLayout(windows: WindowTabs[]) {
-  const previous = getState().windows;
-  setState({ windows });
-  if (!isMainWindow()) keepDetachedSelection(previous);
+const TABS_KEY = "rdp-app:open-tabs";
+
+/** Reopens the tabs that were open last time (or, on first run, all connections). */
+function restoreOpenTabs(lib: Library, selectedId: ConnectionId | null) {
+  let ids: ConnectionId[];
+  try {
+    const raw = localStorage.getItem(TABS_KEY);
+    ids = raw ? (JSON.parse(raw) as ConnectionId[]) : lib.connections.map((c) => c.id);
+  } catch {
+    ids = [];
+  }
+  const existing = ids.filter((id) => lib.connections.some((c) => c.id === id));
+  setState({ mainTabs: existing });
+  bg(be().setMainTabs(existing), "restore tabs");
+  const sel = selectedId && existing.includes(selectedId) ? selectedId : (existing[0] ?? null);
+  if (sel) setState({ selectedId: sel, view: "session" });
+}
+
+function persistMainTabs(tabs: ConnectionId[]) {
+  try {
+    localStorage.setItem(TABS_KEY, JSON.stringify(tabs));
+  } catch {
+    /* ignore */
+  }
+}
+
+function onWindowLayout(layout: WindowLayout) {
+  const prev = getState();
+  setState({ mainTabs: layout.mainTabs, windows: layout.windows });
+  if (isMainWindow()) {
+    persistMainTabs(layout.mainTabs);
+    // If the selected tab left the main window (closed or torn off), pick a neighbour.
+    const sel = prev.selectedId;
+    if (sel && !layout.mainTabs.includes(sel) && hostOf(getState(), sel) === null) {
+      const idx = Math.max(0, prev.mainTabs.indexOf(sel));
+      setState({ selectedId: layout.mainTabs[Math.min(idx, layout.mainTabs.length - 1)] ?? null });
+    }
+  } else {
+    keepDetachedSelection(prev.windows);
+  }
+}
+
+/** Opens a connection as a tab (in the main window) and selects it. */
+export function openTab(id: ConnectionId, opts: { connect?: boolean } = {}) {
+  select(id, opts);
+}
+
+/** Closes a connection's tab and disconnects its session. */
+export function closeTab(id: ConnectionId) {
+  const me = windowLabel();
+  // Optimistic: drop the tab now (the backend confirms via onWindowLayout).
+  if (me === "main") {
+    const prev = getState().mainTabs;
+    const idx = prev.indexOf(id);
+    const tabs = prev.filter((t) => t !== id);
+    setState({ mainTabs: tabs });
+    persistMainTabs(tabs);
+    // Closing the selected tab: fall onto a neighbour (or nothing if empty).
+    if (getState().selectedId === id) {
+      const next = tabs[Math.min(Math.max(idx, 0), tabs.length - 1)] ?? null;
+      setState({ selectedId: next });
+      try {
+        if (next) localStorage.setItem(SELECTED_KEY, next);
+      } catch {
+        /* ignore */
+      }
+    }
+  } else {
+    setState({
+      windows: getState().windows.map((w) => (w.label === me ? { ...w, tabs: w.tabs.filter((t) => t !== id) } : w)),
+    });
+  }
+  bg(be().closeTab(id), "close tab");
+  disconnect([id]);
 }
 
 /**
@@ -118,7 +202,7 @@ function keepDetachedSelection(previous: WindowTabs[]) {
   const s = getState();
   const me = windowLabel();
   const tabs = windowTabs(s, me);
-  const before = new Set(windowTabs({ windows: previous }, me));
+  const before = new Set(windowTabs({ windows: previous, mainTabs: [] }, me));
   const arrived = tabs.find((t) => !before.has(t));
   const selectedId = arrived ?? (s.selectedId && tabs.includes(s.selectedId) ? s.selectedId : (tabs[0] ?? null));
   if (selectedId !== s.selectedId) setState({ selectedId, view: "session" });
@@ -149,16 +233,28 @@ export function showTabWindow(id: ConnectionId) {
   bg(be().showTab(id), "show tab");
 }
 
-/** New tab order for this (detached) window. */
+/** New tab order for this window's strip (main or detached). */
 export function reorderWindowTabs(tabs: ConnectionId[]) {
   const me = windowLabel();
-  setState({ windows: getState().windows.map((w) => (w.label === me ? { ...w, tabs } : w)) });
+  if (me === "main") setState({ mainTabs: tabs });
+  else setState({ windows: getState().windows.map((w) => (w.label === me ? { ...w, tabs } : w)) });
   bg(be().reorderWindowTabs(tabs), "reorder tabs");
+}
+
+/** Shows or hides the main window's library sidebar. */
+export function toggleSidebar() {
+  const sidebarShown = !getState().sidebarShown;
+  setState({ sidebarShown });
+  try {
+    localStorage.setItem("rdp-app:sidebar", sidebarShown ? "1" : "0");
+  } catch {
+    /* ignore */
+  }
 }
 
 /** The tabs this window can switch between, in order. */
 function windowOrder(): ConnectionId[] {
-  return isMainWindow() ? flatOrder(getState()) : windowTabs(getState(), windowLabel());
+  return windowTabs(getState(), windowLabel());
 }
 
 /** A tab drag left its strip: a window gets ready in case the tab is torn off. */
@@ -419,11 +515,20 @@ export function updateSettings(patch: Partial<Settings>) {
 // ---------------------------------------------------------------------------
 
 export function select(id: ConnectionId | null, opts: { connect?: boolean } = {}) {
-  // A tab that lives in another window: show it there.
-  if (id && isMainWindow() && hostOf(getState(), id) !== "main") {
-    setState({ selectedId: id, menu: null });
-    showTabWindow(id);
-    return;
+  if (id && isMainWindow()) {
+    const host = hostOf(getState(), id);
+    // Open in another window: show it there.
+    if (host && host !== "main") {
+      setState({ selectedId: id, menu: null });
+      showTabWindow(id);
+      return;
+    }
+    // Not open yet (opened from the library): open it as a main tab.
+    if (!host) {
+      setState({ mainTabs: [...getState().mainTabs, id] });
+      persistMainTabs(getState().mainTabs);
+      bg(be().openTab(id, false), "open tab");
+    }
   }
   const apply = () => setState({ selectedId: id, view: "session", menu: null });
   if (getState().view === "grid") morphView(id, false, apply);

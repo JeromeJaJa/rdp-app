@@ -134,14 +134,12 @@ export interface GroupInput {
 
 export type Theme = "dark" | "light" | "system";
 export type WindowMaterial = "solid" | "acrylic";
-export type TabPlacement = "top" | "left";
 export type Codec = "auto" | "h264" | "remotefx";
 
 export interface Settings {
   theme: Theme;
   /** Experimental: the system acrylic backdrop behind the window's surfaces. */
   windowMaterial: WindowMaterial;
-  tabPlacement: TabPlacement;
   /** Left sidebar width in CSS px. */
   sidebarWidth: number;
   /** Grid tile width in CSS px. */
@@ -190,7 +188,6 @@ export interface Settings {
 export const DEFAULT_SETTINGS: Settings = {
   theme: "dark",
   windowMaterial: "solid",
-  tabPlacement: "left",
   sidebarWidth: 248,
   gridTileWidth: 320,
   gridFilter: "all",
@@ -360,6 +357,12 @@ export interface UiState {
 export interface WindowTabs {
   label: string;
   tabs: ConnectionId[];
+}
+
+/** The full window/tab layout: the main window's open tabs plus any detached windows. */
+export interface WindowLayout {
+  mainTabs: ConnectionId[];
+  windows: WindowTabs[];
 }
 
 /** Progress of the companion auto-install for a connection (experimental). */

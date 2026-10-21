@@ -31,7 +31,7 @@ import {
   select,
   setFullscreen,
   toggleGrid,
-  updateSettings,
+  toggleSidebar,
 } from "../../state/actions";
 import { displayName, getState, isLive, setState, useStore } from "../../state/store";
 import { ConnectIcon, DisconnectIcon } from "../common/SessionIcons";
@@ -146,7 +146,7 @@ interface Item {
 
 function useActions(): Item[] {
   const view = useStore((s) => s.view);
-  const placement = useStore((s) => s.settings.tabPlacement);
+  const sidebarShown = useStore((s) => s.sidebarShown);
   return useMemo(() => {
     const a = (key: string, label: string, icon: ReactNode, run: () => void, hint?: string): Item => ({
       key: `a:${key}`,
@@ -164,17 +164,12 @@ function useActions(): Item[] {
       a("grid", view === "grid" ? "Session view" : "Grid view", view === "grid" ? <SquareStack size={15} /> : <LayoutGrid size={15} />, toggleGrid, "Ctrl G"),
       a("fullscreen", "Fullscreen", <Maximize2 size={15} />, () => setFullscreen(true)),
       a("theme", "Toggle light / dark", <Moon size={15} />, cycleTheme),
-      a(
-        "tabs",
-        placement === "left" ? "Tabs on top" : "Tabs on the left",
-        <PanelLeft size={15} />,
-        () => updateSettings({ tabPlacement: placement === "left" ? "top" : "left" }),
-      ),
+      a("sidebar", sidebarShown ? "Hide the sidebar" : "Show the sidebar", <PanelLeft size={15} />, toggleSidebar),
       a("import", "Import connections", <ArrowDownToLine size={15} />, () => openDialog({ kind: "import" })),
       a("export", "Export connections", <ArrowUpFromLine size={15} />, () => openDialog({ kind: "export" })),
       a("settings", "Settings", <Settings size={15} />, () => openDialog({ kind: "settings" }), "Ctrl ,"),
     ];
-  }, [view, placement]);
+  }, [view, sidebarShown]);
 }
 
 export function CommandPalette() {

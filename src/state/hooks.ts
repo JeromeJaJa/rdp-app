@@ -139,7 +139,7 @@ export function useTabAreaReporter() {
     // Layout changes that leave the window's size alone.
     const unsubscribe = useStore.subscribe((s, prev) => {
       if (
-        s.settings.tabPlacement !== prev.settings.tabPlacement ||
+        s.sidebarShown !== prev.sidebarShown ||
         s.settings.sidebarWidth !== prev.settings.sidebarWidth ||
         s.fullscreen !== prev.fullscreen
       ) {
