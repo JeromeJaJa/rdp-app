@@ -16,6 +16,12 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* The font's line box has more room above the letters than below, which put the name a
+     pixel above the dot and the ×: trim it to the capitals so centring centres them. */
+  text-box: trim-both cap alphabetic;
+  /* Keep descenders (g, y) visible: trimming moves them outside the box. */
+  padding-bottom: 0.25em;
+  margin-bottom: -0.25em;
 }
 
 /* Sidebar row */
