@@ -1,4 +1,16 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type ReactNode,
+  type SetStateAction,
+} from "react";
 import {
   AppWindow,
   ArrowDownToLine,
@@ -73,8 +85,25 @@ interface ItemProps {
   submenu?: ReactNode;
 }
 
+/** Which item of a menu (or submenu) has its submenu open: one at a time per level. */
+const Level = createContext<[string | null, Dispatch<SetStateAction<string | null>>] | null>(null);
+
+function LevelScope({ children }: { children: ReactNode }) {
+  const state = useState<string | null>(null);
+  return <Level.Provider value={state}>{children}</Level.Provider>;
+}
+
+/** How long a submenu stays after the pointer leaves its item: a slow or diagonal move
+ *  towards it (over a gap, or a neighbouring item) still gets there. */
+const CLOSE_DELAY = 300;
+
 function Item({ icon, label, hint, danger, disabled, checked, onSelect, submenu }: ItemProps) {
-  const [open, setOpen] = useState(false);
+  const key = useId();
+  const level = useContext(Level);
+  const [mine, setMine] = useState<string | null>(null);
+  const [openKey, setOpenKey] = level ?? [mine, setMine];
+  const open = openKey === key;
+  const closing = useRef(0);
   const ref = useRef<HTMLDivElement>(null);
   const [flip, setFlip] = useState(false);
 
@@ -83,20 +112,34 @@ function Item({ icon, label, hint, danger, disabled, checked, onSelect, submenu 
     const r = ref.current.getBoundingClientRect();
     setFlip(r.right + 200 > window.innerWidth);
   }, [open]);
+  useEffect(() => () => window.clearTimeout(closing.current), []);
+
+  const show = () => {
+    window.clearTimeout(closing.current);
+    setOpenKey(key);
+  };
+  const hide = () => setOpenKey((k) => (k === key ? null : k));
 
   return (
     <div
       ref={ref}
-      className={`menu__item ${danger ? "is-danger" : ""} ${disabled ? "is-disabled" : ""} ${open ? "is-open" : ""}`}
+      className={`menu__item ${danger ? "is-danger" : ""} ${disabled ? "is-disabled" : ""} ${open ? "is-open" : ""} ${
+        submenu ? "has-sub" : ""
+      } ${flip ? "is-flip" : ""}`}
       role="menuitem"
       aria-disabled={disabled}
-      onMouseEnter={() => submenu && setOpen(true)}
-      onMouseLeave={() => submenu && setOpen(false)}
+      onMouseEnter={() => submenu && show()}
+      onMouseLeave={() => {
+        if (!submenu) return;
+        window.clearTimeout(closing.current);
+        closing.current = window.setTimeout(hide, CLOSE_DELAY);
+      }}
       onClick={(e) => {
         e.stopPropagation();
         if (disabled) return;
         if (submenu) {
-          setOpen((o) => !o);
+          if (open) hide();
+          else show();
           return;
         }
         closeMenu();
@@ -117,7 +160,7 @@ function Submenu({ flip, children }: { flip: boolean; children: ReactNode }) {
   useGlassUnderlay(ref);
   return (
     <div ref={ref} className={`menu menu--sub glass ${flip ? "is-flipped" : ""}`}>
-      {children}
+      <LevelScope>{children}</LevelScope>
     </div>
   );
 }
@@ -402,13 +445,15 @@ function MenuPanel({ menu }: { menu: MenuState }) {
       onMouseDown={(e) => e.stopPropagation()}
       onContextMenu={(e) => e.preventDefault()}
     >
-      {menu.target.kind === "connection" ? (
-        <ConnectionMenu id={menu.target.id} />
-      ) : menu.target.kind === "group" ? (
-        <GroupMenu id={menu.target.id} />
-      ) : (
-        <SelectionMenu ids={menu.target.ids} />
-      )}
+      <LevelScope>
+        {menu.target.kind === "connection" ? (
+          <ConnectionMenu id={menu.target.id} />
+        ) : menu.target.kind === "group" ? (
+          <GroupMenu id={menu.target.id} />
+        ) : (
+          <SelectionMenu ids={menu.target.ids} />
+        )}
+      </LevelScope>
     </div>
   );
 }
