@@ -176,11 +176,14 @@ pattern-matching against it.
 - **Clipboard** (`crates/rdp-clipboard`): CLIPRDR file streaming over OLE `IDataObject`/`IStream`
   on an STA thread, with a direct paste channel. Large transfers are the slow part on a single TCP
   stream — the companion is the real fix.
-- **Companion** (`crates/rdp-companion*`, `rdp-engine/src/companion.rs`): base only. A remote-side
-  binary opens a DVC back to the client for features pure RDP can't do (parallel-stream transfers,
-  native drag). Protocol is in `rdp-companion-proto` (unit-tested framing). **The end-to-end
-  channel is unverified against a live Windows host** — that's the next step, plus auto-deploy of
-  the binary and the transport itself. Enabled by the layered `companion` setting (off by default).
+- **Companion** (`crates/rdp-companion*`, `rdp-engine/src/companion.rs`, `src-tauri/src/companion.rs`):
+  a remote-side binary opens a DVC back to the client for features pure RDP can't do
+  (parallel-stream transfers, native drag). Protocol is in `rdp-companion-proto` (unit-tested
+  framing). The channel, the WinRM install (launched into the user's session via a one-shot
+  scheduled task), self-persistence, and auto-install on connect are verified against a live host.
+  Still to build: a no-WinRM delivery path, and the transfer/drag features themselves. Release
+  builds bundle `rdp-companion.exe` next to the app (`tauri.release.conf.json`). Enabled by the
+  layered `companion` setting (off by default).
 
 ## Conventions and constraints
 
@@ -205,5 +208,5 @@ pattern-matching against it.
 ## What still needs a real Windows host to verify
 
 Unit tests and the test server cover a lot, but these can only be confirmed against real hardware:
-the companion channel end-to-end, RDPDR drive/folder sharing against a Windows host, AVC444 packed
+the companion's trust prompt (UAC), RDPDR drive/folder sharing against a Windows host, AVC444 packed
 by a Windows server (vs. the test server), and the native tab-drag move-loop (needs a real mouse).

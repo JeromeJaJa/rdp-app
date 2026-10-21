@@ -59,15 +59,23 @@ window, and a Server-Sent Events stream of status changes.
 
 ## Development
 
-Requirements: Rust (MSVC toolchain), [Bun](https://bun.sh), Visual Studio C++ build tools, and NASM (recommended, for
-the optimized H.264 decoder build).
+Requirements: Rust (MSVC toolchain), [Bun](https://bun.sh), Visual Studio C++ build tools, and NASM (on `PATH`; without
+it the H.264 decoder quietly builds without its assembly and decodes much slower).
 
 ```sh
 bun install
 bun run tauri dev      # full app
 bun run dev            # UI only, in a browser, with a mock backend and fake sessions
-bun run tauri build    # release build + installer in target/release/bundle/nsis/
+bun run build:release  # release build + installer (with the companion) in target/release/bundle/nsis/
 ```
+
+### CI and releases
+
+Every push to `main` and every pull request is checked on Windows (`.github/workflows/ci.yml`): UI typecheck and
+build, `cargo fmt`, clippy with warnings as errors, and the tests. To publish a release, bump `version` in
+`src-tauri/tauri.conf.json`, then push a matching tag (`git tag v0.1.0 && git push origin v0.1.0`). The release workflow
+builds the installer, a portable zip, and the bare exe, and attaches them to a GitHub release. Running the workflow by
+hand builds the same files as an artifact without publishing.
 
 ### Layout
 
