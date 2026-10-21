@@ -252,6 +252,7 @@ export type SessionEvent =
   /** A companion running on the remote attached to this session. */
   | { type: "companionConnected"; id: ConnectionId; version: string; host: string }
   | { type: "companionDisconnected"; id: ConnectionId }
+  | { type: "companionRefused"; id: ConnectionId; protocol: number }
   /**
    * The server presented a certificate that needs a decision: never seen before
    * (policy "prompt") or different from the one trusted earlier. The connection

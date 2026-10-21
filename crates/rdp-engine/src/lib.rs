@@ -88,6 +88,11 @@ pub enum EngineEvent {
     CompanionDisconnected {
         id: SessionId,
     },
+    /// A companion speaking another protocol (`protocol`) was turned away.
+    CompanionRefused {
+        id: SessionId,
+        protocol: u32,
+    },
     /// A server certificate needs a decision; the connection attempt was refused.
     #[serde(rename_all = "camelCase")]
     Certificate {
@@ -377,7 +382,8 @@ impl Shared {
                 // One-off prompts and companion presence are not part of the snapshot.
                 EngineEvent::Certificate { .. }
                 | EngineEvent::CompanionConnected { .. }
-                | EngineEvent::CompanionDisconnected { .. } => {}
+                | EngineEvent::CompanionDisconnected { .. }
+                | EngineEvent::CompanionRefused { .. } => {}
             }
         }
         (self.events)(event);

@@ -213,6 +213,8 @@ struct CompanionState {
     pending: std::collections::HashSet<String>,
     /// Sessions whose outdated companion we're replacing (once per connection).
     updating: std::collections::HashSet<String>,
+    /// Sessions we installed the companion on this connection.
+    installed: std::collections::HashSet<String>,
 }
 
 impl Core {
@@ -252,6 +254,20 @@ impl Core {
             EngineEvent::CompanionDisconnected { id } => {
                 self.companion.lock().attached.remove(id);
             }
+            EngineEvent::CompanionRefused { id, protocol } => {
+                // Refused again after installing ours: what this app carries is out of date
+                // (a dev build whose companion wasn't rebuilt), so installing won't help.
+                if self.companion.lock().installed.contains(id) {
+                    let exe = crate::companion::companion_exe().map(|p| p.display().to_string());
+                    tracing::warn!(
+                        session = %id,
+                        protocol,
+                        ours = rdp_companion_proto::PROTOCOL_VERSION,
+                        exe = ?exe,
+                        "the companion this app carries speaks another protocol; rebuild it (cargo build -p rdp-companion)"
+                    );
+                }
+            }
             EngineEvent::Status { id, status, .. } => match status {
                 SessionStatus::Connected => self.maybe_install_companion(id.clone()),
                 // Session ended: forget it, so a later connect re-checks from scratch.
@@ -260,6 +276,7 @@ impl Core {
                     c.attached.remove(id);
                     c.pending.remove(id);
                     c.updating.remove(id);
+                    c.installed.remove(id);
                 }
                 _ => {}
             },
@@ -292,7 +309,10 @@ impl Core {
                 tauri::async_runtime::spawn_blocking(move || core.install_companion(&id)).await
             };
             match outcome {
-                Ok(Ok(crate::companion::Outcome::Installed)) => {} // the attach event will follow
+                Ok(Ok(crate::companion::Outcome::Installed)) => {
+                    // The attach event will follow.
+                    core.companion.lock().installed.insert(id.clone());
+                }
                 Ok(Ok(crate::companion::Outcome::NeedsTrust)) => {
                     let host = core.store.lock().credentials(&id).map(|c| c.host).unwrap_or_default();
                     core.emit_companion("needs-trust", &id, Some(&host));
@@ -533,6 +553,11 @@ impl Core {
             password: creds.password,
         };
         let exe = crate::companion::companion_exe()?;
+        tracing::info!(
+            exe = %exe.display(),
+            build = ?crate::companion::bundled_build(),
+            "installing the companion"
+        );
         crate::companion::install_over_winrm(&target, &exe)
     }
 

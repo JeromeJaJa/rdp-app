@@ -30,6 +30,10 @@ pub(crate) enum Update {
         host: String,
         build: String,
     },
+    /// A companion speaking another protocol said hello and was turned away.
+    Refused {
+        protocol: u32,
+    },
     Disconnected,
 }
 
@@ -178,10 +182,16 @@ impl CompanionChannel {
                 ..
             } => {
                 if protocol != PROTOCOL_VERSION {
-                    tracing::info!(%version, protocol, "companion speaks another protocol; refusing it");
+                    tracing::info!(
+                        %version,
+                        protocol,
+                        ours = PROTOCOL_VERSION,
+                        "companion speaks another protocol; refusing it"
+                    );
                     out.push(frame(&Message::Refused {
                         reason: format!("client speaks protocol {PROTOCOL_VERSION}, companion {protocol}"),
                     }));
+                    self.report(Update::Refused { protocol });
                     return;
                 }
                 self.connected = true;

@@ -972,6 +972,9 @@ async fn active(
                                 crate::companion::Update::Connected { version, host, build } => {
                                     EngineEvent::CompanionConnected { id: s.id.clone(), version, host, build }
                                 }
+                                crate::companion::Update::Refused { protocol } => {
+                                    EngineEvent::CompanionRefused { id: s.id.clone(), protocol }
+                                }
                                 crate::companion::Update::Disconnected => {
                                     EngineEvent::CompanionDisconnected { id: s.id.clone() }
                                 }
