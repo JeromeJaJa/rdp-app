@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import type { Backend, Unsubscribe } from "./types";
 import {
@@ -52,6 +53,22 @@ function subscribe<T>(event: string, cb: (payload: T) => void, onReady?: () => v
       onReady?.();
     }
   });
+  return () => {
+    disposed = true;
+    unlisten?.();
+  };
+}
+
+/** Like `subscribe`, but for events sent to this one window only (`emit_to`). */
+function subscribeThisWindow<T>(event: string, cb: (payload: T) => void): Unsubscribe {
+  let disposed = false;
+  let unlisten: UnlistenFn | null = null;
+  getCurrentWebviewWindow()
+    .listen<T>(event, (e) => cb(e.payload))
+    .then((fn) => {
+      if (disposed) fn();
+      else unlisten = fn;
+    });
   return () => {
     disposed = true;
     unlisten?.();
@@ -240,21 +257,11 @@ export class TauriBackend implements Backend {
   }
 
   onSelectTab(cb: (id: ConnectionId) => void): Unsubscribe {
-    // Sent to one window only: listen on this window, not on every target.
-    let disposed = false;
-    let unlisten: (() => void) | null = null;
-    import("@tauri-apps/api/webviewWindow").then(({ getCurrentWebviewWindow }) =>
-      getCurrentWebviewWindow()
-        .listen<ConnectionId>("select-tab", (e) => cb(e.payload))
-        .then((fn) => {
-          if (disposed) fn();
-          else unlisten = fn;
-        }),
-    );
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
+    return subscribeThisWindow<ConnectionId>("select-tab", cb);
+  }
+
+  onDockPreview(cb: (index: number | null) => void): Unsubscribe {
+    return subscribeThisWindow<number | null>("dock-preview", cb);
   }
 
   moveTab(id: ConnectionId, target: string, index?: number): Promise<void> {
@@ -277,8 +284,8 @@ export class TauriBackend implements Backend {
     return invoke("window_set_material", { acrylic, dark });
   }
 
-  setTabArea(rects: number[][]): Promise<void> {
-    return invoke("window_set_tab_area", { rects });
+  setTabArea(areas: number[][], slots: number[][]): Promise<void> {
+    return invoke("window_set_tab_area", { areas, slots });
   }
 
   detachTab(id: ConnectionId): Promise<string> {

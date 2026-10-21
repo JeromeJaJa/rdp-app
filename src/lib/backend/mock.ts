@@ -816,6 +816,10 @@ export class MockBackend implements Backend {
     return () => {};
   }
 
+  onDockPreview(_cb: (index: number | null) => void): Unsubscribe {
+    return () => {};
+  }
+
   async moveTab(): Promise<void> {}
 
   async prepareWindow(): Promise<void> {}

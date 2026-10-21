@@ -104,6 +104,8 @@ export async function initApp(): Promise<void> {
     if (!isMainWindow()) keepDetachedSelection(getState().windows);
   });
   backend.onWindowLayout(onWindowLayout);
+  // A tab dragged over this window's strip opens a gap where it would land (Chrome-style).
+  backend.onDockPreview((dockPreview) => setState({ dockPreview }));
   if (main) {
     // The REST API drives (and reads) the main window.
     backend.onUiCommand(onUiCommand);

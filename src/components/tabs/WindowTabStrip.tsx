@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from "react";
+import { Fragment, memo, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   closestCenter,
@@ -30,6 +30,8 @@ function WindowTabStripInner() {
   const label = windowLabel();
   const main = isMainWindow();
   const tabs = useStore(useShallow((s) => windowTabs(s, label)));
+  // A tab from another window is being dragged over this strip: open a gap where it'd land.
+  const dock = useStore((s) => s.dockPreview);
   const [activeId, setActiveId] = useState<string | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const tear = useTearOff(pastTitlebar);
@@ -93,9 +95,13 @@ function WindowTabStripInner() {
           >
             <div className="top-seg">
               <SortableContext items={tabs} strategy={horizontalListSortingStrategy}>
-                {tabs.map((id) => (
-                  <TabItem key={id} id={id} variant="top" onClose={() => closeTab(id)} />
+                {tabs.map((id, i) => (
+                  <Fragment key={id}>
+                    {dock === i && <span className="top-dock-gap" aria-hidden />}
+                    <TabItem id={id} variant="top" onClose={() => closeTab(id)} />
+                  </Fragment>
                 ))}
+                {dock !== null && dock >= tabs.length && <span className="top-dock-gap" aria-hidden />}
               </SortableContext>
             </div>
             {createPortal(

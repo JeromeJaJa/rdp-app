@@ -117,6 +117,11 @@ export interface Backend {
   onWindowLayout(cb: (layout: WindowLayout) => void): Unsubscribe;
   /** Another window asked this one to show a tab. */
   onSelectTab(cb: (id: ConnectionId) => void): Unsubscribe;
+  /**
+   * A tab is being dragged over this window's strip: `index` is where it would land (a gap
+   * opens there, Chrome-style), or `null` when it leaves.
+   */
+  onDockPreview(cb: (index: number | null) => void): Unsubscribe;
   /** Opens a connection as a tab in the main window (or focuses it if already open). */
   openTab(id: ConnectionId, select: boolean): Promise<void>;
   /** Closes a connection's tab (the session is disconnected separately). */
@@ -137,8 +142,11 @@ export interface Backend {
   dragWindow(): Promise<string>;
   /** This window's material: solid, or the acrylic backdrop (experimental). `dark` tints it. */
   setWindowMaterial(acrylic: boolean, dark: boolean): Promise<void>;
-  /** Where this window shows its tabs, as [x, y, width, height] rects in CSS px. */
-  setTabArea(rects: number[][]): Promise<void>;
+  /**
+   * Where this window shows its tabs, as [x, y, width, height] rects in CSS px: `areas` are
+   * the drop targets (title bar, sidebar), `slots` the individual tabs in order.
+   */
+  setTabArea(areas: number[][], slots: number[][]): Promise<void>;
   /** Opens a new window holding the tab, next to this one. */
   detachTab(id: ConnectionId): Promise<string>;
   /** New tab order for this (detached) window. */

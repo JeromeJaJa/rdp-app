@@ -252,10 +252,16 @@ fn window_set_material(window: tauri::WebviewWindow, acrylic: bool, dark: bool) 
     let _ = (window, acrylic, dark);
 }
 
-/// Where the calling window shows its tabs (CSS px): where a dragged tab can join it.
+/// Where the calling window shows its tabs (CSS px): `areas` are drop targets (title bar,
+/// sidebar), `slots` the individual top-strip tabs in order (for the live insertion point).
 #[tauri::command]
-fn window_set_tab_area(window: tauri::Window, state: State<'_, AppState>, rects: Vec<tearoff::Rect>) {
-    state.tearoff.set_tab_area(window.label(), rects);
+fn window_set_tab_area(
+    window: tauri::Window,
+    state: State<'_, AppState>,
+    areas: Vec<tearoff::Rect>,
+    slots: Vec<tearoff::Rect>,
+) {
+    state.tearoff.set_tab_area(window.label(), areas, slots);
 }
 
 #[tauri::command]

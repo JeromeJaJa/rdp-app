@@ -118,17 +118,24 @@ export function useTabAreaReporter() {
     if (!isTauri()) return;
     let last = "";
     let frame = 0;
+    const rectOf = (el: Element) => {
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0 ? [[r.x, r.y, r.width, r.height].map(Math.round)] : [];
+    };
     const report = () => {
       frame = 0;
-      const rects = [".titlebar", ".sidebar"].flatMap((selector) => {
-        const r = document.querySelector(selector)?.getBoundingClientRect();
-        return r && r.width > 0 && r.height > 0 ? [[r.x, r.y, r.width, r.height].map(Math.round)] : [];
+      // Drop targets: the whole title bar and (main window) the library sidebar.
+      const areas = [".titlebar", ".sidebar"].flatMap((sel) => {
+        const el = document.querySelector(sel);
+        return el ? rectOf(el) : [];
       });
-      const key = JSON.stringify(rects);
+      // The individual tabs, in order: where a dragged tab would slot in.
+      const slots = Array.from(document.querySelectorAll(".top-tabs .tab--top")).flatMap(rectOf);
+      const key = JSON.stringify([areas, slots]);
       if (key === last) return;
       last = key;
       be()
-        .setTabArea(rects)
+        .setTabArea(areas, slots)
         .catch(() => {});
     };
     const schedule = () => {
@@ -136,12 +143,14 @@ export function useTabAreaReporter() {
     };
     const ro = new ResizeObserver(schedule);
     ro.observe(document.body);
-    // Layout changes that leave the window's size alone.
+    // Layout changes that leave the window's size alone (incl. the tab set/order).
     const unsubscribe = useStore.subscribe((s, prev) => {
       if (
         s.sidebarShown !== prev.sidebarShown ||
         s.settings.sidebarWidth !== prev.settings.sidebarWidth ||
-        s.fullscreen !== prev.fullscreen
+        s.fullscreen !== prev.fullscreen ||
+        s.mainTabs !== prev.mainTabs ||
+        s.windows !== prev.windows
       ) {
         schedule();
       }

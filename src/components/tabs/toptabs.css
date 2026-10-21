@@ -58,6 +58,28 @@
   width: 1px;
   background: var(--border-strong);
 }
+/* The slot a tab from another window would drop into, opened live as it's dragged over. */
+.top-dock-gap {
+  flex: none;
+  align-self: center;
+  width: 108px;
+  height: 28px;
+  border-radius: 7px;
+  background: color-mix(in oklab, var(--accent) 16%, transparent);
+  box-shadow: inset 0 0 0 1.5px color-mix(in oklab, var(--accent) 55%, transparent);
+  animation: top-dock-grow var(--t-fast) cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes top-dock-grow {
+  from {
+    width: 0;
+    opacity: 0;
+  }
+  to {
+    width: 108px;
+    opacity: 1;
+  }
+}
+
 .top-seg.is-empty {
   min-width: 60px;
   border: 1px dashed var(--border-strong);
