@@ -242,12 +242,12 @@ export class TauriBackend implements Backend {
     return invoke("companion_trust_host", { id, host });
   }
 
-  hostStats(): Promise<Record<ConnectionId, HostStats>> {
+  hostStats(): Promise<Record<ConnectionId, HostStats[]>> {
     return invoke("host_stats");
   }
 
-  onHostStats(cb: (id: ConnectionId, stats: HostStats | null) => void): Unsubscribe {
-    return subscribe<{ id: ConnectionId; stats: HostStats | null }>("host-stats", (e) => cb(e.id, e.stats));
+  onHostStats(cb: (id: ConnectionId, samples: HostStats[] | null) => void): Unsubscribe {
+    return subscribe<{ id: ConnectionId; samples: HostStats[] | null }>("host-stats", (e) => cb(e.id, e.samples));
   }
 
   sendFiles(ids: ConnectionId[], paths: string[], folder: string): Promise<number[]> {

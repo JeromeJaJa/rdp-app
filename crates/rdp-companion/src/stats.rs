@@ -2,8 +2,8 @@
 //!
 //! Plain system calls only (no performance counters, which load a pile of DLLs and are
 //! slow to open): a sample costs microseconds, and the thread sleeps in between. Rates
-//! are averaged over the time since the previous sample, so a long interval still
-//! reports the load in between rather than a single instant.
+//! are averaged over the time since the previous sample. Samples are taken every few
+//! seconds and sent together at the client's interval.
 
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::time::{Duration, Instant};
@@ -29,6 +29,9 @@ use crate::channel::Channel;
 /// The first sample goes out this soon after an interval is set, so the client has
 /// something to show right away.
 const FIRST_SAMPLE: Duration = Duration::from_secs(1);
+/// The host is sampled this often; samples go to the client in a batch at the interval it
+/// asked for, so trend lines get detail without more messages.
+const SAMPLE_EVERY: Duration = Duration::from_secs(5);
 const DRIVE_FIXED: u32 = 3;
 
 #[derive(Default)]
@@ -77,42 +80,51 @@ impl Drop for Stats {
 fn run(channel: &Channel, control: &(Mutex<Control>, Condvar)) {
     let (lock, changed) = control;
     let mut sampler = Sampler::new();
-    let mut next: Option<Instant> = None;
+    let mut batch: Vec<HostStats> = Vec::new();
+    let mut next_sample: Option<Instant> = None;
+    let mut next_send: Option<Instant> = None;
     let mut state = lock.lock().unwrap_or_else(PoisonError::into_inner);
     loop {
         if state.stop {
             return;
         }
         if std::mem::take(&mut state.changed) {
-            // A new interval: sample soon (the baseline is reset so the first sample
+            // A new interval: the first sample goes out soon (the baseline is reset so it
             // covers a short, recent span rather than the time spent off).
-            next = state.interval.map(|_| Instant::now() + FIRST_SAMPLE);
             sampler = Sampler::new();
+            batch.clear();
+            let first = state.interval.map(|_| Instant::now() + FIRST_SAMPLE);
+            next_sample = first;
+            next_send = first;
         }
+        let Some(interval) = state.interval else {
+            state = changed.wait(state).unwrap_or_else(PoisonError::into_inner);
+            continue;
+        };
         let now = Instant::now();
-        match next {
-            None => {
-                state = changed.wait(state).unwrap_or_else(PoisonError::into_inner);
-            }
-            Some(at) if at > now => {
-                state = changed
-                    .wait_timeout(state, at - now)
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .0;
-            }
-            Some(_) => {
-                let interval = state.interval;
-                drop(state);
-                let sample = sampler.sample();
-                if !channel.send(&Message::Stats(sample)) {
-                    return;
-                }
-                state = lock.lock().unwrap_or_else(PoisonError::into_inner);
-                if !state.changed {
-                    next = interval.map(|i| Instant::now() + i);
-                }
-            }
+        let wake = match (next_sample, next_send) {
+            (Some(a), Some(b)) => a.min(b),
+            (a, b) => a.or(b).unwrap_or(now),
+        };
+        if wake > now {
+            state = changed
+                .wait_timeout(state, wake - now)
+                .unwrap_or_else(PoisonError::into_inner)
+                .0;
+            continue;
         }
+        drop(state);
+        if next_sample.is_some_and(|at| at <= now) {
+            batch.push(sampler.sample());
+            next_sample = Some(now + SAMPLE_EVERY.min(interval));
+        }
+        if next_send.is_some_and(|at| at <= now) {
+            if !batch.is_empty() && !channel.send(&Message::Stats(std::mem::take(&mut batch))) {
+                return;
+            }
+            next_send = Some(now + interval);
+        }
+        state = lock.lock().unwrap_or_else(PoisonError::into_inner);
     }
 }
 

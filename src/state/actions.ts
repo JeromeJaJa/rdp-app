@@ -107,7 +107,7 @@ export async function initApp(): Promise<void> {
   backend.onSessionEvent(onSessionEvent);
   backend.onHostStats(onHostStats);
   void backend.hostStats().then((all) => {
-    for (const [id, stats] of Object.entries(all)) onHostStats(id, stats);
+    for (const [id, samples] of Object.entries(all)) onHostStats(id, samples);
   });
   backend.onTransfer(onTransfer);
   void backend.transfers().then((all) => all.forEach(onTransfer));
@@ -665,26 +665,24 @@ export function toggleGrid() {
 // Companion: host stats and file sends
 // ---------------------------------------------------------------------------
 
-function onHostStats(id: ConnectionId, stats: HostStats | null) {
+function onHostStats(id: ConnectionId, samples: HostStats[] | null) {
   setState((s) => {
     const next = { ...s.stats };
-    if (!stats) {
+    if (!samples) {
       if (!(id in next)) return {};
       delete next[id];
       return { stats: next };
     }
+    if (!samples.length) return {};
     const prev = s.stats[id];
-    const push = (history: number[] | undefined, value: number) => {
-      const out = history ? history.slice(-(VITALS_HISTORY - 1)) : [];
-      out.push(value);
-      return out;
-    };
+    const add = (history: number[] | undefined, values: number[]) =>
+      [...(history ?? []), ...values].slice(-VITALS_HISTORY);
     next[id] = {
-      latest: stats,
-      cpu: push(prev?.cpu, stats.cpu),
-      mem: push(prev?.mem, stats.memTotal ? (stats.memUsed / stats.memTotal) * 100 : 0),
-      disk: push(prev?.disk, stats.diskBusy ?? 0),
-      net: push(prev?.net, stats.netRx + stats.netTx),
+      latest: samples[samples.length - 1],
+      cpu: add(prev?.cpu, samples.map((x) => x.cpu)),
+      mem: add(prev?.mem, samples.map((x) => (x.memTotal ? (x.memUsed / x.memTotal) * 100 : 0))),
+      disk: add(prev?.disk, samples.map((x) => x.diskBusy ?? 0)),
+      net: add(prev?.net, samples.map((x) => x.netRx + x.netTx)),
     };
     return { stats: next };
   });

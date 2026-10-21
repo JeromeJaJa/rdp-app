@@ -114,10 +114,13 @@ export interface Backend {
   companionTrustHost(id: ConnectionId, host: string): Promise<string>;
 
   // ── Companion: host stats and file sends ───────────────────────────────
-  /** Latest host stats of each session whose companion reports them. */
-  hostStats(): Promise<Record<ConnectionId, HostStats>>;
-  /** A session's companion reported its host's load (null: it stopped reporting). */
-  onHostStats(cb: (id: ConnectionId, stats: HostStats | null) => void): Unsubscribe;
+  /** Recent host stats (oldest first) of each session whose companion reports them. */
+  hostStats(): Promise<Record<ConnectionId, HostStats[]>>;
+  /**
+   * A session's companion reported its host's load: the samples taken since its last report,
+   * oldest first (null: it stopped reporting).
+   */
+  onHostStats(cb: (id: ConnectionId, samples: HostStats[] | null) => void): Unsubscribe;
   /**
    * Sends files and folders to connections, into `folder` on each remote ("Desktop",
    * "Downloads", "Documents", one of those with a subfolder, or a full path). Connections

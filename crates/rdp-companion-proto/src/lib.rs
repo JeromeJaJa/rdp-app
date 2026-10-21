@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 pub const CHANNEL_NAME: &str = "RdpApp::Companion";
 
 /// Bumped on any breaking change to [`Message`]. Both sides send it in the handshake.
-pub const PROTOCOL_VERSION: u32 = 2;
+pub const PROTOCOL_VERSION: u32 = 3;
 
 /// A frame larger than this is treated as a desync and ends the channel, rather than
 /// buffering without bound.
@@ -139,8 +139,9 @@ pub enum Message {
     StatsInterval {
         secs: u32,
     },
-    /// Companion → client: one sample.
-    Stats(HostStats),
+    /// Companion → client: the samples taken since the last report, oldest first (the
+    /// host is sampled every few seconds, and reported at the interval).
+    Stats(Vec<HostStats>),
 
     /// Source → sink: files on offer as transfer `id`. Ids are picked by whoever offers:
     /// even on the client, odd on the companion, so they never collide.
@@ -375,7 +376,7 @@ mod tests {
                 reason: "old protocol".into(),
             },
             Message::StatsInterval { secs: 30 },
-            Message::Stats(HostStats {
+            Message::Stats(vec![HostStats {
                 span: 30.0,
                 cpu: 12.5,
                 mem_used: 3 << 30,
@@ -386,7 +387,7 @@ mod tests {
                     total: 2 << 30,
                 }],
                 ..Default::default()
-            }),
+            }]),
             Message::Offer {
                 id: 2,
                 entries: vec![Entry {

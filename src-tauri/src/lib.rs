@@ -418,10 +418,10 @@ fn transfers(state: State<'_, AppState>) -> Vec<companion_link::TransferView> {
     state.core.companions.transfers()
 }
 
-/// The latest host stats per session (for a UI that just loaded).
+/// Recent host stats per session, oldest first (for a window that just loaded).
 #[tauri::command]
-fn host_stats(state: State<'_, AppState>) -> std::collections::HashMap<String, companion_link::StatsView> {
-    state.core.companions.stats()
+fn host_stats(state: State<'_, AppState>) -> std::collections::HashMap<String, Vec<companion_link::StatsView>> {
+    state.core.companions.stats_history()
 }
 
 /// Installs the companion on a connection's host over WinRM (experimental, manual trigger).

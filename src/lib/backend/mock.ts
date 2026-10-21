@@ -249,8 +249,8 @@ export class MockBackend implements Backend {
   private listeners = new Set<(e: SessionEvent) => void>();
   private sessions = new Map<ConnectionId, SessionSim>();
   /** Simulated companions: host load per connected session, and file sends. */
-  private stats = new Map<ConnectionId, HostStats>();
-  private statsListeners = new Set<(id: ConnectionId, stats: HostStats | null) => void>();
+  private stats = new Map<ConnectionId, HostStats[]>();
+  private statsListeners = new Set<(id: ConnectionId, samples: HostStats[] | null) => void>();
   private statsTimer: ReturnType<typeof setInterval> | undefined;
   private transfersById = new Map<number, Transfer>();
   private transferListeners = new Set<(t: Transfer) => void>();
@@ -758,7 +758,8 @@ export class MockBackend implements Backend {
 
   /** A random walk per host, sampled faster than a real one so the UI moves. */
   private sampleStats(id: ConnectionId) {
-    const prev = this.stats.get(id);
+    const history = this.stats.get(id) ?? [];
+    const prev = history[history.length - 1];
     const walk = (v: number, step: number, lo: number, hi: number) =>
       Math.min(hi, Math.max(lo, v + (Math.random() - 0.5) * step));
     const memTotal = prev?.memTotal ?? [8, 16, 32, 64][Math.floor(Math.random() * 4)] * 2 ** 30;
@@ -779,8 +780,8 @@ export class MockBackend implements Backend {
         ...(Math.random() > 0.5 ? [{ name: "D:", total: 1024 * 2 ** 30, free: 600 * 2 ** 30 }] : []),
       ],
     };
-    this.stats.set(id, next);
-    this.statsListeners.forEach((cb) => cb(id, next));
+    this.stats.set(id, [...history.slice(-119), next]);
+    this.statsListeners.forEach((cb) => cb(id, [next]));
   }
 
   private startStats() {
@@ -793,11 +794,11 @@ export class MockBackend implements Backend {
     if (this.stats.delete(id)) this.statsListeners.forEach((cb) => cb(id, null));
   }
 
-  async hostStats(): Promise<Record<ConnectionId, HostStats>> {
+  async hostStats(): Promise<Record<ConnectionId, HostStats[]>> {
     return Object.fromEntries(this.stats);
   }
 
-  onHostStats(cb: (id: ConnectionId, stats: HostStats | null) => void): Unsubscribe {
+  onHostStats(cb: (id: ConnectionId, samples: HostStats[] | null) => void): Unsubscribe {
     this.statsListeners.add(cb);
     return () => this.statsListeners.delete(cb);
   }

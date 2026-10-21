@@ -37,8 +37,8 @@ export interface Vitals {
   net: number[];
 }
 
-/** Samples of history kept per host (20 minutes at the default 30 s). */
-export const VITALS_HISTORY = 40;
+/** Samples of history kept per host (10 minutes: companions sample every 5 s). */
+export const VITALS_HISTORY = 120;
 
 export type View = "session" | "grid";
 

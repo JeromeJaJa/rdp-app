@@ -6,7 +6,7 @@
 //! on this PC), and receives the files copied on the remote when they're pasted here.
 //! Transfers use [`rdp_companion_proto::transfer`] on both ends.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak, mpsc};
@@ -18,6 +18,9 @@ use rdp_companion_proto::{Entry, HostStats, Intent, Message};
 use rdp_engine::{CompanionHandler, CompanionHost, CompanionLink, Engine, InputEvent};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
+
+/// Samples of host stats kept per session (10 minutes at the companion's 5 s sampling).
+const STATS_HISTORY: usize = 120;
 
 /// How long a paste waits for the companion to list what the remote copied.
 const LIST_WAIT: Duration = Duration::from_secs(30);
@@ -153,7 +156,8 @@ pub struct Companions {
     /// For pressing and moving the remote pointer during drags.
     engine: Engine,
     attached: Mutex<HashMap<String, Arc<Attached>>>,
-    stats: Mutex<HashMap<String, StatsView>>,
+    /// Recent host stats per session, oldest first (enough for the trend lines).
+    stats: Mutex<HashMap<String, VecDeque<StatsView>>>,
     transfers: Arc<Mutex<HashMap<u64, TransferView>>>,
     next_id: AtomicU64,
     interval: Mutex<Option<IntervalSource>>,
@@ -196,7 +200,20 @@ impl Companions {
 
     /// Latest host stats per session.
     pub fn stats(&self) -> HashMap<String, StatsView> {
-        self.stats.lock().clone()
+        self.stats
+            .lock()
+            .iter()
+            .filter_map(|(id, history)| Some((id.clone(), history.back()?.clone())))
+            .collect()
+    }
+
+    /// Recent host stats per session, oldest first.
+    pub fn stats_history(&self) -> HashMap<String, Vec<StatsView>> {
+        self.stats
+            .lock()
+            .iter()
+            .map(|(id, history)| (id.clone(), history.iter().cloned().collect()))
+            .collect()
     }
 
     /// Sends in progress or recently finished.
@@ -218,7 +235,7 @@ impl Companions {
             if secs == 0 && self.stats.lock().remove(&a.session).is_some() {
                 let _ = self
                     .app
-                    .emit("host-stats", serde_json::json!({ "id": a.session, "stats": null }));
+                    .emit("host-stats", serde_json::json!({ "id": a.session, "samples": null }));
             }
         }
     }
@@ -545,12 +562,19 @@ impl CompanionHost for Companions {
 impl Companions {
     fn on_message(&self, attached: &Arc<Attached>, message: Message) {
         match message {
-            Message::Stats(stats) => {
-                let view = StatsView::new(stats);
-                self.stats.lock().insert(attached.session.clone(), view.clone());
+            Message::Stats(samples) => {
+                let views: Vec<StatsView> = samples.into_iter().map(StatsView::new).collect();
+                {
+                    let mut stats = self.stats.lock();
+                    let history = stats.entry(attached.session.clone()).or_default();
+                    history.extend(views.iter().cloned());
+                    while history.len() > STATS_HISTORY {
+                        history.pop_front();
+                    }
+                }
                 let _ = self.app.emit(
                     "host-stats",
-                    serde_json::json!({ "id": attached.session, "stats": view }),
+                    serde_json::json!({ "id": attached.session, "samples": views }),
                 );
             }
             Message::Fetch { .. } | Message::Ack { .. } => {
@@ -633,7 +657,7 @@ impl Companions {
             if self.stats.lock().remove(&attached.session).is_some() {
                 let _ = self.app.emit(
                     "host-stats",
-                    serde_json::json!({ "id": attached.session, "stats": null }),
+                    serde_json::json!({ "id": attached.session, "samples": null }),
                 );
             }
         }
