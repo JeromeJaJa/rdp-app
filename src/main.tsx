@@ -9,6 +9,22 @@ import { DetachedApp } from "./DetachedApp";
 import { initApp } from "./state/actions";
 import { isMainWindow, isTauri } from "./lib/env";
 
+// No browser context menu (Back, Reload, Inspect…) anywhere: the app has its own menus.
+// Text fields keep theirs for cut / copy / paste.
+const TEXT_INPUTS = new Set(["text", "search", "password", "email", "url", "tel", "number"]);
+document.addEventListener(
+  "contextmenu",
+  (e) => {
+    const t = e.target;
+    const editable =
+      t instanceof HTMLTextAreaElement ||
+      (t instanceof HTMLInputElement && TEXT_INPUTS.has(t.type)) ||
+      (t instanceof HTMLElement && t.isContentEditable);
+    if (!editable) e.preventDefault();
+  },
+  { capture: true },
+);
+
 async function boot() {
   try {
     await initApp();
