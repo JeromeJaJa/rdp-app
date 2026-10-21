@@ -1,7 +1,7 @@
 import { closeDialog, confirm, deleteConnections, setConnectionSettings, toast, updateConnection } from "../../state/actions";
 import { displayName, useConnection } from "../../state/store";
 import { resolveGroup } from "./AddDialog";
-import { ConnectionForm, type ConnectionFormValues } from "./ConnectionForm";
+import { CONNECTION_FORM_WIDTH, ConnectionForm, type ConnectionFormValues } from "./ConnectionForm";
 import { Dialog } from "./Dialog";
 
 export function EditDialog({ id }: { id: string }) {
@@ -30,7 +30,7 @@ export function EditDialog({ id }: { id: string }) {
   };
 
   return (
-    <Dialog title="Edit connection" width={500} bare>
+    <Dialog title="Edit connection" width={CONNECTION_FORM_WIDTH} bare>
       <ConnectionForm
         initial={conn}
         submitLabel="Save"

@@ -31,6 +31,9 @@ export interface ConnectionFormValues {
   settings: SettingOverrides;
 }
 
+/** Dialog width for the form: its fields, and the connection's settings beside them. */
+export const CONNECTION_FORM_WIDTH = 900;
+
 /** Without a Domain field, the domain is shown and edited as `DOMAIN\user`. */
 const joinUser = (domain: string, user: string) => (domain && !FEATURES.domainField ? `${domain}\\${user}` : user);
 function splitUser(value: string, domain: string): [domain: string, user: string] {
@@ -79,7 +82,6 @@ export function ConnectionForm({
   const [newGroupName, setNewGroupName] = useState("");
   const [notes, setNotes] = useState(initial?.notes ?? "");
   const [overrides, setOverrides] = useState<SettingOverrides>(initial?.settings ?? {});
-  const [overridesOpen, setOverridesOpen] = useState(false);
   const appSettings = useStore((s) => s.settings);
   const groupOverrides = useStore((s) =>
     group === NEW_GROUP ? undefined : s.groups.find((g) => g.id === group)?.settings,
@@ -174,7 +176,11 @@ export function ConnectionForm({
 
   return (
     <form className="dialog__form" onSubmit={submit} noValidate>
-      <div className="dialog__body form-grid">
+      <div className="dialog__body conn-form">
+        <div className="conn-form__main form-grid">
+        <Field label="Group" hint={err("group")} className="span-2">
+          <GroupSelect value={group} onChange={setGroup} newName={newGroupName} onNewName={setNewGroupName} />
+        </Field>
         <Field label="Name" hint={!name ? "Optional — defaults to the host" : undefined} className="span-2">
           <TextInput value={name} placeholder={host || "e.g. Web server 1"} onChange={(e) => setName(e.target.value)} />
         </Field>
@@ -279,9 +285,6 @@ export function ConnectionForm({
             </button>
           </div>
         </Field>
-        <Field label="Group" hint={err("group")} className="span-2">
-          <GroupSelect value={group} onChange={setGroup} newName={newGroupName} onNewName={setNewGroupName} />
-        </Field>
         {FEATURES.gateway && (
         <div className="span-2 disclosure">
           <button type="button" className={`disclosure__head ${gwOpen ? "is-open" : ""}`} onClick={() => setGwOpen((o) => !o)}>
@@ -329,33 +332,6 @@ export function ConnectionForm({
           )}
         </div>
         )}
-        <div className="span-2 disclosure">
-          <button
-            type="button"
-            className={`disclosure__head ${overridesOpen ? "is-open" : ""}`}
-            onClick={() => setOverridesOpen((o) => !o)}
-          >
-            <ChevronRight size={13} className="disclosure__chevron" />
-            <span className="disclosure__title">Settings</span>
-            <span className="disclosure__summary">
-              {overrideCount(overrides)
-                ? `${overrideCount(overrides)} changed for this connection`
-                : groupHasOverrides
-                  ? "Same as its group"
-                  : "Same as the app"}
-            </span>
-          </button>
-          {overridesOpen && (
-            <div className="disclosure__body">
-              <OverridesEditor
-                value={overrides}
-                onChange={setOverrides}
-                inherited={inherited}
-                inheritedFrom={groupHasOverrides ? "the group" : "the app settings"}
-              />
-            </div>
-          )}
-        </div>
         <Field label="Notes" className="span-2">
           <textarea
             className="textarea"
@@ -365,6 +341,25 @@ export function ConnectionForm({
             onChange={(e) => setNotes(e.target.value)}
           />
         </Field>
+        </div>
+        <aside className="conn-form__settings" aria-label="Settings for this connection">
+          <div className="conn-form__settings-head">
+            <span className="conn-form__settings-title">Settings</span>
+            <span className="conn-form__settings-summary">
+              {overrideCount(overrides)
+                ? `${overrideCount(overrides)} changed for this connection`
+                : groupHasOverrides
+                  ? "Same as its group"
+                  : "Same as the app"}
+            </span>
+          </div>
+          <OverridesEditor
+            value={overrides}
+            onChange={setOverrides}
+            inherited={inherited}
+            inheritedFrom={groupHasOverrides ? "the group" : "the app settings"}
+          />
+        </aside>
       </div>
       <div className="dialog__footer">
         {onDelete && (

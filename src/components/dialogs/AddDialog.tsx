@@ -4,7 +4,7 @@ import { getState } from "../../state/store";
 import { DEFAULT_GROUP_ID, type GroupId } from "../../lib/types";
 import { Segmented } from "../ui/ui";
 import { BulkForm, type BulkSubmit } from "./BulkForm";
-import { ConnectionForm, type ConnectionFormValues } from "./ConnectionForm";
+import { CONNECTION_FORM_WIDTH, ConnectionForm, type ConnectionFormValues } from "./ConnectionForm";
 import { Dialog } from "./Dialog";
 import { NEW_GROUP } from "./GroupSelect";
 
@@ -65,7 +65,7 @@ export function AddDialog({ mode: initialMode, groupId }: { mode: "single" | "bu
   return (
     <Dialog
       title={mode === "single" ? "New connection" : "Bulk add"}
-      width={mode === "single" ? 500 : 680}
+      width={mode === "single" ? CONNECTION_FORM_WIDTH : 680}
       bare
       headerExtra={
         <Segmented

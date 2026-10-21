@@ -3,6 +3,9 @@
   inset: 0;
   z-index: 100;
   display: grid;
+  /* A column the width of the window less the padding, so a wide dialog's max-width
+     (100%) shrinks it to fit instead of to its own width. */
+  grid-template-columns: minmax(0, 1fr);
   place-items: center;
   padding: 32px 16px;
 }
@@ -136,6 +139,53 @@
 }
 
 /* ---------- Connection form ---------- */
+/* The fields on the left, the connection's settings beside them (stacked when narrow). */
+.conn-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: start;
+  gap: 0 24px;
+}
+.conn-form__settings {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding-left: 24px;
+  border-left: 1px solid var(--border);
+}
+.conn-form__settings-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-height: 18px;
+}
+.conn-form__settings-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+.conn-form__settings-summary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+  font-size: 12px;
+  color: var(--text-3);
+}
+@media (max-width: 940px) {
+  .conn-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .conn-form__settings {
+    margin-top: 20px;
+    padding: 18px 0 0;
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+}
 .form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
