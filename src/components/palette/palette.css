@@ -46,7 +46,10 @@
   }
 }
 
+/* Fixed height: in the panel's flex column it would otherwise shrink to make room for a long
+   list of results. */
 .palette__search {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 10px;
