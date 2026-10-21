@@ -1,18 +1,17 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 //! Remote-side companion for RDP App.
 //!
-//! A background agent with no UI — runs without a console window (it logs to a file).
+//! A background agent with no UI: runs without a console window (it logs to a file).
 //!
 //! Runs inside the remote session, opens the companion dynamic virtual channel back to
 //! the client, and performs the [`rdp_companion_proto`] handshake. On the client the
 //! channel registers only when the "Companion" setting is on and only accepts a channel
 //! the remote opens, so this program is inert unless the user enabled it.
 //!
-//! This base does the handshake and heartbeat; file transfer and native drag come later.
-//! It must be run inside an RDP session (there is no virtual channel otherwise).
-//!
-//! Status: the client side and this binary have unit-tested framing, but the end-to-end
-//! channel has not yet been exercised against a live host — that needs a real session.
+//! Once attached it reports host load ([`stats`]) and moves files: copies made on either
+//! side ([`clipboard`]) and "Send files to…" ([`transfers`]), streamed rather than
+//! fetched a chunk at a time. It must run inside an RDP session (there is no virtual
+//! channel otherwise).
 
 #[cfg(windows)]
 fn main() -> anyhow::Result<()> {
@@ -53,102 +52,61 @@ fn use_logging() {
 }
 
 #[cfg(windows)]
+mod channel;
+#[cfg(windows)]
+mod clipboard;
+#[cfg(windows)]
+mod stats;
+#[cfg(windows)]
+mod transfers;
+
+#[cfg(windows)]
 mod windows_impl {
+    use std::sync::Arc;
+
     use anyhow::{Context as _, bail};
-    use rdp_companion_proto::{CHANNEL_NAME, Decoder, Message, PROTOCOL_VERSION, encode};
-    use windows::Win32::Foundation::{CloseHandle, HANDLE};
-    use windows::Win32::System::RemoteDesktop::{
-        ProcessIdToSessionId, WTS_CHANNEL_OPTION_DYNAMIC, WTS_CURRENT_SESSION, WTSVirtualChannelClose,
-        WTSVirtualChannelOpenEx, WTSVirtualChannelRead, WTSVirtualChannelWrite,
-    };
+    use rdp_companion_proto::{Decoder, Message, PROTOCOL_VERSION};
+    use windows::Win32::System::RemoteDesktop::ProcessIdToSessionId;
     use windows::Win32::System::SystemInformation::{ComputerNameDnsHostname, GetComputerNameExW};
     use windows::Win32::System::Threading::GetCurrentProcessId;
-    use windows::core::PCSTR;
 
-    /// How long a read waits before returning empty so we can re-check (ms).
-    /// Block indefinitely on a read; the channel closing (disconnect) wakes it.
-    const READ_WAIT: u32 = u32::MAX;
-    /// Bytes of CHANNEL_PDU_HEADER (`length: u32, flags: u32`) that precede each read.
-    const CHANNEL_PDU_HEADER: usize = 8;
-
-    /// The open companion channel; closes on drop.
-    struct Channel(HANDLE);
-
-    impl Channel {
-        fn open() -> anyhow::Result<Self> {
-            let name = std::ffi::CString::new(CHANNEL_NAME).expect("channel name has no NUL");
-            // SAFETY: a null-terminated name; the returned handle is owned here.
-            let handle = unsafe {
-                WTSVirtualChannelOpenEx(
-                    WTS_CURRENT_SESSION,
-                    PCSTR(name.as_ptr().cast()),
-                    WTS_CHANNEL_OPTION_DYNAMIC,
-                )
-            }
-            .context("open companion channel (is this an RDP session with the client's setting on?)")?;
-            Ok(Self(handle))
-        }
-
-        fn write(&self, bytes: &[u8]) -> anyhow::Result<()> {
-            let mut written = 0u32;
-            // SAFETY: writes `bytes` to our channel handle.
-            unsafe { WTSVirtualChannelWrite(self.0, bytes, &mut written) }.context("write to companion channel")?;
-            Ok(())
-        }
-
-        /// Blocks until the next chunk arrives. `None` means the channel closed (the
-        /// client disconnected). Blocking (rather than a short timeout that looks like a
-        /// close every interval) keeps one attach stable until a real disconnect.
-        fn read<'b>(&self, buffer: &'b mut [u8]) -> anyhow::Result<Option<&'b [u8]>> {
-            let mut read = 0u32;
-            // SAFETY: reads into `buffer`, which outlives the call.
-            let result = unsafe { WTSVirtualChannelRead(self.0, READ_WAIT, buffer, &mut read) };
-            match result {
-                // With no timeout, a zero-length read means end of channel.
-                Ok(()) if read > 0 => Ok(Some(&buffer[..read as usize])),
-                Ok(()) => {
-                    tracing::debug!("read returned 0 bytes");
-                    Ok(None)
-                }
-                Err(error) => {
-                    tracing::debug!(%error, code = format!("{:#010x}", error.code().0), "read failed");
-                    Ok(None)
-                }
-            }
-        }
-    }
-
-    impl Drop for Channel {
-        fn drop(&mut self) {
-            // SAFETY: closing the channel handle we opened.
-            unsafe {
-                let _ = WTSVirtualChannelClose(self.0);
-                let _ = CloseHandle(self.0);
-            }
-        }
-    }
+    use crate::channel::Channel;
+    use crate::clipboard::Clipboard;
+    use crate::stats::Stats;
+    use crate::transfers::Transfers;
 
     /// Stays resident for the life of the session, (re)attaching whenever the client is
     /// connected. The channel only exists while an RDP connection is up, so a disconnect
-    /// ends an attach and a reconnect starts a new one — without re-launching, since the
+    /// ends an attach and a reconnect starts a new one, without re-launching, since the
     /// process survives a disconnect. The OS kills it at logoff; the logon autostart
     /// brings it back next time.
     const RETRY: std::time::Duration = std::time::Duration::from_secs(5);
     /// Give up if the channel never opens for this long (the client doesn't want us).
     const GIVE_UP_AFTER: std::time::Duration = std::time::Duration::from_secs(120);
 
+    /// How an attach ended.
+    enum Ended {
+        /// The connection went away (or said goodbye): wait for the next one.
+        Detached,
+        /// The client runs a different protocol and will deploy its own companion.
+        Refused,
+    }
+
     pub(super) fn run() -> anyhow::Result<()> {
         // Persist first (best-effort), so this host auto-starts the companion on every
         // future connection without any delivery step. Then attach for this session.
         install::ensure();
+        let clipboard = Clipboard::spawn().map(Arc::new);
         let started = std::time::Instant::now();
         let mut ever_attached = false;
         loop {
             match Channel::open() {
                 Ok(channel) => {
                     ever_attached = true;
-                    if let Err(error) = serve(&channel) {
-                        tracing::warn!(%error, "attach ended");
+                    match serve(Arc::new(channel), clipboard.clone()) {
+                        Ok(Ended::Detached) => {}
+                        Ok(Ended::Refused) => return Ok(()),
+                        Err(error) => tracing::warn!(%error, "attach ended"),
                     }
                 }
                 Err(error) => {
@@ -162,73 +120,77 @@ mod windows_impl {
         }
     }
 
-    /// One attach: handshake, then relay until the channel closes or the client says bye.
-    fn serve(channel: &Channel) -> anyhow::Result<()> {
+    /// One attach: handshake, then serve until the channel closes or the client says bye.
+    fn serve(channel: Arc<Channel>, clipboard: Option<Arc<Clipboard>>) -> anyhow::Result<Ended> {
         let host = computer_name();
         let session = current_session();
         tracing::info!(%host, session, "attached, saying hello");
-        channel.write(&encode(&Message::Hello {
+        if !channel.send(&Message::Hello {
             protocol: PROTOCOL_VERSION,
             version: env!("CARGO_PKG_VERSION").to_owned(),
             host,
             session,
-        }))?;
-
-        let mut decoder = Decoder::new();
-        let mut buffer = vec![0u8; 16 * 1024];
-        loop {
-            let Some(chunk) = channel.read(&mut buffer)? else {
-                tracing::info!("channel closed (client disconnected)");
-                return Ok(());
-            };
-            if chunk.is_empty() {
-                continue; // nothing this read; keep waiting
-            }
-            // WTSVirtualChannelRead prepends an 8-byte CHANNEL_PDU_HEADER (length, flags)
-            // on each read; our own length-prefixed frames sit after it. Our decoder
-            // reassembles from our prefix, so we only need to drop the header. (Our
-            // messages fit one chunk; larger ones will need the header's FIRST/LAST flags.)
-            let payload = if chunk.len() >= CHANNEL_PDU_HEADER {
-                &chunk[CHANNEL_PDU_HEADER..]
-            } else {
-                chunk
-            };
-            decoder.feed(payload);
-            loop {
-                match decoder.next_message() {
-                    Ok(Some(message)) => {
-                        if handle(channel, message)? {
-                            return Ok(());
-                        }
-                    }
-                    Ok(None) => break,
-                    Err(error) => bail!("protocol error from client: {error}"),
-                }
-            }
+        }) {
+            bail!("couldn't say hello");
         }
+
+        let stats = Stats::start(Arc::clone(&channel));
+        let transfers = match clipboard {
+            Some(clipboard) => Some(Arc::new(Transfers::new(Arc::clone(&channel), clipboard)?)),
+            None => None,
+        };
+        let ended = attached(&channel, &stats, transfers.as_ref());
+        if let Some(transfers) = &transfers {
+            transfers.detach();
+        }
+        ended
     }
 
-    /// Handles one message; returns `true` when the companion should stop.
-    fn handle(channel: &Channel, message: Message) -> anyhow::Result<bool> {
-        match message {
-            Message::Welcome { version, .. } => {
-                tracing::info!(client = %version, "attached to the client");
-                Ok(false)
+    fn attached(channel: &Channel, stats: &Stats, transfers: Option<&Arc<Transfers>>) -> anyhow::Result<Ended> {
+        let mut decoder = Decoder::new();
+        let mut buffer = vec![0u8; 64 * 1024];
+        loop {
+            let Some(chunk) = channel.read(&mut buffer) else {
+                tracing::info!("channel closed (client disconnected)");
+                return Ok(Ended::Detached);
+            };
+            decoder.feed(chunk);
+            loop {
+                let message = match decoder.next_message() {
+                    Ok(Some(message)) => message,
+                    Ok(None) => break,
+                    Err(error) => bail!("protocol error from client: {error}"),
+                };
+                match message {
+                    Message::Welcome { version, .. } => tracing::info!(client = %version, "attached to the client"),
+                    Message::Refused { reason } => {
+                        tracing::warn!(%reason, "client refused the companion");
+                        return Ok(Ended::Refused);
+                    }
+                    Message::Ping { nonce } => {
+                        channel.send(&Message::Pong { nonce });
+                    }
+                    Message::Bye => {
+                        tracing::info!("client said goodbye");
+                        return Ok(Ended::Detached);
+                    }
+                    Message::StatsInterval { secs } => stats.set_interval(secs),
+                    message => {
+                        let Some(transfers) = transfers else { continue };
+                        match message {
+                            Message::Offer { id, entries, intent } => transfers.offer(id, entries, intent),
+                            Message::Data { id, .. } | Message::End { id, .. } | Message::Unreadable { id, .. } => {
+                                transfers.incoming(id, message)
+                            }
+                            Message::Fetch { .. } | Message::Ack { .. } => transfers.outgoing(&message),
+                            Message::Close { id, error } => transfers.close(id, error),
+                            Message::ClipboardQuery { id } => transfers.clipboard_query(id),
+                            // Not sent to the companion.
+                            _ => {}
+                        }
+                    }
+                }
             }
-            Message::Refused { reason } => {
-                tracing::warn!(%reason, "client refused the companion");
-                Ok(true)
-            }
-            Message::Ping { nonce } => {
-                channel.write(&encode(&Message::Pong { nonce }))?;
-                Ok(false)
-            }
-            Message::Bye => {
-                tracing::info!("client said goodbye");
-                Ok(true)
-            }
-            // The client shouldn't send these.
-            Message::Hello { .. } | Message::Pong { .. } => Ok(false),
         }
     }
 
