@@ -54,16 +54,32 @@
   position: relative;
   border-radius: 10px;
   color: #d4d4d8;
-  opacity: 0;
+  --glass-blur: var(--glass-blur-sm);
+  /* Shown and hidden through its parts, not its own opacity (see glass-fade-in in base.css),
+     so its blur fades with it instead of snapping. */
+  box-shadow: none;
   transform: translateY(-14px) scale(0.98);
-  transition: opacity var(--t-med) ease, transform var(--t-med) var(--ease-out);
+  transition:
+    transform var(--t-med) var(--ease-out),
+    box-shadow var(--t-med) ease;
   transition-delay: 180ms;
   pointer-events: none;
 }
+.session-toolbar::before,
+.session-toolbar > * {
+  opacity: 0;
+  transition: opacity var(--t-med) ease;
+  transition-delay: 180ms;
+}
 .session-toolbar.is-visible {
-  opacity: 1;
+  box-shadow: var(--glass-shadow);
   transform: none;
   pointer-events: auto;
+  transition-delay: 0ms;
+}
+.session-toolbar.is-visible::before,
+.session-toolbar.is-visible > * {
+  opacity: 1;
   transition-delay: 0ms;
 }
 .session-toolbar__info {
@@ -131,11 +147,17 @@
   padding: 4px;
   position: relative;
   border-radius: 10px;
-  animation: session-keys-in var(--t-med) var(--ease-out);
+  --glass-blur: var(--glass-blur-sm);
+  animation:
+    session-keys-in var(--t-med) var(--ease-out),
+    glass-shadow-in var(--t-med) var(--ease-out);
+}
+.session-keys::before,
+.session-keys > * {
+  animation: glass-fade-in var(--t-med) var(--ease-out);
 }
 @keyframes session-keys-in {
   from {
-    opacity: 0;
     transform: translateY(-4px);
   }
 }

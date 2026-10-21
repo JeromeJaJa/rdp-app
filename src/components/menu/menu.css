@@ -4,8 +4,16 @@
   min-width: 200px;
   padding: 4px;
   border-radius: 10px;
-  animation: menu-in 140ms var(--ease-out);
+  --glass-blur: var(--glass-blur-sm);
+  /* Glass entrance (see glass-fade-in in base.css): no opacity on the menu itself. */
+  animation:
+    menu-in 140ms var(--ease-out),
+    glass-shadow-in 140ms var(--ease-out);
   transform-origin: top left;
+}
+.menu::before,
+.menu > * {
+  animation: glass-fade-in 140ms var(--ease-out);
 }
 .menu--sub {
   position: absolute;
@@ -14,7 +22,11 @@
   min-width: 180px;
   max-height: 320px;
   overflow-y: auto;
-  animation-duration: 100ms;
+  /* A submenu blurs on itself (below), so it can fade its own opacity smoothly. */
+  animation: menu-sub-in 100ms var(--ease-out);
+}
+.menu--sub > * {
+  animation: none;
 }
 .menu--sub.is-flipped {
   left: auto;
@@ -77,6 +89,11 @@
 
 @keyframes menu-in {
   from {
+    transform: scale(0.97);
+  }
+}
+@keyframes menu-sub-in {
+  from {
     opacity: 0;
     transform: scale(0.97);
   }
@@ -86,7 +103,7 @@
    blurs on itself (its parent menu isn't a backdrop root, so this still works). */
 .menu--sub.glass {
   background: var(--glass-bg);
-  backdrop-filter: var(--glass-filter);
+  backdrop-filter: blur(var(--glass-blur)) var(--glass-tone);
 }
 .menu--sub.glass::before {
   display: none;

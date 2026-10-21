@@ -19,8 +19,8 @@
   animation: backdrop-in var(--t-med) ease;
 }
 
-/* Glass (the .glass class), like menus and the palette. It enters by transform only: fading
-   its opacity would hold its blur back until the fade ended. */
+/* Glass (the .glass class), like menus and the palette. Its entrance fades its parts, not
+   the panel itself (see glass-fade-in in base.css). */
 .dialog {
   position: relative;
   display: flex;
@@ -28,8 +28,14 @@
   max-width: 100%;
   max-height: min(760px, calc(100vh - 64px));
   border-radius: 14px;
-  animation: dialog-in 220ms var(--ease-out);
+  animation:
+    dialog-in 220ms var(--ease-out),
+    glass-shadow-in 220ms var(--ease-out);
   overflow: hidden;
+}
+.dialog::before,
+.dialog > * {
+  animation: glass-fade-in 220ms var(--ease-out);
 }
 /* The panel itself only takes focus as a fallback; it's not a control. */
 .dialog:focus-visible {

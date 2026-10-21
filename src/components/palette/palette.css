@@ -6,14 +6,16 @@
   justify-content: center;
   align-items: flex-start;
   padding-top: min(16vh, 140px);
-  /* Light dim only: the panel itself is the glass. */
-  background: rgba(0, 0, 0, 0.22);
-  animation: palette-fade 140ms ease;
 }
-@keyframes palette-fade {
-  from {
-    opacity: 0;
-  }
+/* Light dim only: the panel itself is the glass. The dim and its fade live on a
+   pseudo-element: a fading wrapper would hold the panel's blur back until it ended. */
+.palette-backdrop::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: rgba(0, 0, 0, 0.22);
+  animation: glass-fade-in 140ms ease;
 }
 
 /* Dark glass (the .glass class): the app shows through, blurred and dimmed. */
@@ -25,8 +27,14 @@
   max-height: min(520px, calc(100vh - 120px));
   border-radius: 10px;
   overflow: hidden;
-  animation: palette-in 200ms var(--ease-out);
+  animation:
+    palette-in 200ms var(--ease-out),
+    glass-shadow-in 200ms var(--ease-out);
   transform-origin: top center;
+}
+.palette::before,
+.palette > * {
+  animation: glass-fade-in 200ms var(--ease-out);
 }
 .palette.is-dragging {
   cursor: grabbing;
@@ -34,7 +42,6 @@
 }
 @keyframes palette-in {
   from {
-    opacity: 0;
     transform: translateY(-8px) scale(0.985);
   }
 }
@@ -158,8 +165,7 @@
   color: var(--text-3);
 }
 @media (prefers-reduced-motion: reduce) {
-  .palette,
-  .palette-backdrop {
+  .palette {
     animation: none;
   }
 }

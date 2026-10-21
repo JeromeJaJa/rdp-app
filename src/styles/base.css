@@ -86,7 +86,7 @@ textarea {
   z-index: -1;
   border-radius: inherit;
   background: var(--glass-bg);
-  backdrop-filter: var(--glass-filter);
+  backdrop-filter: blur(var(--glass-blur)) var(--glass-tone);
   pointer-events: none;
 }
 /* Acrylic only: an opaque patch under a glass surface, at the very bottom of the page, so
@@ -102,10 +102,24 @@ textarea {
 /* Always dark (surfaces drawn over a remote screen). */
 .glass--dark {
   --glass-bg: var(--glass-dark-bg);
-  --glass-filter: var(--glass-dark-filter);
+  --glass-tone: var(--glass-dark-tone);
   --glass-shadow: var(--glass-dark-shadow);
   --glass-hover: var(--glass-dark-hover);
   --glass-divider: var(--glass-dark-divider);
+}
+/* Glass fades in through its parts, never through its own opacity: an element below full
+   opacity is a "backdrop root" for everything in it, so its blur would sample nothing until
+   the fade ended and then snap on. A glass surface animates its movement (its own keyframes)
+   plus glass-shadow-in; its blur layer (::before) and its content run glass-fade-in. */
+@keyframes glass-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes glass-shadow-in {
+  from {
+    box-shadow: none;
+  }
 }
 
 .mono {

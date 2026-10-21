@@ -20,7 +20,15 @@
   position: relative;
   border-radius: 10px;
   pointer-events: auto;
-  animation: toast-in 260ms var(--ease-out);
+  --glass-blur: var(--glass-blur-sm);
+  /* Glass entrance (see glass-fade-in in base.css): no opacity on the toast itself. */
+  animation:
+    toast-in 260ms var(--ease-out),
+    glass-shadow-in 260ms var(--ease-out);
+}
+.toast::before,
+.toast > * {
+  animation: glass-fade-in 260ms var(--ease-out);
 }
 .toast__icon {
   flex: none;
@@ -81,7 +89,6 @@
 
 @keyframes toast-in {
   from {
-    opacity: 0;
     transform: translateY(8px) scale(0.98);
   }
 }
