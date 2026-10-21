@@ -829,13 +829,9 @@ export class MockBackend implements Backend {
 
   async prepareWindow(): Promise<void> {}
 
-  async tearTab(): Promise<string> {
-    return "main";
-  }
+  async tearTab(): Promise<void> {}
 
-  async dragWindow(): Promise<string> {
-    return "main";
-  }
+  async dragWindow(): Promise<void> {}
 
   async setTabArea(): Promise<void> {}
 

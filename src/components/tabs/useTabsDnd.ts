@@ -15,7 +15,7 @@ import { arrayMove } from "@dnd-kit/sortable";
 import { applyOrder, prepareTearOff, selectRelative, tearOff } from "../../state/actions";
 import { isTauri } from "../../lib/env";
 import { buildSections, useStore, type Section } from "../../state/store";
-import type { GroupId } from "../../lib/types";
+import type { GroupId, TabGrab } from "../../lib/types";
 
 export const containerId = (groupId: GroupId) => `c:${groupId}`;
 const isContainer = (id: string) => id.startsWith("c:");
@@ -119,7 +119,7 @@ export function useTearOff(past: PastStrip | undefined) {
   const onStart = () => {
     state.current = { prepared: false, torn: false };
   };
-  const onMove = (id: string, p: { x: number; y: number }): boolean => {
+  const onMove = (id: string, p: { x: number; y: number }, grab: TabGrab = { x: 0, w: 0 }): boolean => {
     if (!past || !isTauri() || state.current.torn) return state.current.torn;
     // Distance outside the strip region (any direction); leaving the window is well past it.
     const distance = past(p.x, p.y);
@@ -129,7 +129,7 @@ export function useTearOff(past: PastStrip | undefined) {
     }
     if (distance >= TEAR_AT) {
       state.current.torn = true;
-      tearOff(id);
+      tearOff(id, grab);
     }
     return state.current.torn;
   };

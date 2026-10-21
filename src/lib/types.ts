@@ -366,13 +366,23 @@ export interface WindowLayout {
 }
 
 /**
+ * Where a dragged tab is held: `x` CSS px from its left edge, and its width `w`. Carried
+ * through a drag across windows, so the tab stays under the pointer at that same spot.
+ */
+export interface TabGrab {
+  x: number;
+  w: number;
+}
+
+/**
  * A tab dragged out of a window just re-entered this one while still held: carry on
- * dragging it here, from the pointer (CSS px in this window's client area).
+ * dragging it here, from the pointer (CSS px in this window's client area), held at `grabX`.
  */
 export interface ContinueDrag {
   id: ConnectionId;
   x: number;
   y: number;
+  grabX: number;
 }
 
 /** Progress of the companion auto-install for a connection (experimental). */

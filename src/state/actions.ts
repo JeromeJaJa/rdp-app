@@ -15,6 +15,7 @@ import {
   type SessionEvent,
   type Settings,
   type SettingOverrides,
+  type TabGrab,
   type Theme,
   type CompanionStatus,
   type UiCommand,
@@ -269,18 +270,18 @@ export function prepareTearOff() {
 }
 
 /**
- * Tears a tab out of this window mid-drag (Chrome-style): this window's drag ends and
- * the tab's new window follows the pointer.
+ * Tears a tab, held at `grab`, out of this window mid-drag (Chrome-style): this window's
+ * drag ends and the tab's new window follows the pointer, still held at the same spot.
  */
-export function tearOff(id: ConnectionId) {
-  // dnd-kit cancels on Escape; the system move loop takes the pointer from here.
+export function tearOff(id: ConnectionId, grab: TabGrab) {
+  // dnd-kit cancels on Escape; the backend's drag loop takes the pointer from here.
   document.dispatchEvent(new KeyboardEvent("keydown", { code: "Escape", key: "Escape" }));
-  bg(be().tearTab(id), "open a window");
+  bg(be().tearTab(id, grab), "open a window");
 }
 
-/** Drags this window by its only tab. */
-export function dragWindow() {
-  bg(be().dragWindow(), "move the window");
+/** Drags this window by its only tab, held at `grab`. */
+export function dragWindow(grab: TabGrab) {
+  bg(be().dragWindow(grab), "move the window");
 }
 
 /**

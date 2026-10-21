@@ -222,19 +222,36 @@ async fn window_prepare(app: tauri::AppHandle) -> CmdResult<()> {
     tearoff_blocking(app, |t| t.prepare()).await
 }
 
-/// Tears a tab out of the calling window mid-drag; its window follows the pointer until
-/// the button is released. Returns the window the tab ends up in.
+/// Tears a tab (held `grab_x` CSS px into its `tab_w` width) out of the calling window
+/// mid-drag; its window follows the pointer until the button is released.
+///
+/// Replies once the window is open, not when the drag ends: by then the calling window may
+/// be gone (a tab dragged into another window empties and closes its own), and a reply to a
+/// closed webview is dropped (wry's "PostMessage failed … Invalid window handle").
 #[tauri::command]
-async fn window_tear_tab(app: tauri::AppHandle, window: tauri::Window, id: String) -> CmdResult<String> {
+async fn window_tear_tab(
+    app: tauri::AppHandle,
+    window: tauri::Window,
+    id: String,
+    grab_x: f64,
+    tab_w: f64,
+) -> CmdResult<()> {
     let source = window.label().to_owned();
-    tearoff_blocking(app, move |t| t.tear(&id, &source)).await
+    let grab = tearoff::Grab { x: grab_x, w: tab_w };
+    let label = tearoff_blocking(app.clone(), move |t| t.tear(&id, &source, grab)).await?;
+    tauri::async_runtime::spawn_blocking(move || app.state::<AppState>().tearoff.follow_torn(&label, grab));
+    Ok(())
 }
 
-/// Drags the calling (detached) window by its only tab.
+/// Drags the calling (detached) window by its only tab, held `grab_x` CSS px into its
+/// `tab_w` width. Replies at once; the drag runs until release (see `window_tear_tab`).
 #[tauri::command]
-async fn window_drag(app: tauri::AppHandle, window: tauri::Window) -> CmdResult<String> {
+fn window_drag(app: tauri::AppHandle, window: tauri::Window, grab_x: f64, tab_w: f64) {
     let label = window.label().to_owned();
-    tearoff_blocking(app, move |t| t.drag(&label)).await
+    let grab = tearoff::Grab { x: grab_x, w: tab_w };
+    tauri::async_runtime::spawn_blocking(move || {
+        let _ = app.state::<AppState>().tearoff.drag(&label, grab);
+    });
 }
 
 /// Opens a new window holding the tab, next to the calling window.

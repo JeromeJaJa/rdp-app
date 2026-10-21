@@ -172,7 +172,9 @@ export function SoloTab({ id, onClose }: { id: ConnectionId; onClose: () => void
       onClose={onClose}
       {...middleClickCloses(onClose)}
       onPointerDown={(e) => {
-        if (e.button === 0) dragWindow();
+        if (e.button !== 0) return;
+        const r = e.currentTarget.getBoundingClientRect();
+        dragWindow({ x: e.clientX - r.left, w: r.width });
       }}
       onContextMenu={(e) => {
         e.preventDefault();

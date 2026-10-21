@@ -20,6 +20,7 @@ import type {
   TrustedCertificate,
   CompanionStatus,
   ContinueDrag,
+  TabGrab,
   UiCommand,
   UiState,
   WindowLayout,
@@ -133,13 +134,13 @@ export interface Backend {
   /** A tab is being dragged out of its strip: get a window ready in case it's torn off. */
   prepareWindow(): Promise<void>;
   /**
-   * Tears the tab out of this window mid-drag: its new window follows the pointer until
-   * the button is released (and joins another window's tabs if dropped on them).
-   * Resolves with the window the tab ends up in.
+   * Tears the tab, held at `grab`, out of this window mid-drag: its new window follows the
+   * pointer until the button is released (and its tab joins any window whose strip it
+   * reaches). Resolves once the window is open, not when the drag ends.
    */
-  tearTab(id: ConnectionId): Promise<string>;
-  /** Drags this (detached) window by its only tab, the same way. */
-  dragWindow(): Promise<string>;
+  tearTab(id: ConnectionId, grab: TabGrab): Promise<void>;
+  /** Drags this (detached) window by its only tab, held at `grab`, the same way. */
+  dragWindow(grab: TabGrab): Promise<void>;
   /** This window's material: solid, or the acrylic backdrop (experimental). `dark` tints it. */
   setWindowMaterial(acrylic: boolean, dark: boolean): Promise<void>;
   /**

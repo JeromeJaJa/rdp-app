@@ -28,6 +28,7 @@ import {
   type UiCommand,
   type UiState,
   type ContinueDrag,
+  type TabGrab,
   type WindowLayout,
 } from "../types";
 
@@ -277,12 +278,12 @@ export class TauriBackend implements Backend {
     return invoke("window_prepare");
   }
 
-  tearTab(id: ConnectionId): Promise<string> {
-    return invoke("window_tear_tab", { id });
+  tearTab(id: ConnectionId, grab: TabGrab): Promise<void> {
+    return invoke("window_tear_tab", { id, grabX: grab.x, tabW: grab.w });
   }
 
-  dragWindow(): Promise<string> {
-    return invoke("window_drag");
+  dragWindow(grab: TabGrab): Promise<void> {
+    return invoke("window_drag", { grabX: grab.x, tabW: grab.w });
   }
 
   setWindowMaterial(acrylic: boolean, dark: boolean): Promise<void> {

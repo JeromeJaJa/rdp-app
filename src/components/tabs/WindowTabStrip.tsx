@@ -17,6 +17,7 @@ import { useShallow } from "zustand/react/shallow";
 import { isMainWindow, windowLabel } from "../../lib/env";
 import { closeTab, reorderWindowTabs } from "../../state/actions";
 import { getState, setState, useStore, windowTabs } from "../../state/store";
+import type { TabGrab } from "../../lib/types";
 import { SoloTab, TabItem, TabOverlay } from "./TabItem";
 import { pastStrip, stripWheel, useTearOff } from "./useTabsDnd";
 import "./toptabs.css";
@@ -67,6 +68,11 @@ function WindowTabStripInner() {
   const trackPointer = useCallback((e: PointerEvent) => {
     pointer.current = { x: e.clientX, y: e.clientY };
   }, []);
+  // Where the dragged tab is held. It goes with the tab if it's torn out, and comes back
+  // with it, so the tab stays under the pointer at the same spot in every window.
+  const grab = useRef<TabGrab>({ x: 0, w: 0 });
+  const tabEl = (id: string) =>
+    scrollRef.current?.querySelector<HTMLElement>(`[data-tab-id="${CSS.escape(id)}"]`) ?? null;
 
   // A detached window's single tab is a handle to move the window.
   const soloWindowDrag = !main && tabs.length === 1;
@@ -78,11 +84,12 @@ function WindowTabStripInner() {
   useEffect(() => {
     if (!continueDrag || soloWindowDrag || !tabs.includes(continueDrag.id)) return;
     setState({ continueDrag: null });
-    const el = scrollRef.current?.querySelector<HTMLElement>(`[data-tab-id="${CSS.escape(continueDrag.id)}"]`);
+    const el = tabEl(continueDrag.id);
     if (!el) return;
     const r = el.getBoundingClientRect();
-    // On the tab (under the pointer if it's over it), so the tab lands under the cursor.
-    const x = Math.min(Math.max(continueDrag.x, r.left + 8), r.right - 8);
+    // Pressed at the spot it was held by, so once the drag moves, that spot is under the
+    // pointer, as it was in the window the tab came from.
+    const x = r.left + Math.min(Math.max(continueDrag.grabX, 1), r.width - 1);
     pointer.current = { x: continueDrag.x, y: continueDrag.y };
     handedOver.current = true;
     firePointer("pointerdown", el, x, r.top + r.height / 2);
@@ -151,14 +158,15 @@ function WindowTabStripInner() {
             modifiers={[horizontalOnly]}
             onDragStart={(e: DragStartEvent) => {
               tear.onStart();
-              if (!handedOver.current) {
-                const ev = e.activatorEvent as PointerEvent | null;
-                if (ev) pointer.current = { x: ev.clientX, y: ev.clientY };
-              }
+              const id = String(e.active.id);
+              const ev = e.activatorEvent as PointerEvent | null;
+              const r = tabEl(id)?.getBoundingClientRect();
+              if (ev && r) grab.current = { x: ev.clientX - r.left, w: r.width };
+              if (ev && !handedOver.current) pointer.current = { x: ev.clientX, y: ev.clientY };
               window.addEventListener("pointermove", trackPointer);
-              setActiveId(String(e.active.id));
+              setActiveId(id);
             }}
-            onDragMove={(e: DragMoveEvent) => tear.onMove(String(e.active.id), pointer.current)}
+            onDragMove={(e: DragMoveEvent) => tear.onMove(String(e.active.id), pointer.current, grab.current)}
             onDragEnd={onDragEnd}
             onDragCancel={endDrag}
           >
