@@ -276,6 +276,7 @@ impl Tearoff {
             if target != MAIN_WINDOW && !state.layout.windows.iter().any(|w| w.label == target) {
                 bail!("no such window");
             }
+            let source = state.layout.host(session).map(str::to_owned);
             let mut emptied = state.layout.remove_tab(session);
             // The target can't be the emptied one (we just inserted into it).
             if emptied.as_deref() == Some(target) {
@@ -285,11 +286,14 @@ impl Tearoff {
                 let at = index.unwrap_or(tabs.len()).min(tabs.len());
                 tabs.insert(at, session.to_owned());
             }
-            // Its old window no longer shows it.
-            for active in state.active.values_mut() {
-                if active.as_deref() == Some(session) {
-                    *active = None;
-                }
+            // Its old window no longer shows it. (Only that one: the window it moved to may
+            // already show it, e.g. the main window kept it selected while it was away, and
+            // won't say so again.)
+            if let Some(source) = source.filter(|s| s != target)
+                && let Some(active) = state.active.get_mut(&source)
+                && active.as_deref() == Some(session)
+            {
+                *active = None;
             }
             emptied
         };

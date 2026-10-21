@@ -10,7 +10,7 @@ import {
   setFullscreen,
   toggleGrid,
 } from "./actions";
-import { getState, isLive, setState, useStore } from "./store";
+import { getState, inDetachedWindow, isLive, setState, useStore } from "./store";
 import { stripDropRect } from "../components/tabs/useTabsDnd";
 
 /** App-level keyboard shortcuts. Suspended while a RemoteSurface has focus. */
@@ -89,7 +89,10 @@ export function useEngineSync() {
     const sync = () => {
       const s = getState();
       const activeStatus = s.selectedId ? s.sessions[s.selectedId]?.status ?? "idle" : "idle";
-      const active = s.view === "session" && s.selectedId && isLive(activeStatus) ? s.selectedId : null;
+      // A tab living in another window is shown there, not here (this window keeps it
+      // selected meanwhile). Saying so means it's reported again when the tab comes back.
+      const here = !!s.selectedId && !(isMainWindow() && inDetachedWindow(s, s.selectedId));
+      const active = s.view === "session" && s.selectedId && here && isLive(activeStatus) ? s.selectedId : null;
       const thumbnails =
         s.view === "grid"
           ? s.visibleTiles.filter((id) => isLive(s.sessions[id]?.status ?? "idle")).sort()
