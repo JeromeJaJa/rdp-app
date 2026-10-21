@@ -62,7 +62,7 @@ jobs:
       - name: Package
         run: |
           $v = "${{ steps.version.outputs.version }}"
-          if (-not (Select-String target/release/nsis/x64/installer.nsi -SimpleMatch "rdp-companion.exe" -Quiet)) {
+          if (-not (Select-String -Path target/release/nsis/x64/installer.nsi -Pattern "rdp-companion.exe" -SimpleMatch -Quiet)) {
             throw "the installer doesn't include rdp-companion.exe"
           }
           $out = (New-Item -ItemType Directory -Force release-assets).FullName
