@@ -21,10 +21,38 @@ use windows::Win32::System::Ole::{
     ReleaseStgMedium, RevokeDragDrop,
 };
 use windows::Win32::System::SystemServices::MODIFIERKEYS_FLAGS;
+use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Shell::{DragQueryFileW, HDROP};
-use windows::Win32::UI::WindowsAndMessaging::{EnumChildWindows, GA_ROOT, GetAncestor};
+use windows::Win32::UI::WindowsAndMessaging::{
+    BringWindowToTop, EnumChildWindows, GA_ROOT, GetAncestor, GetForegroundWindow, GetWindowThreadProcessId,
+    SetForegroundWindow,
+};
 use windows::core::{BOOL, Ref, implement};
+
+/// Brings `window`'s top-level window to the front. Windows only lets the app in front
+/// hand the foreground over, and after a drop that's the drag source: if it refuses, this
+/// thread's input is joined to the foreground thread's for the call, so the request counts
+/// as that app's. Nothing is typed or clicked (Tauri's `set_focus` presses Alt for this).
+fn bring_to_front(window: HWND) {
+    // SAFETY: window and thread queries, and joining this (UI) thread's input to the
+    // foreground thread's only for the duration of the calls.
+    unsafe {
+        let root = GetAncestor(window, GA_ROOT);
+        let root = if root.is_invalid() { window } else { root };
+        if SetForegroundWindow(root).as_bool() {
+            return;
+        }
+        let theirs = GetWindowThreadProcessId(GetForegroundWindow(), None);
+        let ours = GetCurrentThreadId();
+        let joined = theirs != 0 && theirs != ours && AttachThreadInput(ours, theirs, true).as_bool();
+        let _ = BringWindowToTop(root);
+        let _ = SetForegroundWindow(root);
+        if joined {
+            let _ = AttachThreadInput(ours, theirs, false);
+        }
+    }
+}
 
 /// Per window: what a drop at the pointer would do, as the page last said.
 static EFFECTS: Mutex<Option<HashMap<String, Arc<AtomicU32>>>> = Mutex::new(None);
@@ -294,12 +322,25 @@ impl IDropTarget_Impl for FileDropTarget_Impl {
                 let files = (chosen != DROPEFFECT_NONE)
                     .then(|| data.as_ref().and_then(paths))
                     .flatten();
+                let dropped = files.is_some();
                 self.tell(FileDrag {
-                    phase: if files.is_some() { "drop" } else { "leave" },
+                    phase: if dropped { "drop" } else { "leave" },
                     x,
                     y,
                     paths: files,
                 });
+                if dropped {
+                    // Once the drag source (Explorer) is done with its drag, this window comes to
+                    // the front: whatever was dropped (a session, a Send dialog) is used here next.
+                    let (app, label) = (self.app.clone(), self.label.clone());
+                    let _ = self.app.run_on_main_thread(move || {
+                        if let Some(window) = app.get_webview_window(&label)
+                            && let Ok(hwnd) = window.hwnd()
+                        {
+                            bring_to_front(HWND(hwnd.0));
+                        }
+                    });
+                }
                 // The files are only read (copied); the source keeps them.
                 // SAFETY: OLE passes a valid out pointer.
                 unsafe { *effect = chosen };
