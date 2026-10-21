@@ -9,7 +9,7 @@ import { displayName, isLive, useConnection, useStatus, useStore } from "../../s
 import { StatusDot, statusLabel } from "../common/StatusDot";
 import { Spinner } from "../ui/ui";
 import { TileObserverContext } from "./tileObserver";
-import { VitalsGlyph } from "../vitals/Vitals";
+import { TabStatsView } from "../vitals/Vitals";
 
 /** The click that ends a drag must not also select (and open) the tile. */
 let dragEndedAt = 0;
@@ -68,6 +68,7 @@ function TileCard({ id, showThumb, nodeRef, style, className, ...rest }: TileCar
   const status = useStatus(id);
   const message = useStore((s) => (s.sessions[id]?.status === "error" ? s.sessions[id]?.message : undefined));
   const selected = useStore((s) => s.selectedId === id);
+  const stats = useStore((s) => !!s.stats[id]);
 
   if (!conn) return null;
   const live = isLive(status);
@@ -130,8 +131,10 @@ function TileCard({ id, showThumb, nodeRef, style, className, ...rest }: TileCar
       <div className="tile__meta">
         <StatusDot status={status} />
         <span className="tile__name">{displayName(conn)}</span>
-        {conn.name.trim() && conn.name.trim() !== conn.host && <span className="tile__host mono">{conn.host}</span>}
-        <VitalsGlyph id={id} />
+        {conn.name.trim() && conn.name.trim() !== conn.host && !stats && (
+          <span className="tile__host mono">{conn.host}</span>
+        )}
+        <TabStatsView id={id} variant="tile" />
       </div>
     </div>
   );

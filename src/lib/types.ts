@@ -169,6 +169,8 @@ export interface Settings {
   companion: boolean;
   /** How often a companion reports its host's load, in seconds (0 = never). */
   hostStatsInterval: number;
+  /** What tabs show of their host's load (top tabs show a single metric: CPU for "all"). */
+  tabStats: TabStats;
   /** Share the clipboard (text, images, files) with remote sessions. */
   clipboardSync: boolean;
   /** Remote audio playback: off, only the session on screen, or every session. */
@@ -209,6 +211,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoReconnect: true,
   companion: false,
   hostStatsInterval: 30,
+  tabStats: "all",
   clipboardSync: true,
   audio: "active",
   microphone: false,
@@ -394,6 +397,9 @@ export interface ContinueDrag {
   y: number;
   grabX: number;
 }
+
+/** What tabs show of their host's load: CPU, memory and network trend lines, one metric with its value, or nothing. */
+export type TabStats = "all" | "cpu" | "memory" | "network" | "disk" | "off";
 
 /** A host's load, reported by its session's companion. Rates average over `span` seconds. */
 export interface HostStats {

@@ -7,7 +7,7 @@ import { isMainWindow } from "../../lib/env";
 import { AppWindow, X, Zap } from "lucide-react";
 import { StatusDot } from "../common/StatusDot";
 import { ConnectIcon, DisconnectIcon } from "../common/SessionIcons";
-import { VitalsGlyph } from "../vitals/Vitals";
+import { TabStatsView } from "../vitals/Vitals";
 import type { ConnectionId } from "../../lib/types";
 import "./tabs.css";
 
@@ -55,7 +55,6 @@ const TabView = forwardRef<HTMLDivElement, ViewProps>(function TabView(
   if (!conn) return null;
 
   const name = displayName(conn);
-  const showHost = conn.name.trim() !== "" && conn.name.trim() !== conn.host;
   const active = isLive(status) || isBusy(status);
 
   return (
@@ -78,7 +77,7 @@ const TabView = forwardRef<HTMLDivElement, ViewProps>(function TabView(
           <Zap size={11} />
         </span>
       )}
-      {vitals && !overlay && <VitalsGlyph id={id} side={variant === "side" ? "right" : "bottom"} />}
+      {vitals && !overlay && <TabStatsView id={id} variant={variant} />}
       {elsewhere && (
         <span className="tab__elsewhere" title="Open in another window">
           <AppWindow size={12} />
@@ -100,7 +99,6 @@ const TabView = forwardRef<HTMLDivElement, ViewProps>(function TabView(
       )}
       {variant === "side" && (
         <>
-          {showHost && <span className="tab__host mono">{conn.host}</span>}
           {!overlay && (
             <span className="tab__actions">
               <button

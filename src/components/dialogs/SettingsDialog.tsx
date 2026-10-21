@@ -186,6 +186,20 @@ function Connections() {
           ]}
         />
       </Row>
+      <Row title="Stats on tabs" desc="What each tab shows of its host's load. Top tabs show one metric; hover a tab for everything.">
+        <Select
+          value={s.tabStats}
+          onChange={(tabStats) => updateSettings({ tabStats })}
+          options={[
+            { value: "all", label: "CPU, memory and network" },
+            { value: "cpu", label: "CPU" },
+            { value: "memory", label: "Memory" },
+            { value: "network", label: "Network" },
+            { value: "disk", label: "Disk" },
+            { value: "off", label: "Nothing" },
+          ]}
+        />
+      </Row>
     </>
   );
 }

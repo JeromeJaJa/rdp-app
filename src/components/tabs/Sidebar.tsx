@@ -8,6 +8,7 @@ import { displayName, getState, isBusy, isLive, setState, useStore } from "../..
 import { IconButton } from "../ui/ui";
 import { BulkSessionButtons, NewConnectionButton, TransferButtons, ViewToggle } from "../common/GlobalActions";
 import { GroupHeader } from "./GroupHeader";
+import { HostPanel } from "../vitals/HostPanel";
 import { TabItem, TabOverlay } from "./TabItem";
 import { containerId, useTabsDnd } from "./useTabsDnd";
 import type { GroupId } from "../../lib/types";
@@ -192,6 +193,7 @@ function SidebarInner() {
         {filter.trim() ? <FilteredList filter={filter.trim()} /> : <SidebarList />}
       </div>
       <div className="sidebar__footer">
+        <HostPanel />
         <Summary />
         <ViewToggle className="side-view" labeled />
       </div>
