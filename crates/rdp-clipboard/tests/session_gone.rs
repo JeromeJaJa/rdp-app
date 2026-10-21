@@ -12,7 +12,9 @@ use std::time::{Duration, Instant};
 use ironrdp_cliprdr::backend::{ClipboardMessage, ClipboardMessageProxy};
 use ironrdp_cliprdr::pdu::{ClipboardFormat, ClipboardFormatId};
 use rdp_clipboard::WinClipboard;
-use windows::Win32::System::DataExchange::{CloseClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard};
+use windows::Win32::System::DataExchange::{
+    CloseClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard,
+};
 use windows::Win32::System::StationsAndDesktops::{
     CreateDesktopW, CreateWindowStationW, DESKTOP_CONTROL_FLAGS, HDESK, SetProcessWindowStation, SetThreadDesktop,
 };
@@ -78,7 +80,9 @@ fn monitor_with_remote_copy() -> (WinClipboard, Box<dyn ironrdp_cliprdr::backend
     let mut backend = monitor.backend_factory().build_cliprdr_backend();
     backend.on_remote_copy(&[ClipboardFormat::new(ClipboardFormatId::CF_UNICODETEXT)]);
     // SAFETY: plain query.
-    let offered = pump_until(Duration::from_secs(5), || unsafe { IsClipboardFormatAvailable(CF_UNICODETEXT).is_ok() });
+    let offered = pump_until(Duration::from_secs(5), || unsafe {
+        IsClipboardFormatAvailable(CF_UNICODETEXT).is_ok()
+    });
     assert!(offered, "the remote's copy should be on the clipboard");
     (monitor, backend)
 }
