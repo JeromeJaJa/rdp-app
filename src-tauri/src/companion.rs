@@ -112,9 +112,15 @@ pub fn install_over_winrm(target: &Target, exe: &Path) -> anyhow::Result<Outcome
         return Ok(Outcome::NeedsTrust);
     }
     // WinRM isn't reachable at all.
-    if ["cannot connect", "winrm", "timed out", "actively refused", "no logon servers"]
-        .iter()
-        .any(|needle| detail.contains(needle))
+    if [
+        "cannot connect",
+        "winrm",
+        "timed out",
+        "actively refused",
+        "no logon servers",
+    ]
+    .iter()
+    .any(|needle| detail.contains(needle))
     {
         tracing::info!(host = %target.host, "WinRM not available; fallback needed");
         return Ok(Outcome::WinrmUnavailable);
@@ -147,7 +153,10 @@ pub fn trust_host(host: &str) -> anyhow::Result<()> {
         .args(["-NoProfile", "-NonInteractive", "-Command", &script])
         .status()
         .context("run powershell")?;
-    anyhow::ensure!(status.success(), "the elevation prompt was declined or the command failed");
+    anyhow::ensure!(
+        status.success(),
+        "the elevation prompt was declined or the command failed"
+    );
     tracing::info!(host, "host added to WinRM TrustedHosts");
     Ok(())
 }
@@ -163,7 +172,14 @@ pub fn uninstall_over_winrm(target: &Target) -> anyhow::Result<()> {
         format!("{}\\{}", target.domain, target.username)
     };
     let output = powershell()
-        .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", UNINSTALL_PS1])
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            UNINSTALL_PS1,
+        ])
         .env("RDPAPP_HOST", &target.host)
         .env("RDPAPP_USER", &user)
         .env("RDPAPP_PASS", &target.password)
@@ -179,4 +195,3 @@ pub fn uninstall_over_winrm(target: &Target) -> anyhow::Result<()> {
     tracing::info!(host = %target.host, "companion removed over WinRM");
     Ok(())
 }
-

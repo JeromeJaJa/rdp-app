@@ -95,7 +95,12 @@ impl CompanionChannel {
     /// Handles one decoded message, pushing any reply.
     fn handle(&mut self, message: Message, out: &mut Vec<DvcMessage>) {
         match message {
-            Message::Hello { protocol, version, host, .. } => {
+            Message::Hello {
+                protocol,
+                version,
+                host,
+                ..
+            } => {
                 if protocol != PROTOCOL_VERSION {
                     out.push(frame(&Message::Refused {
                         reason: format!("client speaks protocol {PROTOCOL_VERSION}, companion {protocol}"),

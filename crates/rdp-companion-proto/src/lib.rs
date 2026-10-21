@@ -44,12 +44,21 @@ pub enum Message {
         session: u32,
     },
     /// Client → companion, reply to `Hello`: the handshake is accepted.
-    Welcome { protocol: u32, version: String },
+    Welcome {
+        protocol: u32,
+        version: String,
+    },
     /// Client → companion, reply to a rejected `Hello`: why, then the channel closes.
-    Refused { reason: String },
+    Refused {
+        reason: String,
+    },
     /// Either side: liveness probe; the peer answers with `Pong` carrying the same nonce.
-    Ping { nonce: u64 },
-    Pong { nonce: u64 },
+    Ping {
+        nonce: u64,
+    },
+    Pong {
+        nonce: u64,
+    },
     /// Either side: a clean shutdown is starting.
     Bye,
 }
@@ -138,7 +147,9 @@ mod tests {
             },
             Message::Ping { nonce: 42 },
             Message::Pong { nonce: 42 },
-            Message::Refused { reason: "old protocol".into() },
+            Message::Refused {
+                reason: "old protocol".into(),
+            },
             Message::Bye,
         ]
     }
@@ -160,7 +171,11 @@ mod tests {
         // One byte at a time: a message only appears once its last byte arrives.
         for (i, byte) in encoded.iter().enumerate() {
             decoder.feed(&[*byte]);
-            let expected = if i + 1 == encoded.len() { Some(Message::Ping { nonce: 7 }) } else { None };
+            let expected = if i + 1 == encoded.len() {
+                Some(Message::Ping { nonce: 7 })
+            } else {
+                None
+            };
             assert_eq!(decoder.next_message().unwrap(), expected);
         }
     }

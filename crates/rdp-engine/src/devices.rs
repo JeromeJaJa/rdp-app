@@ -124,7 +124,10 @@ mod tests {
         assert_eq!(text.as_bytes()[1], b':');
         assert_eq!(shareable(&dir.join("missing")), None);
         assert_eq!(shareable(std::path::Path::new(r"\\nonexistent-host\share")), None);
-        assert_eq!(shareable(std::path::Path::new("C:")).as_deref(), Some(std::path::Path::new("C:\\")));
+        assert_eq!(
+            shareable(std::path::Path::new("C:")).as_deref(),
+            Some(std::path::Path::new("C:\\"))
+        );
     }
 
     #[test]

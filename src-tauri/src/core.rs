@@ -279,7 +279,9 @@ impl Core {
                     let host = core.store.lock().credentials(&id).map(|c| c.host).unwrap_or_default();
                     core.emit_companion("needs-trust", &id, Some(&host));
                 }
-                Ok(Ok(crate::companion::Outcome::WinrmUnavailable)) => core.emit_companion("winrm-unavailable", &id, None),
+                Ok(Ok(crate::companion::Outcome::WinrmUnavailable)) => {
+                    core.emit_companion("winrm-unavailable", &id, None)
+                }
                 Ok(Err(e)) => {
                     tracing::warn!(error = %format!("{e:#}"), "companion auto-install failed");
                     core.emit_companion("failed", &id, None);
@@ -290,7 +292,9 @@ impl Core {
     }
 
     fn emit_companion(&self, status: &str, id: &str, host: Option<&str>) {
-        let _ = self.app.emit("companion-status", json!({ "id": id, "status": status, "host": host }));
+        let _ = self
+            .app
+            .emit("companion-status", json!({ "id": id, "status": status, "host": host }));
     }
 
     /// Adds a host to the WinRM client's TrustedHosts (elevated). Blocking.

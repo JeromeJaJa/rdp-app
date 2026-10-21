@@ -79,7 +79,11 @@ mod windows_impl {
             let name = std::ffi::CString::new(CHANNEL_NAME).expect("channel name has no NUL");
             // SAFETY: a null-terminated name; the returned handle is owned here.
             let handle = unsafe {
-                WTSVirtualChannelOpenEx(WTS_CURRENT_SESSION, PCSTR(name.as_ptr().cast()), WTS_CHANNEL_OPTION_DYNAMIC)
+                WTSVirtualChannelOpenEx(
+                    WTS_CURRENT_SESSION,
+                    PCSTR(name.as_ptr().cast()),
+                    WTS_CHANNEL_OPTION_DYNAMIC,
+                )
             }
             .context("open companion channel (is this an RDP session with the client's setting on?)")?;
             Ok(Self(handle))
@@ -184,7 +188,11 @@ mod windows_impl {
             // on each read; our own length-prefixed frames sit after it. Our decoder
             // reassembles from our prefix, so we only need to drop the header. (Our
             // messages fit one chunk; larger ones will need the header's FIRST/LAST flags.)
-            let payload = if chunk.len() >= CHANNEL_PDU_HEADER { &chunk[CHANNEL_PDU_HEADER..] } else { chunk };
+            let payload = if chunk.len() >= CHANNEL_PDU_HEADER {
+                &chunk[CHANNEL_PDU_HEADER..]
+            } else {
+                chunk
+            };
             decoder.feed(payload);
             loop {
                 match decoder.next_message() {
@@ -232,7 +240,13 @@ mod windows_impl {
         }
         let mut buf = vec![0u16; size as usize];
         // SAFETY: `buf` has `size` elements, as the previous call reported.
-        let ok = unsafe { GetComputerNameExW(ComputerNameDnsHostname, Some(windows::core::PWSTR(buf.as_mut_ptr())), &mut size) };
+        let ok = unsafe {
+            GetComputerNameExW(
+                ComputerNameDnsHostname,
+                Some(windows::core::PWSTR(buf.as_mut_ptr())),
+                &mut size,
+            )
+        };
         if ok.is_ok() {
             String::from_utf16_lossy(&buf[..size as usize])
         } else {
@@ -286,8 +300,7 @@ mod windows_impl {
         }
 
         fn target_path() -> anyhow::Result<PathBuf> {
-            let base = std::env::var_os("LOCALAPPDATA")
-                .ok_or_else(|| anyhow::anyhow!("LOCALAPPDATA is not set"))?;
+            let base = std::env::var_os("LOCALAPPDATA").ok_or_else(|| anyhow::anyhow!("LOCALAPPDATA is not set"))?;
             Ok(PathBuf::from(base).join("RdpApp").join("rdp-companion.exe"))
         }
 

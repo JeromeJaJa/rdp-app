@@ -1,9 +1,9 @@
 mod api;
 mod bulk;
 mod certs;
-mod companion;
 #[cfg(windows)]
 mod clipboard;
+mod companion;
 mod core;
 mod dpapi;
 #[cfg(windows)]

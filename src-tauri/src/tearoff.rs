@@ -160,8 +160,12 @@ impl Tearoff {
     pub fn set_main_tabs(&self, sessions: Vec<String>) {
         let tabs = {
             let mut state = self.state.lock();
-            let detached: HashSet<String> =
-                state.layout.windows.iter().flat_map(|w| w.tabs.iter().cloned()).collect();
+            let detached: HashSet<String> = state
+                .layout
+                .windows
+                .iter()
+                .flat_map(|w| w.tabs.iter().cloned())
+                .collect();
             state.layout.main_tabs = sessions.into_iter().filter(|s| !detached.contains(s)).collect();
             state.layout.main_tabs.clone()
         };
@@ -462,8 +466,11 @@ impl Tearoff {
         let Some(window) = self.app.get_webview_window(target) else {
             return;
         };
-        let (Ok(at), Ok(origin), Ok(scale)) = (self.app.cursor_position(), window.inner_position(), window.scale_factor())
-        else {
+        let (Ok(at), Ok(origin), Ok(scale)) = (
+            self.app.cursor_position(),
+            window.inner_position(),
+            window.scale_factor(),
+        ) else {
             return;
         };
         let drag = ContinueDrag {
@@ -617,7 +624,12 @@ impl Tearoff {
                 self.engine.set_viewport(viewport);
                 return;
             }
-            state.layout.windows.iter().find(|w| w.label == label).map(|w| w.tabs.clone())
+            state
+                .layout
+                .windows
+                .iter()
+                .find(|w| w.label == label)
+                .map(|w| w.tabs.clone())
         };
         if let Some(tabs) = tabs {
             for tab in tabs {
@@ -634,7 +646,9 @@ impl Tearoff {
                 .active
                 .iter()
                 .filter_map(|(label, a)| {
-                    a.as_ref().filter(|s| state.layout.host(s) == Some(label.as_str())).cloned()
+                    a.as_ref()
+                        .filter(|s| state.layout.host(s) == Some(label.as_str()))
+                        .cloned()
                 })
                 .collect();
             (active, state.thumbnails.clone())
@@ -811,7 +825,15 @@ mod native {
         // Back to a normal z-order once dropped (if it survives as its own window).
         // SAFETY: our own window; position and size unchanged.
         unsafe {
-            let _ = SetWindowPos(hwnd, Some(HWND_NOTOPMOST), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            let _ = SetWindowPos(
+                hwnd,
+                Some(HWND_NOTOPMOST),
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+            );
         }
     }
 

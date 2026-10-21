@@ -81,7 +81,9 @@ pub enum EngineEvent {
         host: String,
     },
     /// The companion channel closed (its process exited, or the session dropped it).
-    CompanionDisconnected { id: SessionId },
+    CompanionDisconnected {
+        id: SessionId,
+    },
     /// A server certificate needs a decision; the connection attempt was refused.
     #[serde(rename_all = "camelCase")]
     Certificate {
