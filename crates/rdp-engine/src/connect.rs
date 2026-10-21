@@ -54,6 +54,8 @@ async fn connect_tcp(addr: &str) -> std::io::Result<TcpStream> {
 pub(crate) struct Connected {
     pub result: ConnectionResult,
     pub framed: UpgradedFramed,
+    /// The raw TCP socket under it (direct connections), for the traffic log.
+    pub socket: Option<u64>,
 }
 
 pub(crate) fn connector_config(params: &ConnectParams, viewport: Viewport) -> ironrdp_connector::Config {
@@ -179,7 +181,7 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for CappedWrites<S> {
 async fn open_transport(
     params: &ConnectParams,
     ctx: &ConnectContext,
-) -> anyhow::Result<(Erased, std::net::SocketAddr)> {
+) -> anyhow::Result<(Erased, std::net::SocketAddr, Option<u64>)> {
     if let Some(gw) = &params.gateway {
         let endpoint = if gw.host.contains(':') && !gw.host.starts_with('[') {
             gw.host.clone()
@@ -224,7 +226,7 @@ async fn open_transport(
             inner: stream,
             max: GATEWAY_MAX_WRITE,
         };
-        return Ok((Box::new(stream), client_addr));
+        return Ok((Box::new(stream), client_addr, None));
     }
 
     let addr = format!("{}:{}", host_for_socket(&params.host), params.port);
@@ -234,7 +236,11 @@ async fn open_transport(
         .with_context(|| format!("TCP connect to {addr}"))?;
     let _ = stream.set_nodelay(true);
     let client_addr = stream.local_addr().context("local socket address")?;
-    Ok((Box::new(stream), client_addr))
+    #[cfg(windows)]
+    let socket = Some(std::os::windows::io::AsRawSocket::as_raw_socket(&stream));
+    #[cfg(not(windows))]
+    let socket = None;
+    Ok((Box::new(stream), client_addr, socket))
 }
 
 pub(crate) async fn connect(
@@ -242,7 +248,7 @@ pub(crate) async fn connect(
     viewport: Viewport,
     ctx: ConnectContext,
 ) -> anyhow::Result<Connected> {
-    let (stream, client_addr) = open_transport(params, &ctx).await?;
+    let (stream, client_addr, socket) = open_transport(params, &ctx).await?;
 
     let mut drdynvc = DrdynvcClient::new().with_dynamic_channel(DisplayControlClient::new(|_| Ok(Vec::new())));
     if let Some(gfx) = gfx::build(params, Arc::clone(&ctx.gfx_stats), Arc::clone(&ctx.gfx_output)) {
@@ -333,7 +339,7 @@ pub(crate) async fn connect(
     .await
     .context("authentication and session setup")?;
 
-    Ok(Connected { result, framed })
+    Ok(Connected { result, framed, socket })
 }
 
 /// Accepts `DOMAIN\user` and `user@domain` forms; an explicit domain wins.

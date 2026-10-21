@@ -21,6 +21,7 @@ mod errors;
 mod gfx;
 mod session;
 pub mod surface;
+mod tcp_info;
 
 use std::collections::HashMap;
 use std::sync::Arc;

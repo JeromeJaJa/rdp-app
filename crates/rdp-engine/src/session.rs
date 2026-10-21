@@ -833,7 +833,7 @@ async fn active(
     rx: &mut mpsc::UnboundedReceiver<Command>,
     mut bulk_rx: mpsc::UnboundedReceiver<Vec<ironrdp_svc::SvcMessage>>,
 ) -> Exit {
-    let Connected { result, framed } = connected;
+    let Connected { result, framed, socket } = connected;
     let ConnectionResult {
         io_channel_id,
         user_channel_id,
@@ -879,6 +879,7 @@ async fn active(
     };
 
     let mut perf = Perf::new();
+    perf.socket = socket;
     let mut shots: Vec<(tokio::sync::oneshot::Sender<anyhow::Result<crate::Screenshot>>, Instant)> = Vec::new();
     let mut shots_ready_at: Option<Instant> = None;
     let mut rdpdr_tick = tokio::time::interval(Duration::from_millis(50));
@@ -1203,6 +1204,9 @@ async fn active(
 /// Per-session CPU accounting, logged at debug level (`RDP_LOG=rdp_engine=debug`).
 struct Perf {
     since: Instant,
+    /// The session's TCP socket, and its state at the last report.
+    socket: Option<u64>,
+    tcp: Option<crate::tcp_info::TcpInfo>,
     pdus: u64,
     bytes_in: u64,
     process_us: u64,
@@ -1216,6 +1220,8 @@ impl Perf {
     fn new() -> Self {
         Self {
             since: Instant::now(),
+            socket: None,
+            tcp: None,
             pdus: 0,
             bytes_in: 0,
             process_us: 0,
@@ -1235,6 +1241,12 @@ impl Perf {
         // Heavy traffic (file copies, big pastes): how fast it flows and how busy this
         // session's loop is, to tell a slow link or server from a slow client.
         let mib_s = |bytes: u64| bytes as f64 / 1_048_576.0 / secs;
+        // The connection's side of it: what held sending back (see `tcp_info`).
+        let tcp_now = self.socket.and_then(crate::tcp_info::query);
+        let tcp = match (tcp_now, self.tcp) {
+            (Some(now), Some(before)) => crate::tcp_info::Interval { now, before }.to_string(),
+            _ => String::new(),
+        };
         if mib_s(self.bytes_in) >= 0.5 || mib_s(bytes_out) >= 0.5 {
             info!(
                 session = id,
@@ -1246,6 +1258,7 @@ impl Perf {
                     pct(self.process_us + self.present_us + self.thumb_us + decode_us + send_us)
                 ),
                 writing_pct = format!("{:.0}", pct(send_us)),
+                %tcp,
                 "session traffic"
             );
         }
@@ -1274,6 +1287,8 @@ impl Perf {
         *self = Self {
             decode_us: stats.decode_us.load(Relaxed),
             decoded: stats.decoded.load(Relaxed),
+            socket: self.socket,
+            tcp: tcp_now,
             ..Self::new()
         };
     }
