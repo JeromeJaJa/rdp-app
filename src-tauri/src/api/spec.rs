@@ -528,7 +528,9 @@ pub const ENDPOINTS: &[Endpoint] = &[
         description: "404 when there is none (no companion attached, or host stats are off).",
         params: &[ID],
         body: None,
-        response: Some(r#"{"at":1760857200000,"span":30.0,"cpu":12.5,"memUsed":6871947673,"memTotal":17179869184,"netRx":81920,"netTx":20480,"volumes":[]}"#),
+        response: Some(
+            r#"{"at":1760857200000,"span":30.0,"cpu":12.5,"memUsed":6871947673,"memTotal":17179869184,"netRx":81920,"netTx":20480,"volumes":[]}"#,
+        ),
         auth: true,
     },
     Endpoint {
@@ -538,7 +540,9 @@ pub const ENDPOINTS: &[Endpoint] = &[
         summary: "Send files and folders to connections",
         description: "Copies local paths (files or whole folders) to each connection, into folder on the remote: Desktop (default), Downloads, Documents, one of those with a subfolder (Desktop\\Drop), or a full path (%VARS% expanded). Names already there are kept and the new ones numbered. Connections that aren't connected are connected first; each send starts once its companion attaches (the companion setting must be on). Returns transfer ids; follow GET /transfers.",
         params: &[],
-        body: Some(r#"{"ids": ["9f1c…", "2b7a…"], "paths": ["C:\Tools\setup.exe", "C:\Tools\config"], "folder": "Desktop"}"#),
+        body: Some(
+            r#"{"ids": ["9f1c…", "2b7a…"], "paths": ["C:\Tools\setup.exe", "C:\Tools\config"], "folder": "Desktop"}"#,
+        ),
         response: Some(r#"{"transfers": [2, 4]}"#),
         auth: true,
     },

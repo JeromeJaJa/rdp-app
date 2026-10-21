@@ -570,6 +570,108 @@ fn co_task_string(value: &str) -> PWSTR {
     }
 }
 
+/// Starts dragging `files` from this process (the left button must be down), on a thread
+/// of its own: the user drops them wherever they like (Explorer copies them, reading the
+/// streams). `ended` hears what the drop did (`DROPEFFECT` bits; 0 if cancelled). The thread
+/// keeps serving the files until the drop target lets go of them.
+pub fn drag(
+    files: Arc<dyn VirtualFiles>,
+    options: Options,
+    ended: impl FnOnce(u32) + Send + 'static,
+) -> std::io::Result<()> {
+    use windows::Win32::System::Ole::{DROPEFFECT_NONE, DoDragDrop, IDropSource, OleInitialize, OleUninitialize};
+    use windows::Win32::System::Threading::GetCurrentThreadId;
+    use windows::Win32::UI::WindowsAndMessaging::{DispatchMessageW, GetMessageW, TranslateMessage};
+
+    std::thread::Builder::new().name("drag-files".into()).spawn(move || {
+        // SAFETY: OLE for this thread, paired with OleUninitialize; the objects live through
+        // the modal drag and the loop that serves them afterwards.
+        unsafe {
+            if OleInitialize(None).is_err() {
+                ended(0);
+                return;
+            }
+            let thread = GetCurrentThreadId();
+            let data = data_object(Arc::new(QuitWhenReleased { files, thread }), options);
+            let source: IDropSource = ButtonSource.into();
+            let mut effect = DROPEFFECT_NONE;
+            let result = DoDragDrop(&data, &source, DROPEFFECT_COPY, &mut effect);
+            ended(if result == DRAGDROP_S_DROP { effect.0 } else { 0 });
+            drop(data);
+            // Explorer may read the files after the drop returns: serve until it lets go.
+            let mut msg = MSG::default();
+            while GetMessageW(&mut msg, None, 0, 0).0 > 0 {
+                let _ = TranslateMessage(&msg);
+                DispatchMessageW(&msg);
+            }
+            OleUninitialize();
+        }
+    })?;
+    Ok(())
+}
+
+const DRAGDROP_S_DROP: HRESULT = HRESULT(0x0004_0100);
+const DRAGDROP_S_CANCEL: HRESULT = HRESULT(0x0004_0101);
+const DRAGDROP_S_USEDEFAULTCURSORS: HRESULT = HRESULT(0x0004_0102);
+
+/// Ends the drag thread's loop once nothing holds the files any more.
+struct QuitWhenReleased {
+    files: Arc<dyn VirtualFiles>,
+    thread: u32,
+}
+
+impl VirtualFiles for QuitWhenReleased {
+    fn entries(&self) -> Result<Arc<[Entry]>, String> {
+        self.files.entries()
+    }
+
+    fn size(&self, index: u32) -> Result<u64, String> {
+        self.files.size(index)
+    }
+
+    fn read(&self, index: u32, position: u64, out: &mut [u8]) -> Result<usize, String> {
+        self.files.read(index, position, out)
+    }
+
+    fn release(&self, index: u32) {
+        self.files.release(index);
+    }
+}
+
+impl Drop for QuitWhenReleased {
+    fn drop(&mut self) {
+        use windows::Win32::Foundation::{LPARAM, WPARAM};
+        use windows::Win32::UI::WindowsAndMessaging::{PostThreadMessageW, WM_QUIT};
+        // SAFETY: posting to the drag thread's own queue.
+        let _ = unsafe { PostThreadMessageW(self.thread, WM_QUIT, WPARAM(0), LPARAM(0)) };
+    }
+}
+
+/// A drag that follows the physical left button: released drops, Esc cancels.
+#[implement(windows::Win32::System::Ole::IDropSource)]
+struct ButtonSource;
+
+impl windows::Win32::System::Ole::IDropSource_Impl for ButtonSource_Impl {
+    fn QueryContinueDrag(
+        &self,
+        escape: BOOL,
+        keys: windows::Win32::System::SystemServices::MODIFIERKEYS_FLAGS,
+    ) -> HRESULT {
+        use windows::Win32::System::SystemServices::MK_LBUTTON;
+        if escape.as_bool() {
+            DRAGDROP_S_CANCEL
+        } else if keys.0 & MK_LBUTTON.0 == 0 {
+            DRAGDROP_S_DROP
+        } else {
+            S_OK
+        }
+    }
+
+    fn GiveFeedback(&self, _effect: windows::Win32::System::Ole::DROPEFFECT) -> HRESULT {
+        DRAGDROP_S_USEDEFAULTCURSORS
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::{AtomicU32, Ordering};

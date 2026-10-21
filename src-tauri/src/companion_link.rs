@@ -15,12 +15,37 @@ use std::time::{Duration, Instant};
 use parking_lot::Mutex;
 use rdp_companion_proto::transfer::{self, DiskFiles, Inflow, Listing, Note, Outbox, Pump, Source};
 use rdp_companion_proto::{Entry, HostStats, Intent, Message};
-use rdp_engine::{CompanionHandler, CompanionHost, CompanionLink};
+use rdp_engine::{CompanionHandler, CompanionHost, CompanionLink, Engine, InputEvent};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
 /// How long a paste waits for the companion to list what the remote copied.
 const LIST_WAIT: Duration = Duration::from_secs(30);
+/// How long a drag onto a session waits for the companion to get ready.
+const DRAG_READY_WAIT: Duration = Duration::from_secs(3);
+
+/// What a drag onto a session is doing, as the UI hears it (`remote-drag` events).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteDragView {
+    pub session: String,
+    pub id: u64,
+    /// What dropping where the pointer is would do on the remote (`DROPEFFECT` bits).
+    pub effect: u32,
+    /// The remote drag is over (dropped, or cancelled).
+    pub ended: bool,
+}
+
+/// A drag of local files onto a session, driven through its companion.
+struct RemoteDrag {
+    id: u64,
+    /// Answered when the companion has its window under the pointer.
+    ready: Option<mpsc::SyncSender<()>>,
+    /// The button is down on the remote (we pressed it).
+    pressed: bool,
+    cancelled: bool,
+    at: (u16, u16),
+}
 
 /// Host stats as the UI gets them.
 #[derive(Debug, Clone, Serialize)]
@@ -125,6 +150,8 @@ pub fn label(listing: &Listing) -> String {
 pub struct Companions {
     me: Weak<Companions>,
     app: AppHandle,
+    /// For pressing and moving the remote pointer during drags.
+    engine: Engine,
     attached: Mutex<HashMap<String, Arc<Attached>>>,
     stats: Mutex<HashMap<String, StatsView>>,
     transfers: Arc<Mutex<HashMap<u64, TransferView>>>,
@@ -136,10 +163,11 @@ pub struct Companions {
 pub type IntervalSource = Arc<dyn Fn(&str) -> u32 + Send + Sync>;
 
 impl Companions {
-    pub fn new(app: AppHandle) -> Arc<Self> {
+    pub fn new(app: AppHandle, engine: Engine) -> Arc<Self> {
         Arc::new_cyclic(|me| Self {
             me: me.clone(),
             app,
+            engine,
             attached: Mutex::default(),
             stats: Mutex::default(),
             transfers: Arc::default(),
@@ -294,6 +322,166 @@ impl Companions {
     pub fn state(&self, id: u64) -> Option<TransferState> {
         self.transfers.lock().get(&id).map(|t| t.state)
     }
+
+    // ── Dragging files onto a session ───────────────────────────────────────
+
+    /// Starts dragging `listing` onto `session` at (`x`, `y`) (remote pixels): the
+    /// companion gets a window under the pointer, then we press the button there, which
+    /// starts a real drag on the remote. Blocking (waits for the companion, briefly).
+    pub fn drag_in(&self, session: &str, listing: Listing, x: u16, y: u16) -> anyhow::Result<u64> {
+        let attached = self
+            .get(session)
+            .ok_or_else(|| anyhow::anyhow!("no companion is attached to this session"))?;
+        self.drag_cancel(session);
+        let id = self.next_id();
+        let (ready_tx, ready_rx) = mpsc::sync_channel(1);
+        *attached.drag.lock() = Some(RemoteDrag {
+            id,
+            ready: Some(ready_tx),
+            pressed: false,
+            cancelled: false,
+            at: (x, y),
+        });
+        let entries: Arc<[Entry]> = listing.entries.into();
+        attached.sources.lock().insert(id);
+        attached.pump.start(Source::new(
+            id,
+            Arc::clone(&entries),
+            Box::new(DiskFiles::new(listing.paths)),
+        ));
+        attached.link.send(&Message::DragIn {
+            id,
+            entries: entries.to_vec(),
+            x: i32::from(x),
+            y: i32::from(y),
+        });
+        if ready_rx.recv_timeout(DRAG_READY_WAIT).is_err() {
+            attached.drag.lock().take();
+            anyhow::bail!("the companion didn't take the drag");
+        }
+        let mut drag = attached.drag.lock();
+        match drag.as_mut() {
+            Some(d) if d.id == id && !d.cancelled => {
+                let (x, y) = d.at;
+                d.pressed = true;
+                self.engine.input(
+                    session,
+                    vec![InputEvent::Move { x, y }, InputEvent::Button { button: 0, down: true }],
+                );
+                Ok(id)
+            }
+            _ => anyhow::bail!("the drag was cancelled"),
+        }
+    }
+
+    /// The pointer moved over the session during a drag.
+    pub fn drag_move(&self, session: &str, x: u16, y: u16) {
+        let Some(attached) = self.get(session) else { return };
+        let mut drag = attached.drag.lock();
+        let Some(d) = drag.as_mut().filter(|d| !d.cancelled) else {
+            return;
+        };
+        d.at = (x, y);
+        if d.pressed {
+            self.engine.input(session, vec![InputEvent::Move { x, y }]);
+        }
+    }
+
+    /// The files were dropped on the session: let go of the button there.
+    pub fn drag_drop(&self, session: &str, x: u16, y: u16) {
+        let Some(attached) = self.get(session) else { return };
+        let mut drag = attached.drag.lock();
+        let Some(d) = drag.as_mut().filter(|d| !d.cancelled) else {
+            return;
+        };
+        d.at = (x, y);
+        if d.pressed {
+            d.pressed = false;
+            self.engine.input(
+                session,
+                vec![InputEvent::Move { x, y }, InputEvent::Button { button: 0, down: false }],
+            );
+        }
+    }
+
+    /// The drag left the session (or was cancelled): end the remote drag without a drop.
+    /// The button comes up once the companion says the drag is over.
+    pub fn drag_cancel(&self, session: &str) {
+        let Some(attached) = self.get(session) else { return };
+        let mut drag = attached.drag.lock();
+        let Some(d) = drag.as_mut().filter(|d| !d.cancelled) else {
+            return;
+        };
+        d.cancelled = true;
+        attached.link.send(&Message::DragCancel { id: d.id });
+        if d.pressed {
+            // The remote drag notices the cancel on its next input.
+            let (x, y) = d.at;
+            self.engine.input(session, vec![InputEvent::Move { x, y }]);
+        } else {
+            drag.take();
+        }
+    }
+
+    // ── Dragging files out of a session ────────────────────────────────────
+
+    /// The pointer left `session` with the button held, at (`x`, `y`) (remote pixels, at
+    /// the edge): if the remote is dragging files, carry the drag on here.
+    pub fn drag_out_probe(&self, session: &str, x: u16, y: u16) {
+        let Some(attached) = self.get(session) else { return };
+        let id = self.next_id();
+        *attached.drag_out.lock() = Some((id, (x, y)));
+        attached.link.send(&Message::DragOutProbe {
+            id,
+            x: i32::from(x),
+            y: i32::from(y),
+        });
+    }
+
+    /// The remote is dragging these files out: start a drag of them here.
+    fn dragged_out(&self, attached: &Attached, id: u64, entries: Vec<Entry>) {
+        let probe = attached.drag_out.lock().take();
+        if probe.map(|(probe, _)| probe) != Some(id)
+            || entries.iter().any(|e| transfer::safe_relative(&e.path).is_none())
+        {
+            attached.link.send(&Message::Close { id, error: None });
+            return;
+        }
+        attached.inflows.lock().retain(|_, inflow| !inflow.is_closed());
+        let inflow = Arc::new(Inflow::new(id, entries.into(), attached.outbox()));
+        attached.inflows.lock().insert(id, Arc::clone(&inflow));
+        // The remote drag is done with: its button comes up (over the companion's target,
+        // which takes nothing). The drag goes on here, under the user's own button.
+        self.engine
+            .input(&attached.session, vec![InputEvent::Button { button: 0, down: false }]);
+        #[cfg(windows)]
+        {
+            if !primary_button_down() {
+                // Already let go: a drag now would drop wherever the pointer happens to be.
+                inflow.finish(None);
+                return;
+            }
+            let files = Arc::new(rdp_vfiles::InflowFiles::new(inflow));
+            let started = rdp_vfiles::drag(files, rdp_vfiles::Options::default(), move |effect| {
+                tracing::info!(effect, "files dragged out of a session were dropped");
+            });
+            if let Err(error) = started {
+                tracing::warn!(%error, "couldn't start dragging the files out");
+            }
+        }
+        #[cfg(not(windows))]
+        inflow.finish(None);
+    }
+
+    fn drag_event(&self, session: &str, id: u64, effect: u32, ended: bool) {
+        let view = RemoteDragView {
+            session: session.to_owned(),
+            id,
+            effect,
+            ended,
+        };
+        let _ = self.app.emit("remote-drag", &view);
+    }
 }
 
 impl CompanionHost for Companions {
@@ -335,6 +523,8 @@ impl CompanionHost for Companions {
             sources,
             inflows: Mutex::default(),
             queries: Mutex::default(),
+            drag: Mutex::default(),
+            drag_out: Mutex::default(),
         });
         let replaced = self.attached.lock().insert(session.to_owned(), Arc::clone(&attached));
         if let Some(old) = replaced {
@@ -377,6 +567,52 @@ impl Companions {
                 if let Some(inflow) = inflow {
                     inflow.receive(message);
                 }
+            }
+            Message::DragReady { id } => {
+                if let Some(d) = attached.drag.lock().as_mut().filter(|d| d.id == id)
+                    && let Some(ready) = d.ready.take()
+                {
+                    let _ = ready.send(());
+                }
+            }
+            Message::DragFeedback { id, effect } => self.drag_event(&attached.session, id, effect, false),
+            Message::DragOutReady { id } => {
+                // Nudge the pointer so a remote drag under way finds the companion's target.
+                let at = attached
+                    .drag_out
+                    .lock()
+                    .filter(|(probe, _)| *probe == id)
+                    .map(|(_, at)| at);
+                if let Some((x, y)) = at {
+                    let nudge = if x > 0 { x - 1 } else { x + 1 };
+                    self.engine.input(
+                        &attached.session,
+                        vec![InputEvent::Move { x: nudge, y }, InputEvent::Move { x, y }],
+                    );
+                }
+            }
+            Message::DragOut { id, entries } => self.dragged_out(attached, id, entries),
+            Message::DragOutNone { id } => {
+                let mut probe = attached.drag_out.lock();
+                if probe.is_some_and(|(p, _)| p == id) {
+                    probe.take();
+                }
+            }
+            Message::DragEnded { id, effect } => {
+                let ended = {
+                    let mut drag = attached.drag.lock();
+                    let ours = drag.as_ref().is_some_and(|d| d.id == id);
+                    if ours { drag.take() } else { None }
+                };
+                // Cancelled with the button still down on the remote: let it go now
+                // that nothing would take it as a drop.
+                if let Some(d) = ended
+                    && d.pressed
+                {
+                    self.engine
+                        .input(&attached.session, vec![InputEvent::Button { button: 0, down: false }]);
+                }
+                self.drag_event(&attached.session, id, effect, true);
             }
             Message::Close { id, error } => {
                 if attached.sources.lock().contains(&id) {
@@ -431,6 +667,10 @@ struct Attached {
     inflows: Mutex<HashMap<u64, Arc<Inflow>>>,
     /// Pastes waiting for the companion to offer what the remote copied.
     queries: Mutex<HashMap<u64, mpsc::SyncSender<Option<Arc<Inflow>>>>>,
+    /// A drag of local files onto the session, if one is under way.
+    drag: Mutex<Option<RemoteDrag>>,
+    /// Looking for a drag out of the session: (transfer id, where the pointer left).
+    drag_out: Mutex<Option<(u64, (u16, u16))>>,
 }
 
 impl Attached {
@@ -492,6 +732,23 @@ impl CompanionHandler for Handler {
             Some(owner) => owner.on_detached(&self.attached),
             None => self.attached.abort("the app is closing"),
         }
+    }
+}
+
+/// Whether the user's primary mouse button is physically down right now.
+#[cfg(windows)]
+fn primary_button_down() -> bool {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON};
+    use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_SWAPBUTTON};
+    // SAFETY: plain state queries. GetAsyncKeyState reads physical buttons, so with the
+    // buttons swapped the primary one is the right.
+    unsafe {
+        let key = if GetSystemMetrics(SM_SWAPBUTTON) != 0 {
+            VK_RBUTTON
+        } else {
+            VK_LBUTTON
+        };
+        GetAsyncKeyState(i32::from(key.0)) < 0
     }
 }
 

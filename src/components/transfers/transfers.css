@@ -288,3 +288,35 @@
   color: var(--text-2);
   white-space: normal;
 }
+
+/* ── Files dragged in from other apps ───────────────────────────────────── */
+
+/* The beam traces whatever the files would land on. */
+.drop-frame {
+  position: fixed;
+  z-index: 900;
+  pointer-events: none;
+}
+.drop-frame__box {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+/* What the drop would do, beside the pointer. */
+.drop-label {
+  position: fixed;
+  z-index: 901;
+  pointer-events: none;
+  max-width: 320px;
+  padding: 5px 10px;
+  border-radius: 7px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  --glass-blur: var(--glass-blur-sm);
+}
+/* Over a session the remote's own feedback shows through: no tint on top of it. */
+.drop-frame__box.is-remote {
+  background: none;
+}

@@ -56,6 +56,10 @@ mod channel;
 #[cfg(windows)]
 mod clipboard;
 #[cfg(windows)]
+mod drag;
+#[cfg(windows)]
+mod dragout;
+#[cfg(windows)]
 mod stats;
 #[cfg(windows)]
 mod transfers;
@@ -93,6 +97,13 @@ mod windows_impl {
     }
 
     pub(super) fn run() -> anyhow::Result<()> {
+        // Window positions in the session's own pixels (what the client's pointer uses).
+        // SAFETY: process-wide setting, made before any window exists.
+        unsafe {
+            let _ = windows::Win32::UI::HiDpi::SetProcessDpiAwarenessContext(
+                windows::Win32::UI::HiDpi::DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+            );
+        }
         // Persist first (best-effort), so this host auto-starts the companion on every
         // future connection without any delivery step. Then attach for this session.
         install::ensure();
@@ -185,6 +196,9 @@ mod windows_impl {
                             Message::Fetch { .. } | Message::Ack { .. } => transfers.outgoing(&message),
                             Message::Close { id, error } => transfers.close(id, error),
                             Message::ClipboardQuery { id } => transfers.clipboard_query(id),
+                            Message::DragIn { id, entries, x, y } => transfers.drag_in(id, entries, x, y),
+                            Message::DragCancel { id } => transfers.drag_cancel(id),
+                            Message::DragOutProbe { id, x, y } => transfers.drag_out_probe(id, x, y),
                             // Not sent to the companion.
                             _ => {}
                         }

@@ -106,6 +106,8 @@ export interface AppState {
   stats: Record<ConnectionId, Vitals>;
   /** Files being sent to connections, by transfer id. */
   transfers: Record<number, Transfer>;
+  /** Files dropped onto an open Send dialog (it adds them). */
+  droppedPaths: { paths: string[]; seq: number } | null;
 
   selectedId: ConnectionId | null;
   view: View;
@@ -146,6 +148,7 @@ export const useStore = create<AppState>(() => ({
   sessions: {},
   stats: {},
   transfers: {},
+  droppedPaths: null,
 
   selectedId: null,
   view: "session",

@@ -25,7 +25,9 @@ import {
   type Settings,
   type TrustedCertificate,
   type CompanionStatus,
+  type FileDrag,
   type HostStats,
+  type RemoteDrag,
   type Transfer,
   type UiCommand,
   type UiState,
@@ -266,6 +268,34 @@ export class TauriBackend implements Backend {
 
   onTransfer(cb: (transfer: Transfer) => void): Unsubscribe {
     return subscribe<Transfer>("transfer", cb);
+  }
+
+  onFileDrag(cb: (drag: FileDrag) => void): Unsubscribe {
+    return subscribeThisWindow<FileDrag>("file-drag", cb);
+  }
+
+  setDropEffect(copy: boolean): void {
+    void invoke("drop_effect", { copy }).catch(() => {});
+  }
+
+  remoteDragStart(id: ConnectionId, paths: string[], x: number, y: number): Promise<number> {
+    return invoke("remote_drag_start", { id, paths, x, y });
+  }
+
+  remoteDragMove(id: ConnectionId, x: number, y: number): void {
+    void invoke("remote_drag_move", { id, x, y }).catch(() => {});
+  }
+
+  remoteDragDrop(id: ConnectionId, x: number, y: number): void {
+    void invoke("remote_drag_drop", { id, x, y }).catch(() => {});
+  }
+
+  remoteDragCancel(id: ConnectionId): void {
+    void invoke("remote_drag_cancel", { id }).catch(() => {});
+  }
+
+  onRemoteDrag(cb: (drag: RemoteDrag) => void): Unsubscribe {
+    return subscribe<RemoteDrag>("remote-drag", cb);
   }
 
   async pickPaths(kind: "files" | "folder"): Promise<string[] | null> {

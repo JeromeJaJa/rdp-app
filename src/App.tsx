@@ -9,6 +9,7 @@ import { ContextMenu } from "./components/menu/ContextMenu";
 import { Toasts } from "./components/toast/Toasts";
 import { Tooltips } from "./components/ui/Tooltips";
 import { VitalsCards } from "./components/vitals/Vitals";
+import { FileDropLayer } from "./components/transfers/FileDropLayer";
 import { CommandPalette } from "./components/palette/CommandPalette";
 import { useEngineSync, useShortcuts, useTabAreaReporter, useViewportReporter } from "./state/hooks";
 import { useStore } from "./state/store";
@@ -42,6 +43,7 @@ export function App() {
       <Toasts />
       <Tooltips />
       <VitalsCards />
+      <FileDropLayer />
     </div>
   );
 }

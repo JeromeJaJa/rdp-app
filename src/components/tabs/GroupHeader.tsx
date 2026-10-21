@@ -27,6 +27,7 @@ function GroupHeaderInner({ group, ids }: { group: Group; ids: ConnectionId[] })
     <div
       ref={setNodeRef}
       className={`group-header ${group.collapsed ? "is-collapsed" : ""} ${isOver ? "is-over" : ""}`}
+      data-group-id={group.id}
       onClick={() => !renaming && toggleGroupCollapsed(group.id)}
       onDoubleClick={(e) => {
         e.stopPropagation();

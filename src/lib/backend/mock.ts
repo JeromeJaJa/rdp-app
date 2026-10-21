@@ -28,7 +28,9 @@ import {
   type Settings,
   type TrustedCertificate,
   type CompanionStatus,
+  type FileDrag,
   type HostStats,
+  type RemoteDrag,
   type Transfer,
   type UiCommand,
   type UiState,
@@ -865,6 +867,27 @@ export class MockBackend implements Backend {
   onTransfer(cb: (transfer: Transfer) => void): Unsubscribe {
     this.transferListeners.add(cb);
     return () => this.transferListeners.delete(cb);
+  }
+
+  /** A browser can't give dropped files' paths: no file drags in the preview. */
+  onFileDrag(_cb: (drag: FileDrag) => void): Unsubscribe {
+    return () => {};
+  }
+
+  setDropEffect(_copy: boolean): void {}
+
+  async remoteDragStart(): Promise<number> {
+    throw new Error("Dragging onto a session needs the app");
+  }
+
+  remoteDragMove(): void {}
+
+  remoteDragDrop(): void {}
+
+  remoteDragCancel(): void {}
+
+  onRemoteDrag(_cb: (drag: RemoteDrag) => void): Unsubscribe {
+    return () => {};
   }
 
   async pickPaths(kind: "files" | "folder"): Promise<string[] | null> {

@@ -198,6 +198,61 @@ pub enum Message {
     NoFiles {
         id: u64,
     },
+
+    /// Client → companion: files from this PC are being dragged onto the session at
+    /// (`x`, `y`) (remote desktop pixels). Get a drag ready there and answer
+    /// [`Message::DragReady`]; the client then presses the button there through the
+    /// session, which starts a real drag on the remote that follows the pointer. The files
+    /// are transfer `id`; their contents are fetched when dropped.
+    DragIn {
+        id: u64,
+        entries: Vec<Entry>,
+        x: i32,
+        y: i32,
+    },
+    /// Companion → client: ready; press the button.
+    DragReady {
+        id: u64,
+    },
+    /// Companion → client: what dropping where the pointer is would do on the remote
+    /// (`DROPEFFECT` bits; 0 = nothing).
+    DragFeedback {
+        id: u64,
+        effect: u32,
+    },
+    /// Client → companion: the drag left the session or was cancelled.
+    DragCancel {
+        id: u64,
+    },
+    /// Companion → client: the remote drag ended (`effect`: what the drop did; 0 = no drop).
+    DragEnded {
+        id: u64,
+        effect: u32,
+    },
+
+    /// Client → companion: the pointer left the session with the button held at (`x`, `y`)
+    /// (remote pixels, at the edge). If files are being dragged there, offer them as
+    /// transfer `id` ([`Message::DragOut`]) so the drag can carry on on the client; else
+    /// [`Message::DragOutNone`]. The companion answers [`Message::DragOutReady`] first.
+    DragOutProbe {
+        id: u64,
+        x: i32,
+        y: i32,
+    },
+    /// Companion → client: a drop target is under the pointer; nudge the pointer so the
+    /// remote drag (if any) finds it.
+    DragOutReady {
+        id: u64,
+    },
+    /// Companion → client: these files are being dragged (served as transfer `id`).
+    DragOut {
+        id: u64,
+        entries: Vec<Entry>,
+    },
+    /// Companion → client: nothing it can carry over is being dragged.
+    DragOutNone {
+        id: u64,
+    },
 }
 
 /// Serializes a message into a self-framed `[len][body]` buffer.

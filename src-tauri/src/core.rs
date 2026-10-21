@@ -219,7 +219,7 @@ impl Core {
         certs: Arc<CertStore>,
         bus: broadcast::Sender<Value>,
     ) -> Self {
-        let companions = crate::companion_link::Companions::new(app.clone());
+        let companions = crate::companion_link::Companions::new(app.clone(), engine.clone());
         engine.set_companion_host(Some(Arc::clone(&companions) as Arc<dyn rdp_engine::CompanionHost>));
         Self {
             store: Mutex::new(store),

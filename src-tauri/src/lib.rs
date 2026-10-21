@@ -8,6 +8,8 @@ mod companion_link;
 mod core;
 mod dpapi;
 #[cfg(windows)]
+mod file_drop;
+#[cfg(windows)]
 mod frames;
 mod keys;
 #[cfg(windows)]
@@ -345,6 +347,59 @@ async fn send_files(
         .map_err(err)
 }
 
+/// What dropping the dragged files at the pointer would do in this window (the page decides).
+#[tauri::command]
+fn drop_effect(window: tauri::WebviewWindow, copy: bool) {
+    #[cfg(windows)]
+    file_drop::set_effect(window.label(), copy);
+    #[cfg(not(windows))]
+    let _ = (window, copy);
+}
+
+/// Starts dragging files onto a session at a point (remote pixels). Resolves once the
+/// remote drag is under way; `remote-drag` events say what the remote would do.
+#[tauri::command]
+async fn remote_drag_start(
+    state: State<'_, AppState>,
+    id: String,
+    paths: Vec<String>,
+    x: u16,
+    y: u16,
+) -> CmdResult<u64> {
+    let core = std::sync::Arc::clone(&state.core);
+    tauri::async_runtime::spawn_blocking(move || {
+        let paths: Vec<std::path::PathBuf> = paths.into_iter().map(Into::into).collect();
+        let listing = rdp_companion_proto::transfer::list(&paths);
+        anyhow::ensure!(!listing.entries.is_empty(), "nothing to drag");
+        core.companions.drag_in(&id, listing, x, y)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(err)
+}
+
+#[tauri::command]
+fn remote_drag_move(state: State<'_, AppState>, id: String, x: u16, y: u16) {
+    state.core.companions.drag_move(&id, x, y);
+}
+
+#[tauri::command]
+fn remote_drag_drop(state: State<'_, AppState>, id: String, x: u16, y: u16) {
+    state.core.companions.drag_drop(&id, x, y);
+}
+
+#[tauri::command]
+fn remote_drag_cancel(state: State<'_, AppState>, id: String) {
+    state.core.companions.drag_cancel(&id);
+}
+
+/// The pointer left a session with the button held (at the edge, remote pixels): if files
+/// are being dragged there, the drag carries on on this PC.
+#[tauri::command]
+fn drag_out_probe(state: State<'_, AppState>, id: String, x: u16, y: u16) {
+    state.core.companions.drag_out_probe(&id, x, y);
+}
+
 /// Stops a send.
 #[tauri::command]
 fn cancel_transfer(state: State<'_, AppState>, id: u64) {
@@ -548,6 +603,8 @@ pub fn run() {
             // A detached window closed: its tabs go back to the main window. Done off the
             // event loop's dispatch of this event: it talks to webviews and emits events.
             tauri::WindowEvent::Destroyed if window.label().starts_with(tearoff::PREFIX) => {
+                #[cfg(windows)]
+                file_drop::forget(window.label());
                 let app = window.app_handle().clone();
                 let label = window.label().to_owned();
                 std::thread::spawn(move || {
@@ -670,6 +727,12 @@ pub fn run() {
             window_open_tabs,
             window_close_tabs,
             companion_install,
+            drop_effect,
+            remote_drag_start,
+            remote_drag_move,
+            remote_drag_drop,
+            remote_drag_cancel,
+            drag_out_probe,
             send_files,
             cancel_transfer,
             clear_transfers,
@@ -706,6 +769,8 @@ pub(crate) fn configure_webview(window: &tauri::WebviewWindow) {
     use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings3;
     use windows_core::Interface as _;
 
+    // Files dragged in from other apps come to us (with their paths), not the page.
+    file_drop::install(window);
     if cfg!(debug_assertions) {
         return; // keep reload/devtools while developing
     }

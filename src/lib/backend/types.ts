@@ -20,7 +20,9 @@ import type {
   TrustedCertificate,
   CompanionStatus,
   ContinueDrag,
+  FileDrag,
   HostStats,
+  RemoteDrag,
   Transfer,
   TabGrab,
   UiCommand,
@@ -131,6 +133,20 @@ export interface Backend {
   onTransfer(cb: (transfer: Transfer) => void): Unsubscribe;
   /** Opens a picker for files (several) or a folder to send. Resolves null if cancelled. */
   pickPaths(kind: "files" | "folder"): Promise<string[] | null>;
+  /** Files dragged over this window from Explorer or another app. */
+  onFileDrag(cb: (drag: FileDrag) => void): Unsubscribe;
+  /** Whether dropping the dragged files at the pointer would do something (sets the cursor). */
+  setDropEffect(copy: boolean): void;
+  /**
+   * Starts dragging local files onto a session (its companion takes the drag) at (x, y) in
+   * remote pixels. Resolves once the remote drag is under way; then move, drop or cancel it.
+   */
+  remoteDragStart(id: ConnectionId, paths: string[], x: number, y: number): Promise<number>;
+  remoteDragMove(id: ConnectionId, x: number, y: number): void;
+  remoteDragDrop(id: ConnectionId, x: number, y: number): void;
+  remoteDragCancel(id: ConnectionId): void;
+  /** What a session's remote drag would do with a drop, as it changes. */
+  onRemoteDrag(cb: (drag: RemoteDrag) => void): Unsubscribe;
   /** Tells the backend what the UI shows (answers GET /api/v1/ui). */
   reportUiState(state: UiState): void;
   /** Opens an http(s) link in the default browser. */

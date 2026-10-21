@@ -19,6 +19,7 @@ use windows::core::HSTRING;
 
 use crate::channel::Channel;
 use crate::clipboard::{self, Clipboard};
+use crate::drag::Drags;
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
@@ -34,6 +35,8 @@ pub(crate) struct Transfers {
     sources: Mutex<HashSet<u64>>,
     /// Transfers being received.
     inflows: Arc<Mutex<HashMap<u64, Arc<Inflow>>>>,
+    /// Files being dragged onto the session.
+    drags: Drags,
 }
 
 impl Transfers {
@@ -50,6 +53,7 @@ impl Transfers {
             pump,
             sources: Mutex::default(),
             inflows: Arc::default(),
+            drags: Drags::default(),
         })
     }
 
@@ -101,6 +105,59 @@ impl Transfers {
                 }
             }
         }
+    }
+
+    /// The client drags files onto the session at (`x`, `y`): get a drag ready there.
+    pub(crate) fn drag_in(&self, id: u64, entries: Vec<Entry>, x: i32, y: i32) {
+        lock(&self.inflows).retain(|_, inflow| !inflow.is_closed());
+        if entries.iter().any(|e| transfer::safe_relative(&e.path).is_none()) {
+            tracing::warn!("refusing a drag with an unsafe name");
+            self.channel.send(&Message::DragEnded { id, effect: 0 });
+            return;
+        }
+        let inflow = Arc::new(Inflow::new(id, entries.into(), self.outbox()));
+        lock(&self.inflows).insert(id, Arc::clone(&inflow));
+        self.drags.start(Arc::clone(&self.channel), inflow, x, y);
+    }
+
+    /// The client's pointer left the session with the button held: if files are being
+    /// dragged here, offer them so the drag carries on on the client.
+    pub(crate) fn drag_out_probe(self: &Arc<Self>, id: u64, x: i32, y: i32) {
+        let this = Arc::clone(self);
+        let serve: crate::dragout::Serve = Arc::new(move |id, paths| this.serve_dragged(id, paths));
+        crate::dragout::probe(Arc::clone(&self.channel), id, x, y, serve);
+    }
+
+    /// Lists and serves files dragged out of the session (off the drag's thread: listing a
+    /// big folder takes a moment, and the remote drag waits on that thread).
+    fn serve_dragged(self: &Arc<Self>, id: u64, paths: Vec<PathBuf>) {
+        let this = Arc::clone(self);
+        let spawned = std::thread::Builder::new().name("drag-out-list".into()).spawn(move || {
+            let listing = transfer::list(&paths);
+            if listing.entries.is_empty() {
+                this.channel.send(&Message::DragOutNone { id });
+                return;
+            }
+            let entries: Arc<[Entry]> = listing.entries.into();
+            lock(&this.sources).insert(id);
+            this.pump.start(Source::new(
+                id,
+                Arc::clone(&entries),
+                Box::new(DiskFiles::new(listing.paths)),
+            ));
+            this.channel.send(&Message::DragOut {
+                id,
+                entries: entries.to_vec(),
+            });
+        });
+        if spawned.is_err() {
+            self.channel.send(&Message::DragOutNone { id });
+        }
+    }
+
+    /// The client's drag left the session (or was cancelled).
+    pub(crate) fn drag_cancel(&self, id: u64) {
+        self.drags.cancel(id);
     }
 
     /// Contents for a transfer being received.

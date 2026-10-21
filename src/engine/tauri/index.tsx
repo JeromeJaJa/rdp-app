@@ -275,13 +275,26 @@ function RemoteSurface({ id, className, onFocusChange }: RemoteSurfaceProps) {
       else releaseAll();
     };
 
+    // Leaving the session with the left button held may be a drag of files out of it: ask
+    // (once per press) so the companion can carry the drag on here.
+    let probedOut = false;
+    const outside = (clientX: number, clientY: number) => {
+      const r = canvasRef.current?.getBoundingClientRect();
+      return !!r && (clientX < r.left || clientX >= r.right || clientY < r.top || clientY >= r.bottom);
+    };
+
     // The event's own position is the latest one. (Coalesced samples add nothing here
     // since only the last position is sent, and fast drags could yield bogus ones.)
     const onPointerMove = (e: PointerEvent) => {
       const p = toRemote(e.clientX, e.clientY);
       if (p) q.push({ t: "move", ...p });
+      if (p && held.has(0) && !probedOut && outside(e.clientX, e.clientY)) {
+        probedOut = true;
+        invoke("drag_out_probe", { id, x: p.x, y: p.y }).catch(() => {});
+      }
     };
     const onPointerDown = (e: PointerEvent) => {
+      probedOut = false;
       el.focus({ preventScroll: true });
       const p = toRemote(e.clientX, e.clientY);
       if (!p) return;

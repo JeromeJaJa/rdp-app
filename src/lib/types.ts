@@ -418,6 +418,25 @@ export interface HostStats {
 
 export type TransferState = "waiting" | "sending" | "done" | "failed" | "cancelled";
 
+/** A drag of local files onto a session, as its companion reports it. */
+export interface RemoteDrag {
+  session: ConnectionId;
+  id: number;
+  /** What dropping where the pointer is would do on the remote (DROPEFFECT bits; 0 = nothing). */
+  effect: number;
+  /** The remote drag is over (dropped or cancelled). */
+  ended: boolean;
+}
+
+/** Files dragged over this window from another app: where (CSS px), and their paths on
+ *  enter and drop. A drop only arrives where the page said it would take one. */
+export interface FileDrag {
+  phase: "enter" | "over" | "leave" | "drop";
+  x: number;
+  y: number;
+  paths?: string[];
+}
+
 /** Files being sent to one connection ("Send files to…"). */
 export interface Transfer {
   /** The connection it goes to. */

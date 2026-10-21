@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { FilePlus2, FolderPlus, Send, X } from "lucide-react";
 import type { ConnectionId } from "../../lib/types";
@@ -34,6 +34,11 @@ export function SendDialog({ ids, paths: initial }: { ids: ConnectionId[]; paths
   const [paths, setPaths] = useState<string[]>(initial ?? []);
   const [{ place, path }, setDest] = useState(lastFolder);
   const [busy, setBusy] = useState(false);
+  // Files dropped onto the dialog join the list.
+  const dropped = useStore((s) => s.droppedPaths);
+  useEffect(() => {
+    if (dropped) setPaths((prev) => [...prev, ...dropped.paths.filter((p) => !prev.includes(p))]);
+  }, [dropped]);
 
   const add = async (kind: "files" | "folder") => {
     const picked = await be().pickPaths(kind);
