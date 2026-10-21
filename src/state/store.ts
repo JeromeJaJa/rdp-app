@@ -7,7 +7,9 @@ import {
   type ContinueDrag,
   type Group,
   type GroupId,
+  type HostStats,
   type SessionStatus,
+  type Transfer,
   type OverridableKey,
   type Settings,
   type WindowTabs,
@@ -23,6 +25,21 @@ export interface SessionInfo {
   companion?: { version: string; host: string };
 }
 
+/** A host's latest stats, with a short history (oldest first) for trend lines. */
+export interface Vitals {
+  latest: HostStats;
+  cpu: number[];
+  /** Memory in use, percent. */
+  mem: number[];
+  /** Busiest disk's active time, percent (0 when unknown). */
+  disk: number[];
+  /** Network bytes per second, both ways. */
+  net: number[];
+}
+
+/** Samples of history kept per host (20 minutes at the default 30 s). */
+export const VITALS_HISTORY = 40;
+
 export type View = "session" | "grid";
 
 export type SettingsSection = "general" | "connections" | "graphics" | "devices" | "security" | "automation";
@@ -37,6 +54,8 @@ export type DialogState =
   | { kind: "gateway"; groupId: GroupId }
   | { kind: "groupSettings"; groupId: GroupId }
   | { kind: "deleteGroup"; groupId: GroupId }
+  /** Send files and folders to connections (`paths` already chosen, e.g. dropped). */
+  | { kind: "send"; ids: ConnectionId[]; paths?: string[] }
   | {
       kind: "confirm";
       title: string;
@@ -83,6 +102,10 @@ export interface AppState {
   groups: Group[];
   settings: Settings;
   sessions: Record<ConnectionId, SessionInfo>;
+  /** Host load from each session's companion. */
+  stats: Record<ConnectionId, Vitals>;
+  /** Files being sent to connections, by transfer id. */
+  transfers: Record<number, Transfer>;
 
   selectedId: ConnectionId | null;
   view: View;
@@ -121,6 +144,8 @@ export const useStore = create<AppState>(() => ({
   groups: [],
   settings: { ...DEFAULT_SETTINGS },
   sessions: {},
+  stats: {},
+  transfers: {},
 
   selectedId: null,
   view: "session",

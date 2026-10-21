@@ -20,6 +20,8 @@ import type {
   TrustedCertificate,
   CompanionStatus,
   ContinueDrag,
+  HostStats,
+  Transfer,
   TabGrab,
   UiCommand,
   UiState,
@@ -108,6 +110,27 @@ export interface Backend {
   onCompanionStatus(cb: (status: CompanionStatus) => void): Unsubscribe;
   /** Adds a host to the WinRM client's TrustedHosts (UAC prompt), then retries install. */
   companionTrustHost(id: ConnectionId, host: string): Promise<string>;
+
+  // ── Companion: host stats and file sends ───────────────────────────────
+  /** Latest host stats of each session whose companion reports them. */
+  hostStats(): Promise<Record<ConnectionId, HostStats>>;
+  /** A session's companion reported its host's load (null: it stopped reporting). */
+  onHostStats(cb: (id: ConnectionId, stats: HostStats | null) => void): Unsubscribe;
+  /**
+   * Sends files and folders to connections, into `folder` on each remote ("Desktop",
+   * "Downloads", "Documents", one of those with a subfolder, or a full path). Connections
+   * that aren't connected are connected first. Resolves with the transfer ids; progress
+   * arrives through `onTransfer`.
+   */
+  sendFiles(ids: ConnectionId[], paths: string[], folder: string): Promise<number[]>;
+  cancelTransfer(id: number): Promise<void>;
+  /** Forgets finished transfers. */
+  clearTransfers(): Promise<void>;
+  /** Transfers in progress or recently finished. */
+  transfers(): Promise<Transfer[]>;
+  onTransfer(cb: (transfer: Transfer) => void): Unsubscribe;
+  /** Opens a picker for files (several) or a folder to send. Resolves null if cancelled. */
+  pickPaths(kind: "files" | "folder"): Promise<string[] | null>;
   /** Tells the backend what the UI shows (answers GET /api/v1/ui). */
   reportUiState(state: UiState): void;
   /** Opens an http(s) link in the default browser. */

@@ -9,6 +9,7 @@ import { displayName, isLive, useConnection, useStatus, useStore } from "../../s
 import { StatusDot, statusLabel } from "../common/StatusDot";
 import { Spinner } from "../ui/ui";
 import { TileObserverContext } from "./tileObserver";
+import { VitalsGlyph } from "../vitals/Vitals";
 
 /** The click that ends a drag must not also select (and open) the tile. */
 let dragEndedAt = 0;
@@ -130,6 +131,7 @@ function TileCard({ id, showThumb, nodeRef, style, className, ...rest }: TileCar
         <StatusDot status={status} />
         <span className="tile__name">{displayName(conn)}</span>
         {conn.name.trim() && conn.name.trim() !== conn.host && <span className="tile__host mono">{conn.host}</span>}
+        <VitalsGlyph id={id} />
       </div>
     </div>
   );

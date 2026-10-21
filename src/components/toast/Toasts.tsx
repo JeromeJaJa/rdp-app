@@ -3,6 +3,8 @@ import { AlertCircle, CheckCircle2, Info, X } from "lucide-react";
 import { dismissToast } from "../../state/actions";
 import { useStore, type Toast } from "../../state/store";
 import { useGlassUnderlay } from "../ui/useGlassUnderlay";
+import { isMainWindow } from "../../lib/env";
+import { TransfersPanel } from "../transfers/TransfersPanel";
 import "./toast.css";
 
 function ToastItem({ t }: { t: Toast }) {
@@ -37,12 +39,15 @@ function ToastItem({ t }: { t: Toast }) {
 
 export function Toasts() {
   const toasts = useStore((s) => s.toasts);
-  if (!toasts.length) return null;
+  // Files being sent show in the main window, under its toasts.
+  const transfers = useStore((s) => isMainWindow() && Object.keys(s.transfers).length > 0);
+  if (!toasts.length && !transfers) return null;
   return (
     <div className="toasts" aria-live="polite">
       {toasts.map((t) => (
         <ToastItem key={t.id} t={t} />
       ))}
+      {transfers && <TransfersPanel />}
     </div>
   );
 }

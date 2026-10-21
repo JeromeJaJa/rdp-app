@@ -223,6 +223,10 @@
   background: var(--elevated);
   box-shadow: var(--shadow-md);
 }
+/* The orb takes the glyph's place (and its room) while connecting. */
+.idle__orb {
+  margin: -6px 0 12px;
+}
 .idle__glyph--error {
   color: var(--danger);
 }

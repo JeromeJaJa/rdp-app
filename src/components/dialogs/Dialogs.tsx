@@ -11,6 +11,7 @@ import { GroupSettingsDialog } from "./GroupSettingsDialog";
 import { ImportDialog } from "./ImportDialog";
 import { ReplaceDialog } from "./ReplaceDialog";
 import { SettingsDialog } from "./SettingsDialog";
+import { SendDialog } from "../transfers/SendDialog";
 
 export function Dialogs() {
   const dialog = useStore((s) => s.dialog);
@@ -34,6 +35,8 @@ export function Dialogs() {
       return <GroupSettingsDialog key={dialog.groupId} groupId={dialog.groupId} />;
     case "deleteGroup":
       return <DeleteGroupDialog groupId={dialog.groupId} />;
+    case "send":
+      return <SendDialog ids={dialog.ids} paths={dialog.paths} />;
     case "confirm":
       return (
         <Dialog

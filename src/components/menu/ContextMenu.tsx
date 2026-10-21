@@ -13,6 +13,7 @@ import {
   Pencil,
   Plus,
   RotateCw,
+  Send,
   SlidersHorizontal,
   Trash2,
   Undo2,
@@ -34,6 +35,7 @@ import {
   moveToMainWindow,
   openDialog,
   openInNewWindow,
+  openSendDialog,
   reconnect,
   showTabWindow,
   startRenameGroup,
@@ -161,6 +163,7 @@ function ConnectionMenu({ id }: { id: string }) {
       )}
       <Sep />
       <WindowItems id={id} />
+      <Item icon={<Send size={14} />} label="Send files…" onSelect={() => openSendDialog([id])} />
       <Item icon={<Pencil size={14} />} label="Edit…" onSelect={() => openDialog({ kind: "edit", id })} />
       <Item icon={<Copy size={14} />} label="Duplicate" onSelect={() => duplicateConnection(id)} />
       <Item
@@ -226,6 +229,9 @@ function GroupMenu({ id }: { id: string }) {
         />
       )}
       {(canConnect || canDisconnect) && <Sep />}
+      {members.length > 0 && (
+        <Item icon={<Send size={14} />} label="Send files to group…" onSelect={() => openSendDialog(groupMembers(id))} />
+      )}
       <Item icon={<Plus size={14} />} label="Add connections…" onSelect={() => openDialog({ kind: "add", mode: "bulk", groupId: id })} />
       <Item icon={<ListRestart size={14} />} label="Replace connections…" onSelect={() => openDialog({ kind: "replace", groupId: id })} />
       <Item icon={<ArrowDownToLine size={14} />} label="Import into group…" onSelect={() => openDialog({ kind: "import", groupId: id })} />

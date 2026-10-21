@@ -25,6 +25,8 @@ import {
   type Settings,
   type TrustedCertificate,
   type CompanionStatus,
+  type HostStats,
+  type Transfer,
   type UiCommand,
   type UiState,
   type ContinueDrag,
@@ -236,6 +238,40 @@ export class TauriBackend implements Backend {
 
   companionTrustHost(id: ConnectionId, host: string): Promise<string> {
     return invoke("companion_trust_host", { id, host });
+  }
+
+  hostStats(): Promise<Record<ConnectionId, HostStats>> {
+    return invoke("host_stats");
+  }
+
+  onHostStats(cb: (id: ConnectionId, stats: HostStats | null) => void): Unsubscribe {
+    return subscribe<{ id: ConnectionId; stats: HostStats | null }>("host-stats", (e) => cb(e.id, e.stats));
+  }
+
+  sendFiles(ids: ConnectionId[], paths: string[], folder: string): Promise<number[]> {
+    return invoke("send_files", { ids, paths, folder });
+  }
+
+  cancelTransfer(id: number): Promise<void> {
+    return invoke("cancel_transfer", { id });
+  }
+
+  clearTransfers(): Promise<void> {
+    return invoke("clear_transfers");
+  }
+
+  transfers(): Promise<Transfer[]> {
+    return invoke("transfers");
+  }
+
+  onTransfer(cb: (transfer: Transfer) => void): Unsubscribe {
+    return subscribe<Transfer>("transfer", cb);
+  }
+
+  async pickPaths(kind: "files" | "folder"): Promise<string[] | null> {
+    const picked = await open({ multiple: kind === "files", directory: kind === "folder" });
+    if (!picked) return null;
+    return Array.isArray(picked) ? picked : [picked];
   }
 
   windowLayout(): Promise<WindowLayout> {

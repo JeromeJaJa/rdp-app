@@ -1,0 +1,290 @@
+/* ── Send dialog ─────────────────────────────────────────────────────────── */
+
+.send__targets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.send__chip {
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--glass-well);
+  box-shadow: inset 0 0 0 1px var(--glass-divider);
+  font-size: 12px;
+  color: var(--text-2);
+}
+.send__chip--more {
+  color: var(--text-3);
+}
+
+.send__section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.send__section + .send__section {
+  margin-top: 16px;
+}
+.send__heading {
+  display: flex;
+  align-items: center;
+  min-height: 26px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.send__add {
+  margin-left: auto;
+  display: flex;
+  gap: 2px;
+}
+
+.send__empty {
+  height: 64px;
+  border-radius: var(--r-md);
+  border: 1px dashed var(--border-strong);
+  color: var(--text-3);
+  font-size: 12.5px;
+  transition: border-color var(--t-fast) ease, color var(--t-fast) ease, background-color var(--t-fast) ease;
+}
+.send__empty:hover {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  color: var(--text-2);
+  background: var(--accent-soft);
+}
+
+.send__list {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  max-height: 180px;
+  overflow-y: auto;
+  border-radius: var(--r-md);
+  background: var(--glass-well);
+  box-shadow: inset 0 0 0 1px var(--glass-divider);
+}
+.send__item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  padding: 5px 6px 5px 8px;
+  border-radius: 6px;
+}
+.send__item:hover {
+  background: var(--glass-hover);
+}
+.send__name {
+  flex: none;
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+}
+.send__dir {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.send__remove {
+  align-self: center;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  color: var(--text-3);
+}
+.send__remove:hover {
+  background: var(--glass-hover);
+  color: var(--text);
+}
+.send__path {
+  margin-top: 2px;
+}
+.send__hint {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.send__warn {
+  margin-top: 16px;
+  padding: 8px 10px;
+  border-radius: var(--r-md);
+  background: var(--warn-soft);
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+/* ── Transfers shelf ────────────────────────────────────────────────────── */
+
+.transfers {
+  position: relative;
+  pointer-events: auto;
+  width: 360px;
+  padding: 8px;
+  border-radius: var(--r-lg);
+  color: var(--text);
+  --glass-blur: var(--glass-blur-sm);
+  animation:
+    transfers-in var(--t-med) var(--ease-out),
+    glass-shadow-in var(--t-med) var(--ease-out);
+}
+.transfers::before,
+.transfers > * {
+  animation: glass-fade-in var(--t-med) var(--ease-out);
+}
+@keyframes transfers-in {
+  from {
+    transform: translateY(8px) scale(0.98);
+  }
+}
+.transfers__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 2px 6px 8px;
+}
+.transfers__title {
+  flex: 1;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.transfers__clear {
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+.transfers__clear:hover,
+.transfers__toggle:hover {
+  background: var(--glass-hover);
+  color: var(--text);
+}
+.transfers__toggle {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  color: var(--text-3);
+}
+.transfers__list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+/* Rows keep their height; the list scrolls instead. */
+.transfers__list > * {
+  flex: none;
+}
+
+.xfer-beam {
+  border-radius: 9px;
+}
+.xfer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  /* Room below the text for the beam that runs along an active row's bottom edge. */
+  padding: 8px 10px 12px;
+  border-radius: 9px;
+  background: var(--glass-well);
+}
+.xfer__top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12.5px;
+}
+.xfer__icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+}
+.xfer__icon:empty {
+  display: none;
+}
+.xfer.is-done .xfer__icon {
+  color: var(--success);
+}
+.xfer.is-failed .xfer__icon {
+  color: var(--danger);
+}
+.xfer__label {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.xfer__to {
+  flex: 0 1000 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-2);
+}
+.xfer__status {
+  margin-left: auto;
+  flex: none;
+  font-size: 11.5px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.xfer__cancel {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-right: -4px;
+  border-radius: 5px;
+  color: var(--text-3);
+}
+.xfer__cancel:hover {
+  background: var(--glass-hover);
+  color: var(--text);
+}
+.xfer__track {
+  height: 3px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--accent-soft);
+}
+.xfer__fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 260ms linear;
+}
+.xfer.is-waiting .xfer__fill {
+  width: 0;
+}
+.xfer__detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.xfer.is-failed .xfer__detail {
+  color: var(--text-2);
+  white-space: normal;
+}

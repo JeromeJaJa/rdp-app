@@ -71,6 +71,7 @@ export const OVERRIDABLE = [
   "h264Quality",
   "videoDecoder",
   "companion",
+  "hostStatsInterval",
 ] as const;
 export type OverridableKey = (typeof OVERRIDABLE)[number];
 /** Only the overridden settings; anything absent is inherited. */
@@ -166,6 +167,8 @@ export interface Settings {
   autoReconnect: boolean;
   /** Let a companion running on the remote attach for deeper integration (experimental). */
   companion: boolean;
+  /** How often a companion reports its host's load, in seconds (0 = never). */
+  hostStatsInterval: number;
   /** Share the clipboard (text, images, files) with remote sessions. */
   clipboardSync: boolean;
   /** Remote audio playback: off, only the session on screen, or every session. */
@@ -205,6 +208,7 @@ export const DEFAULT_SETTINGS: Settings = {
   videoDecoder: "auto",
   autoReconnect: true,
   companion: false,
+  hostStatsInterval: 30,
   clipboardSync: true,
   audio: "active",
   microphone: false,
@@ -389,6 +393,45 @@ export interface ContinueDrag {
   x: number;
   y: number;
   grabX: number;
+}
+
+/** A host's load, reported by its session's companion. Rates average over `span` seconds. */
+export interface HostStats {
+  /** When it arrived (ms since the Unix epoch). */
+  at: number;
+  span: number;
+  /** CPU use, 0–100. */
+  cpu: number;
+  memUsed: number;
+  memTotal: number;
+  /** Network bytes per second. */
+  netRx: number;
+  netTx: number;
+  /** Disk bytes per second and the busiest disk's active time (0–100); absent when the host
+   *  doesn't let the companion read its disks. */
+  diskRead?: number;
+  diskWrite?: number;
+  diskBusy?: number;
+  /** Fixed volumes. */
+  volumes: { name: string; free: number; total: number }[];
+}
+
+export type TransferState = "waiting" | "sending" | "done" | "failed" | "cancelled";
+
+/** Files being sent to one connection ("Send files to…"). */
+export interface Transfer {
+  /** The connection it goes to. */
+  session: ConnectionId;
+  id: number;
+  /** "report.pdf", or "3 items". */
+  label: string;
+  /** Where it's saved on the remote, as asked ("Desktop", a path…). */
+  folder: string;
+  files: number;
+  total: number;
+  sent: number;
+  state: TransferState;
+  error?: string;
 }
 
 /** Progress of the companion auto-install for a connection (experimental). */

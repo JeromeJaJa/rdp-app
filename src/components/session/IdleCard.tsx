@@ -2,7 +2,8 @@ import { useEffect } from "react";
 import { AlertCircle, Pencil } from "lucide-react";
 import { connect, disconnect, openDialog } from "../../state/actions";
 import { displayName, getState, userLabel, useConnection, useSession } from "../../state/store";
-import { Button, Kbd, Spinner } from "../ui/ui";
+import { ThinkingOrb } from "thinking-orbs";
+import { Button, Kbd } from "../ui/ui";
 import { ConnectIcon } from "../common/SessionIcons";
 
 export function IdleCard({ id }: { id: string }) {
@@ -31,16 +32,22 @@ export function IdleCard({ id }: { id: string }) {
   return (
     <div className="idle">
       <div className="idle__card">
-        <div className={`idle__glyph idle__glyph--${status}`}>
-          {busy ? (
-            <Spinner size={20} />
-          ) : (
+        {busy ? (
+          // Connecting: a constellation wiring itself; waiting for a slot: a slow breath.
+          <ThinkingOrb
+            className="idle__orb"
+            state={status === "queued" ? "breathing" : "connecting"}
+            size={64}
+            aria-label={status === "queued" ? "Waiting to connect" : "Connecting"}
+          />
+        ) : (
+          <div className={`idle__glyph idle__glyph--${status}`}>
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden>
               <rect x="2.5" y="4" width="19" height="13" rx="2.5" stroke="currentColor" strokeWidth="1.5" />
               <path d="M8.5 20.5h7M12 17v3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
             </svg>
-          )}
-        </div>
+          </div>
+        )}
         <h1 className="idle__name">{displayName(conn)}</h1>
         <div className="idle__meta">
           <span className="mono">

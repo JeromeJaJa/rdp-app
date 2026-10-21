@@ -166,9 +166,25 @@ function Connections() {
       </Row>
       <Row
         title="Companion"
-        desc="Experimental: let a companion running inside the remote session attach for deeper integration (faster transfers, native drag). Does nothing until a companion is present."
+        desc="Experimental: a small companion inside each remote session copies files much faster (copy here, paste there), receives files you send, and reports the host's load. Installed automatically over WinRM where the host allows it."
       >
         <Switch checked={s.companion} onChange={(companion) => updateSettings({ companion })} />
+      </Row>
+      <Row
+        title="Host stats"
+        desc="How often each host's companion reports its CPU, memory, disk and network load (shown on its tab). Sampling is a few system calls; nothing runs in between."
+      >
+        <Select
+          value={String(s.hostStatsInterval)}
+          onChange={(v) => updateSettings({ hostStatsInterval: Number(v) })}
+          options={[
+            { value: "0", label: "Off" },
+            { value: "15", label: "Every 15 seconds" },
+            { value: "30", label: "Every 30 seconds" },
+            { value: "60", label: "Every minute" },
+            { value: "300", label: "Every 5 minutes" },
+          ]}
+        />
       </Row>
     </>
   );

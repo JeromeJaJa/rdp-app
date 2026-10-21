@@ -21,6 +21,13 @@ const CHOICES: { [K in OverridableKey]?: Choice<Settings[K]>[] } = {
   microphone: ON_OFF,
   clipboardSync: ON_OFF,
   companion: ON_OFF,
+  hostStatsInterval: [
+    { value: 0, label: "Off" },
+    { value: 15, label: "Every 15 seconds" },
+    { value: 30, label: "Every 30 seconds" },
+    { value: 60, label: "Every minute" },
+    { value: 300, label: "Every 5 minutes" },
+  ],
   driveRedirection: [
     { value: "none", label: "None" },
     { value: "all", label: "All drives" },
@@ -62,6 +69,7 @@ const SECTIONS: { title: string; rows: { key: OverridableKey; label: string }[] 
     rows: [
       { key: "autoReconnect", label: "Auto-reconnect" },
       { key: "companion", label: "Companion (experimental)" },
+      { key: "hostStatsInterval", label: "Host stats" },
       { key: "codec", label: "Graphics codec" },
       { key: "h264Quality", label: "H.264 colour" },
       { key: "videoDecoder", label: "Video decoder" },

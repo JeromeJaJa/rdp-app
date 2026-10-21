@@ -19,6 +19,8 @@ import {
   type TabGrab,
   type Theme,
   type CompanionStatus,
+  type HostStats,
+  type Transfer,
   type UiCommand,
   type WindowMaterial,
   type WindowLayout,
@@ -41,6 +43,7 @@ import {
   useStore,
   windowTabs,
   withDefaultGroup,
+  VITALS_HISTORY,
   type CertPrompt,
   type DialogState,
   type MenuState,
@@ -102,6 +105,12 @@ export async function initApp(): Promise<void> {
   applyTheme(lib.settings.theme, false);
   applyMaterial(lib.settings.windowMaterial);
   backend.onSessionEvent(onSessionEvent);
+  backend.onHostStats(onHostStats);
+  void backend.hostStats().then((all) => {
+    for (const [id, stats] of Object.entries(all)) onHostStats(id, stats);
+  });
+  backend.onTransfer(onTransfer);
+  void backend.transfers().then((all) => all.forEach(onTransfer));
   backend.onLibraryChanged((next) => {
     applyLibrary(next);
     if (!isMainWindow()) keepDetachedSelection(getState().windows);
@@ -650,6 +659,69 @@ export function setView(view: "session" | "grid") {
 
 export function toggleGrid() {
   setView(getState().view === "grid" ? "session" : "grid");
+}
+
+// ---------------------------------------------------------------------------
+// Companion: host stats and file sends
+// ---------------------------------------------------------------------------
+
+function onHostStats(id: ConnectionId, stats: HostStats | null) {
+  setState((s) => {
+    const next = { ...s.stats };
+    if (!stats) {
+      if (!(id in next)) return {};
+      delete next[id];
+      return { stats: next };
+    }
+    const prev = s.stats[id];
+    const push = (history: number[] | undefined, value: number) => {
+      const out = history ? history.slice(-(VITALS_HISTORY - 1)) : [];
+      out.push(value);
+      return out;
+    };
+    next[id] = {
+      latest: stats,
+      cpu: push(prev?.cpu, stats.cpu),
+      mem: push(prev?.mem, stats.memTotal ? (stats.memUsed / stats.memTotal) * 100 : 0),
+      disk: push(prev?.disk, stats.diskBusy ?? 0),
+      net: push(prev?.net, stats.netRx + stats.netTx),
+    };
+    return { stats: next };
+  });
+}
+
+function onTransfer(t: Transfer) {
+  setState((s) => ({ transfers: { ...s.transfers, [t.id]: t } }));
+}
+
+/** Opens "Send files to…" for these connections (with `paths` already chosen, if any). */
+export function openSendDialog(ids: ConnectionId[], paths?: string[]) {
+  if (ids.length) openDialog({ kind: "send", ids, paths });
+}
+
+/** Sends files and folders to connections, into `folder` on each remote. */
+export async function sendFiles(ids: ConnectionId[], paths: string[], folder: string): Promise<boolean> {
+  try {
+    await be().sendFiles(ids, paths, folder);
+    return true;
+  } catch (e) {
+    toast("error", "Couldn't send the files", errorText(e));
+    return false;
+  }
+}
+
+export function cancelTransfer(id: number) {
+  void be().cancelTransfer(id);
+}
+
+/** Forgets finished transfers (the panel's "Clear"). */
+export function clearTransfers() {
+  setState((s) => ({
+    transfers: Object.fromEntries(
+      Object.entries(s.transfers).filter(([, t]) => t.state === "waiting" || t.state === "sending"),
+    ),
+  }));
+  void be().clearTransfers();
 }
 
 export function openDialog(dialog: DialogState) {

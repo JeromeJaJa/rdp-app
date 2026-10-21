@@ -28,6 +28,8 @@ import {
   type Settings,
   type TrustedCertificate,
   type CompanionStatus,
+  type HostStats,
+  type Transfer,
   type UiCommand,
   type UiState,
   type ContinueDrag,
@@ -244,6 +246,13 @@ export class MockBackend implements Backend {
   private token: string;
   private listeners = new Set<(e: SessionEvent) => void>();
   private sessions = new Map<ConnectionId, SessionSim>();
+  /** Simulated companions: host load per connected session, and file sends. */
+  private stats = new Map<ConnectionId, HostStats>();
+  private statsListeners = new Set<(id: ConnectionId, stats: HostStats | null) => void>();
+  private statsTimer: ReturnType<typeof setInterval> | undefined;
+  private transfersById = new Map<number, Transfer>();
+  private transferListeners = new Set<(t: Transfer) => void>();
+  private nextTransfer = 2;
   private queue: ConnectionId[] = [];
   private active = 0;
 
@@ -707,6 +716,15 @@ export class MockBackend implements Backend {
           this.setStatus(id, "connected");
           this.emit({ type: "resolution", id, width: 1920, height: 1080 });
           this.emit({ type: "codec", id, codec: CODECS[Math.floor(Math.random() * CODECS.length)] });
+          // Every mock host runs a companion.
+          if (conn) {
+            setTimeout(() => {
+              if (this.sessions.get(id)?.status !== "connected") return;
+              this.emit({ type: "companionConnected", id, version: "0.1.0", host: conn.host.toUpperCase() });
+              this.sampleStats(id);
+              this.startStats();
+            }, 400);
+          }
         }
         this.pump();
       }, 600 + Math.random() * 1400);
@@ -729,8 +747,133 @@ export class MockBackend implements Backend {
         this.active--;
       }
       this.setStatus(id, "idle");
+      this.dropStats(id);
     }
     this.pump();
+  }
+
+  // ── Simulated companions ────────────────────────────────────────────────
+
+  /** A random walk per host, sampled faster than a real one so the UI moves. */
+  private sampleStats(id: ConnectionId) {
+    const prev = this.stats.get(id);
+    const walk = (v: number, step: number, lo: number, hi: number) =>
+      Math.min(hi, Math.max(lo, v + (Math.random() - 0.5) * step));
+    const memTotal = prev?.memTotal ?? [8, 16, 32, 64][Math.floor(Math.random() * 4)] * 2 ** 30;
+    const hot = id.charCodeAt(0) % 5 === 0; // a few hosts run hot
+    const next: HostStats = {
+      at: Date.now(),
+      span: 3,
+      cpu: walk(prev?.cpu ?? (hot ? 82 : 18), hot ? 14 : 22, 1, 100),
+      memUsed: walk(prev?.memUsed ?? memTotal * (hot ? 0.9 : 0.45), memTotal * 0.06, memTotal * 0.1, memTotal * 0.97),
+      memTotal,
+      netRx: Math.max(0, walk(prev?.netRx ?? 400_000, 900_000, 0, 40_000_000)),
+      netTx: Math.max(0, walk(prev?.netTx ?? 120_000, 300_000, 0, 20_000_000)),
+      diskRead: Math.max(0, walk(prev?.diskRead ?? 2_000_000, 4_000_000, 0, 200_000_000)),
+      diskWrite: Math.max(0, walk(prev?.diskWrite ?? 800_000, 2_000_000, 0, 200_000_000)),
+      diskBusy: walk(prev?.diskBusy ?? (hot ? 70 : 6), 12, 0, 100),
+      volumes: prev?.volumes ?? [
+        { name: "C:", total: 256 * 2 ** 30, free: (40 + Math.random() * 150) * 2 ** 30 },
+        ...(Math.random() > 0.5 ? [{ name: "D:", total: 1024 * 2 ** 30, free: 600 * 2 ** 30 }] : []),
+      ],
+    };
+    this.stats.set(id, next);
+    this.statsListeners.forEach((cb) => cb(id, next));
+  }
+
+  private startStats() {
+    this.statsTimer ??= setInterval(() => {
+      for (const [id, s] of this.sessions) if (s.status === "connected") this.sampleStats(id);
+    }, 3000);
+  }
+
+  private dropStats(id: ConnectionId) {
+    if (this.stats.delete(id)) this.statsListeners.forEach((cb) => cb(id, null));
+  }
+
+  async hostStats(): Promise<Record<ConnectionId, HostStats>> {
+    return Object.fromEntries(this.stats);
+  }
+
+  onHostStats(cb: (id: ConnectionId, stats: HostStats | null) => void): Unsubscribe {
+    this.statsListeners.add(cb);
+    return () => this.statsListeners.delete(cb);
+  }
+
+  private putTransfer(t: Transfer) {
+    this.transfersById.set(t.id, t);
+    const copy = { ...t };
+    this.transferListeners.forEach((cb) => cb(copy));
+  }
+
+  async sendFiles(ids: ConnectionId[], paths: string[], folder: string): Promise<number[]> {
+    const names = paths.map((p) => p.split(/[\\/]/).pop() ?? p);
+    const label = names.length === 1 ? names[0] : `${names.length} items`;
+    const total = Math.round((20 + Math.random() * 400) * 2 ** 20);
+    const started: number[] = [];
+    for (const session of ids) {
+      const id = this.nextTransfer;
+      this.nextTransfer += 2;
+      started.push(id);
+      const t: Transfer = { session, id, label, folder: folder || "Desktop", files: names.length * 3, total, sent: 0, state: "waiting" };
+      this.putTransfer(t);
+      if (this.sessions.get(session)?.status !== "connected") await this.connect([session]);
+      const rate = (4 + Math.random() * 40) * 2 ** 20; // bytes per second
+      const tick = setInterval(() => {
+        const cur = this.transfersById.get(id);
+        if (!cur || cur.state === "cancelled") return clearInterval(tick);
+        const status = this.sessions.get(session)?.status;
+        if (cur.state === "waiting") {
+          if (status === "connected") this.putTransfer({ ...cur, state: "sending" });
+          else if (status === "error" || status === "idle") {
+            clearInterval(tick);
+            this.putTransfer({ ...cur, state: "failed", error: "The companion didn't attach" });
+          }
+          return;
+        }
+        const sent = Math.min(cur.total, cur.sent + rate * 0.25);
+        if (sent >= cur.total) {
+          clearInterval(tick);
+          const fail = Math.random() > 0.9;
+          this.putTransfer({
+            ...cur,
+            sent,
+            state: fail ? "failed" : "done",
+            error: fail ? "1 file couldn't be saved: setup.log (access denied)" : undefined,
+          });
+        } else this.putTransfer({ ...cur, sent });
+      }, 250);
+    }
+    return started;
+  }
+
+  async cancelTransfer(id: number): Promise<void> {
+    const t = this.transfersById.get(id);
+    if (t && (t.state === "waiting" || t.state === "sending")) this.putTransfer({ ...t, state: "cancelled" });
+  }
+
+  async clearTransfers(): Promise<void> {
+    for (const [id, t] of this.transfersById) {
+      if (t.state !== "waiting" && t.state !== "sending") this.transfersById.delete(id);
+    }
+  }
+
+  async transfers(): Promise<Transfer[]> {
+    return [...this.transfersById.values()];
+  }
+
+  onTransfer(cb: (transfer: Transfer) => void): Unsubscribe {
+    this.transferListeners.add(cb);
+    return () => this.transferListeners.delete(cb);
+  }
+
+  async pickPaths(kind: "files" | "folder"): Promise<string[] | null> {
+    const answer = window.prompt(
+      kind === "files" ? "Files to send, separated by ; (browser preview)" : "Folder to send (browser preview)",
+      kind === "files" ? "C:\\Users\\me\\Documents\\report.pdf" : "C:\\Users\\me\\Projects\\site",
+    );
+    const paths = answer?.split(";").map((p) => p.trim()).filter(Boolean) ?? [];
+    return paths.length ? paths : null;
   }
 
   // ── Certificates & API ───────────────────────────────────────────────────
