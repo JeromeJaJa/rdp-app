@@ -116,8 +116,14 @@ pattern-matching against it.
   `run_on_main_thread`. Don't block the event loop.
 - **Backdrop blur leaks over see-through content.** On screen, WebView2 leaves the unblurred
   backdrop visible under a `backdrop-filter` wherever the page is translucent (the acrylic
-  material's surfaces), so text reads crisply through glass. Over opaque content it's fine. CDP
-  screenshots don't show it (see above). Glass in acrylic therefore uses a dense tint.
+  material's surfaces), so text reads crisply through glass. Over opaque content it's fine, and
+  CDP screenshots don't show the leak (see above). So in acrylic, every glass surface calls
+  `useGlassUnderlay(ref)`: an opaque patch at the very bottom of the page, under just that
+  surface, which the surface itself hides. New glass surfaces must use it too. Glass must also
+  not sit inside a "backdrop root" (an ancestor with `backdrop-filter`, `filter`, `opacity` < 1,
+  a mask…), or it blurs only that ancestor: put such effects on a pseudo-element (`.glass`,
+  `.dialog-backdrop`). An opacity fade on the surface or an ancestor counts too, holding the blur
+  back until the fade ends; that's why the dialog enters by transform only.
 - **Acrylic needs a transparent window.** The backdrop can't show through an opaque webview, so
   windows are created `transparent: true` and solid mode fills an opaque `--bg`. The material is
   applied with `window-vibrancy` (a tauri dependency), not hand-rolled DWM calls (those returned
