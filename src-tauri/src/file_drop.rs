@@ -4,8 +4,7 @@
 //! paths. So each window gets our own OLE drop target instead: the page hears where a file
 //! drag is (`file-drag` events, CSS px in the window) and says what a drop there would do
 //! ([`set_effect`]); we hand that back to the drag source, so the cursor shows copy or
-//! no-drop as the pointer crosses tabs, groups and sessions. Drags that aren't files (text
-//! dragged within the page) go on to WebView2's own target, untouched.
+//! no-drop as the pointer crosses tabs, groups and sessions. Other drags get "no drop".
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -24,8 +23,8 @@ use windows::Win32::System::Ole::{
 use windows::Win32::System::SystemServices::MODIFIERKEYS_FLAGS;
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Shell::{DragQueryFileW, HDROP};
-use windows::Win32::UI::WindowsAndMessaging::{EnumChildWindows, GA_ROOT, GetAncestor, GetPropW};
-use windows::core::{BOOL, Interface as _, Ref, implement, w};
+use windows::Win32::UI::WindowsAndMessaging::{EnumChildWindows, GA_ROOT, GetAncestor};
+use windows::core::{BOOL, Ref, implement};
 
 /// Per window: what a drop at the pointer would do, as the page last said.
 static EFFECTS: Mutex<Option<HashMap<String, Arc<AtomicU32>>>> = Mutex::new(None);
@@ -75,8 +74,9 @@ pub fn forget(label: &str) {
     }
 }
 
-/// Puts our target on every window under `root` that can take drops, keeping the one it
-/// had to pass other drags on to. Returns how many were replaced.
+/// Puts our target on every window under `root` (as wry does). Drags that aren't files get
+/// "no drop": WebView2's own target can't be reached once replaced, and the page doesn't
+/// take outside drops anyway. Returns how many windows took it.
 ///
 /// # Safety
 ///
@@ -94,14 +94,6 @@ unsafe fn take_over(root: HWND, app: &tauri::AppHandle, label: &str, effect: &Ar
 
     let mut replaced = 0;
     for hwnd in children {
-        // The target OLE registered for this window, if any (ole32 keeps it in this property).
-        // SAFETY: reading a window property; the pointer, if set, is a live IDropTarget.
-        let previous = unsafe {
-            let raw = GetPropW(hwnd, w!("OleDropTargetInterface"));
-            (!raw.0.is_null())
-                .then(|| IDropTarget::from_raw_borrowed(&raw.0).cloned())
-                .flatten()
-        };
         // SAFETY: (re)registering on a window of this thread.
         unsafe {
             let _ = RevokeDragDrop(hwnd);
@@ -109,7 +101,6 @@ unsafe fn take_over(root: HWND, app: &tauri::AppHandle, label: &str, effect: &Ar
                 app: app.clone(),
                 label: label.to_owned(),
                 effect: Arc::clone(effect),
-                previous,
                 state: std::cell::RefCell::new(State::Idle),
             }
             .into();
@@ -127,8 +118,8 @@ enum State {
     Files {
         last: (i32, i32),
     },
-    /// Something else, passed on.
-    Passed,
+    /// Something else (refused).
+    Other,
 }
 
 #[implement(IDropTarget)]
@@ -136,7 +127,6 @@ struct FileDropTarget {
     app: tauri::AppHandle,
     label: String,
     effect: Arc<AtomicU32>,
-    previous: Option<IDropTarget>,
     /// OLE calls a drop target on its window's thread only.
     state: std::cell::RefCell<State>,
 }
@@ -209,22 +199,16 @@ impl IDropTarget_Impl for FileDropTarget_Impl {
     fn DragEnter(
         &self,
         data: Ref<'_, IDataObject>,
-        keys: MODIFIERKEYS_FLAGS,
+        _keys: MODIFIERKEYS_FLAGS,
         pt: &POINTL,
         effect: *mut DROPEFFECT,
     ) -> windows::core::Result<()> {
         let files = data.as_ref().and_then(paths);
         let Some(files) = files else {
-            *self.state.borrow_mut() = State::Passed;
-            return match &self.previous {
-                // SAFETY: forwarding the call as received.
-                Some(previous) => unsafe { previous.DragEnter(data.as_ref(), keys, *pt, effect) },
-                None => {
-                    // SAFETY: OLE passes a valid out pointer.
-                    unsafe { *effect = DROPEFFECT_NONE };
-                    Ok(())
-                }
-            };
+            *self.state.borrow_mut() = State::Other;
+            // SAFETY: OLE passes a valid out pointer.
+            unsafe { *effect = DROPEFFECT_NONE };
+            return Ok(());
         };
         let (x, y, at) = self.point(pt);
         *self.state.borrow_mut() = State::Files { last: at };
@@ -241,26 +225,22 @@ impl IDropTarget_Impl for FileDropTarget_Impl {
         Ok(())
     }
 
-    fn DragOver(&self, keys: MODIFIERKEYS_FLAGS, pt: &POINTL, effect: *mut DROPEFFECT) -> windows::core::Result<()> {
+    fn DragOver(&self, _keys: MODIFIERKEYS_FLAGS, pt: &POINTL, effect: *mut DROPEFFECT) -> windows::core::Result<()> {
         let moved = match &mut *self.state.borrow_mut() {
             State::Files { last } => {
                 let moved = *last != (pt.x, pt.y);
                 *last = (pt.x, pt.y);
                 Some(moved)
             }
-            State::Passed => None,
+            State::Other => None,
             State::Idle => Some(false),
         };
         match moved {
-            None => match &self.previous {
-                // SAFETY: forwarding the call as received.
-                Some(previous) => unsafe { previous.DragOver(keys, *pt, effect) },
-                None => {
-                    // SAFETY: OLE passes a valid out pointer.
-                    unsafe { *effect = DROPEFFECT_NONE };
-                    Ok(())
-                }
-            },
+            None => {
+                // SAFETY: OLE passes a valid out pointer.
+                unsafe { *effect = DROPEFFECT_NONE };
+                Ok(())
+            }
             Some(moved) => {
                 if moved {
                     let (x, y, _) = self.point(pt);
@@ -281,11 +261,7 @@ impl IDropTarget_Impl for FileDropTarget_Impl {
     fn DragLeave(&self) -> windows::core::Result<()> {
         let state = std::mem::replace(&mut *self.state.borrow_mut(), State::Idle);
         match state {
-            State::Passed => match &self.previous {
-                // SAFETY: forwarding the call.
-                Some(previous) => unsafe { previous.DragLeave() },
-                None => Ok(()),
-            },
+            State::Other | State::Idle => Ok(()),
             State::Files { .. } => {
                 self.tell(FileDrag {
                     phase: "leave",
@@ -295,28 +271,23 @@ impl IDropTarget_Impl for FileDropTarget_Impl {
                 });
                 Ok(())
             }
-            State::Idle => Ok(()),
         }
     }
 
     fn Drop(
         &self,
         data: Ref<'_, IDataObject>,
-        keys: MODIFIERKEYS_FLAGS,
+        _keys: MODIFIERKEYS_FLAGS,
         pt: &POINTL,
         effect: *mut DROPEFFECT,
     ) -> windows::core::Result<()> {
         let state = std::mem::replace(&mut *self.state.borrow_mut(), State::Idle);
         match state {
-            State::Passed => match &self.previous {
-                // SAFETY: forwarding the call as received.
-                Some(previous) => unsafe { previous.Drop(data.as_ref(), keys, *pt, effect) },
-                None => {
-                    // SAFETY: OLE passes a valid out pointer.
-                    unsafe { *effect = DROPEFFECT_NONE };
-                    Ok(())
-                }
-            },
+            State::Other => {
+                // SAFETY: OLE passes a valid out pointer.
+                unsafe { *effect = DROPEFFECT_NONE };
+                Ok(())
+            }
             _ => {
                 let chosen = self.current();
                 let (x, y, _) = self.point(pt);
