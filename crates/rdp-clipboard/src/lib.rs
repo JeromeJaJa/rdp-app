@@ -214,6 +214,9 @@ pub(crate) enum BackendEvent {
 /// thread's event queue.
 #[derive(Clone)]
 pub(crate) struct Direct {
+    /// Backends alive (0 once the session's connection is gone): a paste then fails at once
+    /// instead of waiting for an answer that can't come.
+    pub alive: Arc<core::sync::atomic::AtomicUsize>,
     /// Remote file lists and file data, for the thread serving them to local apps.
     pub inbox: Arc<Inbox>,
     /// Replies to the UI thread's paste requests (`WM_RENDERFORMAT`).
@@ -243,6 +246,8 @@ pub struct WinClipboard {
     window: HWND,
     backend_tx: mpsc_sync::Sender<BackendEvent>,
     direct: Direct,
+    /// Set as the monitor is torn down (its session is over).
+    closing: Arc<core::sync::atomic::AtomicBool>,
 
     /// From MS docs:
     /// ```text
@@ -322,10 +327,12 @@ impl WinClipboard {
 
         let proxy = SharedProxy::new(message_proxy);
         let direct = Direct {
+            alive: Arc::default(),
             inbox: Arc::new(Inbox::default()),
             paste: paste_tx,
             files: Arc::new(FileServer::new(proxy.clone())),
         };
+        let closing = Arc::new(core::sync::atomic::AtomicBool::new(false));
         let ctx = Box::new(WinClipboardImpl::new(
             window,
             proxy,
@@ -333,6 +340,7 @@ impl WinClipboard {
             paste_rx,
             direct.clone(),
             companion,
+            Arc::clone(&closing),
         ));
 
         // We need to receive winapi messages in the main thread, so we need to add a subclass to
@@ -357,6 +365,7 @@ impl WinClipboard {
             window,
             backend_tx,
             direct,
+            closing,
             _thread_marker: Default::default(),
         })
     }
@@ -379,6 +388,10 @@ impl Drop for WinClipboard {
         if let Err(err) = unsafe { RemoveClipboardFormatListener(self.window) } {
             error!("Failed to remove clipboard listener: {}", err)
         }
+
+        // The session is over, so what it copied can't be fetched any more: destroying the
+        // window must not wait to render it (WM_RENDERALLFORMATS, on the UI thread).
+        self.closing.store(true, core::sync::atomic::Ordering::SeqCst);
 
         // The subclass frees its state on WM_DESTROY.
         //

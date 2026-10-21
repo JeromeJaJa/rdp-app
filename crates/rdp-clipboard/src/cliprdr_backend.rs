@@ -25,6 +25,7 @@ impl_as_any!(WinCliprdrBackend);
 
 impl WinCliprdrBackend {
     pub(crate) fn new(window: HWND, backend_event_tx: mpsc_sync::Sender<BackendEvent>, direct: Direct) -> Self {
+        direct.alive.fetch_add(1, core::sync::atomic::Ordering::SeqCst);
         Self {
             window,
             backend_event_tx,
@@ -43,6 +44,12 @@ impl WinCliprdrBackend {
         if let Err(err) = unsafe { PostMessageW(Some(self.window), WM_CLIPRDR_BACKEND_EVENT, WPARAM(0), LPARAM(0)) } {
             tracing::error!("Failed to post message to wake up subproc event loop: {}", err);
         }
+    }
+}
+
+impl Drop for WinCliprdrBackend {
+    fn drop(&mut self) {
+        self.direct.alive.fetch_sub(1, core::sync::atomic::Ordering::SeqCst);
     }
 }
 

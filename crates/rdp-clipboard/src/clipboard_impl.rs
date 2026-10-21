@@ -27,6 +27,8 @@ use crate::{BackendEvent, WM_CLIPRDR_BACKEND_EVENT, WinCliprdrError, WinCliprdrR
 /// `WM_RENDERFORMAT` returns, so the UI thread is blocked meanwhile; large text or
 /// images over a slow link can take a while.
 const RENDER_FORMAT_TIMEOUT_SECS: u64 = 45;
+/// While waiting, how often a paste checks that its session is still there.
+const RENDER_FORMAT_POLL: Duration = Duration::from_millis(100);
 const IDT_CLIPBOARD_RETRY: usize = 1;
 
 /// Internal implementation of the clipboard processing logic.
@@ -49,6 +51,10 @@ pub(crate) struct WinClipboardImpl {
     ole: Option<OleClipboard>,
     /// Streams copies when a companion is attached.
     companion: Option<Arc<dyn crate::Companion>>,
+    /// Backends alive: none once the session's connection is gone.
+    alive: Arc<core::sync::atomic::AtomicUsize>,
+    /// The monitor is being torn down.
+    closing: Arc<core::sync::atomic::AtomicBool>,
     // Number of attempts spent to process current clipboard message
     attempt: u32,
     // Message to retry
@@ -66,6 +72,7 @@ impl WinClipboardImpl {
         paste_rx: mpsc::Receiver<FormatDataResponse<'static>>,
         direct: crate::Direct,
         companion: Option<Arc<dyn crate::Companion>>,
+        closing: Arc<core::sync::atomic::AtomicBool>,
     ) -> Self {
         Self {
             window,
@@ -81,6 +88,8 @@ impl WinClipboardImpl {
             },
             ole: None,
             companion,
+            alive: direct.alive,
+            closing,
             attempt: 0,
             retry_message: None,
             available_formats_on_remote: Vec::new(),
@@ -200,6 +209,12 @@ impl WinClipboardImpl {
             return Ok(None);
         };
 
+        // No session to ask (it ended, or the monitor is going): nothing can come, and this
+        // runs on the UI thread, so don't wait for it.
+        if !self.connected() {
+            return Ok(None);
+        }
+
         // Through the companion if one is attached: streamed and compressed.
         if let Some(companion) = &self.companion {
             let format = ClipFormat {
@@ -221,10 +236,14 @@ impl WinClipboardImpl {
         let started = std::time::Instant::now();
         self.message_proxy
             .send_clipboard_message(ClipboardMessage::SendInitiatePaste(remote_format));
-        let response = self
-            .paste_rx
-            .recv_timeout(Duration::from_secs(RENDER_FORMAT_TIMEOUT_SECS))
-            .map_err(|_| WinCliprdrError::DataReceiveTimeout)?;
+        let deadline = started + Duration::from_secs(RENDER_FORMAT_TIMEOUT_SECS);
+        let response = loop {
+            match self.paste_rx.recv_timeout(RENDER_FORMAT_POLL) {
+                Ok(response) => break response,
+                Err(mpsc::RecvTimeoutError::Timeout) if self.connected() && std::time::Instant::now() < deadline => {}
+                Err(_) => return Err(WinCliprdrError::DataReceiveTimeout),
+            }
+        };
         let bytes = response.data().len();
         let secs = started.elapsed().as_secs_f64();
         info!(
@@ -234,6 +253,12 @@ impl WinClipboardImpl {
             "remote clipboard data received (paste)"
         );
         Ok(Some(response))
+    }
+
+    /// Whether a session is there to answer (and the monitor isn't being torn down).
+    fn connected(&self) -> bool {
+        use core::sync::atomic::Ordering::SeqCst;
+        self.alive.load(SeqCst) > 0 && !self.closing.load(SeqCst)
     }
 
     fn on_render_format(&mut self, format: ClipboardFormatId) -> WinCliprdrResult<Option<ClipboardMessage>> {

@@ -25,6 +25,9 @@ windows = { version = "0.62", features = [
     "Win32_System_LibraryLoader",
     "Win32_System_Memory",
     "Win32_System_Ole",
+    # Tests run on a private window station (it has its own clipboard).
+    "Win32_Security",
+    "Win32_System_StationsAndDesktops",
     "Win32_System_Threading",
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
