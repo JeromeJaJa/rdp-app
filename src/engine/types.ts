@@ -46,6 +46,12 @@ export interface RemoteSurfaceProps {
   className?: string;
   /** Called when the surface takes/loses keyboard focus (input capture). */
   onFocusChange?: (focused: boolean) => void;
+  /**
+   * Send the Windows key (and what's pressed with it) to the remote. Windows acts on it
+   * locally too (the Start menu, Win+R…) and nothing short of a system keyboard hook stops
+   * that, so outside fullscreen it stays local only.
+   */
+  sendWinKey?: boolean;
 }
 
 export interface RemoteThumbnailProps {

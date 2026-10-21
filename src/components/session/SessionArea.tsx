@@ -12,10 +12,17 @@ import "./session.css";
 
 function LiveSession({ id }: { id: string }) {
   const status = useStatus(id);
+  const fullscreen = useStore((s) => s.fullscreen);
   const onFocusChange = useCallback((focused: boolean) => setState({ remoteFocused: focused }), []);
   return (
     <div className="live-session">
-      <RemoteSurface key={id} id={id} className="live-session__surface" onFocusChange={onFocusChange} />
+      <RemoteSurface
+        key={id}
+        id={id}
+        className="live-session__surface"
+        onFocusChange={onFocusChange}
+        sendWinKey={fullscreen}
+      />
       <SessionToolbar id={id} />
       {status === "reconnecting" && (
         <div className="live-session__overlay">

@@ -205,7 +205,7 @@ function useDpr() {
 
 // ── Components ───────────────────────────────────────────────────────────────
 
-function RemoteSurface({ id, className, onFocusChange }: RemoteSurfaceProps) {
+function RemoteSurface({ id, className, onFocusChange, sendWinKey = false }: RemoteSurfaceProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [surface, setSurface] = useState<Surface | undefined>();
@@ -230,6 +230,8 @@ function RemoteSurface({ id, className, onFocusChange }: RemoteSurfaceProps) {
   surfaceRef.current = surface;
   const onFocusChangeRef = useRef(onFocusChange);
   onFocusChangeRef.current = onFocusChange;
+  const sendWinKeyRef = useRef(sendWinKey);
+  sendWinKeyRef.current = sendWinKey;
 
   useEffect(() => {
     const el = wrapRef.current!;
@@ -347,6 +349,9 @@ function RemoteSurface({ id, className, onFocusChange }: RemoteSurfaceProps) {
         el.blur();
         return;
       }
+      // The Windows key (and its combinations) stays local outside fullscreen: Windows acts
+      // on it here anyway, so sending it too would do both.
+      if (!sendWinKeyRef.current && (e.code === "MetaLeft" || e.code === "MetaRight" || e.metaKey)) return;
       e.preventDefault();
       e.stopPropagation();
       // Lock keys are mirrored as state (sync), never forwarded as presses: forwarding
