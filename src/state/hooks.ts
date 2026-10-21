@@ -11,6 +11,7 @@ import {
   toggleGrid,
 } from "./actions";
 import { getState, isLive, setState, useStore } from "./store";
+import { stripDropRect } from "../components/tabs/useTabsDnd";
 
 /** App-level keyboard shortcuts. Suspended while a RemoteSurface has focus. */
 export function useShortcuts() {
@@ -124,10 +125,10 @@ export function useTabAreaReporter() {
     };
     const report = () => {
       frame = 0;
-      // The drop target is the tab strip itself — not the rest of the title bar
-      // (brand, search, window controls) nor the library sidebar.
-      const strip = document.querySelector(".top-tabs");
-      const areas = strip ? rectOf(strip) : [];
+      // The drop target is the tab strip's region (the strip plus the empty run up to the
+      // search) — not the brand, search, window controls, or the library sidebar.
+      const region = stripDropRect();
+      const areas = region && region.width > 0 ? [[region.x, region.y, region.width, region.height].map(Math.round)] : [];
       // The individual tabs, in order: where a dragged tab would slot in.
       const slots = Array.from(document.querySelectorAll(".top-tabs .tab--top")).flatMap(rectOf);
       const key = JSON.stringify([areas, slots]);

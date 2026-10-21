@@ -151,9 +151,9 @@ export function TabOverlay({ id, variant }: { id: ConnectionId; variant: Variant
 }
 
 /** The real tab shown landing in a strip while a tab from another window is dragged over it. */
-export function DockGhost({ id }: { id: ConnectionId }) {
-  return <TabView id={id} variant="top" ghost />;
-}
+export const DockGhost = forwardRef<HTMLDivElement, { id: ConnectionId }>(function DockGhost({ id }, ref) {
+  return <TabView ref={ref} id={id} variant="top" ghost />;
+});
 
 /** A detached window's only tab: dragging it moves the window (Chrome-style). */
 export function SoloTab({ id, onClose }: { id: ConnectionId; onClose: () => void }) {

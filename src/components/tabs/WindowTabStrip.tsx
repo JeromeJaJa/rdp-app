@@ -18,7 +18,7 @@ import { isMainWindow, windowLabel } from "../../lib/env";
 import { closeTab, reorderWindowTabs } from "../../state/actions";
 import { useStore, windowTabs } from "../../state/store";
 import { DockGhost, SoloTab, TabItem, TabOverlay } from "./TabItem";
-import { pastTitlebar, stripWheel, useTearOff } from "./useTabsDnd";
+import { pastStrip, stripWheel, useTearOff } from "./useTabsDnd";
 import "./toptabs.css";
 
 // Chrome forces the drag horizontal while the tab is still in the strip; it only gains
@@ -40,7 +40,7 @@ function WindowTabStripInner() {
   const ghost = dock !== null && !tabs.includes(dock.id);
   const [activeId, setActiveId] = useState<string | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
-  const tear = useTearOff(pastTitlebar);
+  const tear = useTearOff(pastStrip);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [fade, setFade] = useState({ left: false, right: false });
 
@@ -50,6 +50,34 @@ function WindowTabStripInner() {
   const trackPointer = useCallback((e: PointerEvent) => {
     pointer.current = { x: e.clientX, y: e.clientY };
   }, []);
+
+  // While a tab from another window is dragged over this strip, its ghost follows the real
+  // cursor (not the insertion slot), so it stays under the pointer like an ordinary drag.
+  const ghostRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!ghost) return;
+    let raf = 0;
+    let at = 0;
+    const apply = () => {
+      raf = 0;
+      const g = ghostRef.current;
+      if (!g) return;
+      // Measure the natural centre (transform cleared) in viewport space, then shift it
+      // onto the cursor. Both are viewport coords, so scroll/offset don't matter.
+      g.style.transform = "none";
+      const r = g.getBoundingClientRect();
+      g.style.transform = `translateX(${Math.round(at - (r.left + r.width / 2))}px)`;
+    };
+    const follow = (e: PointerEvent) => {
+      at = e.clientX;
+      if (!raf) raf = requestAnimationFrame(apply);
+    };
+    window.addEventListener("pointermove", follow);
+    return () => {
+      window.removeEventListener("pointermove", follow);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [ghost]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -122,9 +150,11 @@ function WindowTabStripInner() {
                 {tabs.flatMap((id, i) => {
                   const tab = <TabItem key={id} id={id} variant="top" onClose={() => closeTab(id)} />;
                   // Stable key so React moves the ghost between slots (no re-grow) as the index changes.
-                  return ghost && dock!.index === i ? [<DockGhost key="dock-ghost" id={dock!.id} />, tab] : [tab];
+                  return ghost && dock!.index === i
+                    ? [<DockGhost key="dock-ghost" ref={ghostRef} id={dock!.id} />, tab]
+                    : [tab];
                 })}
-                {ghost && dock!.index >= tabs.length && <DockGhost key="dock-ghost" id={dock!.id} />}
+                {ghost && dock!.index >= tabs.length && <DockGhost key="dock-ghost" ref={ghostRef} id={dock!.id} />}
               </SortableContext>
             </div>
             {createPortal(

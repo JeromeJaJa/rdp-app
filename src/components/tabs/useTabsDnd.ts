@@ -72,16 +72,39 @@ export function dragPointer(e: { activatorEvent: Event | null; delta: { x: numbe
   return { x: (start?.clientX ?? 0) + e.delta.x, y: (start?.clientY ?? 0) + e.delta.y };
 }
 
-/** Measures how far (CSS px) a point is past a tab strip; negative while over it. */
+/**
+ * The tab strip's drop region: the strip plus the empty title-bar run after it (up to the
+ * search / window controls), where a dragged tab can live. Used both to report the drop
+ * target and to decide when a drag has left the strip.
+ */
+export function stripDropRect(): DOMRect | null {
+  const strip = document.querySelector(".top-tabs");
+  const bar = document.querySelector(".titlebar");
+  if (!strip || !bar) return null;
+  const s = strip.getBoundingClientRect();
+  const b = bar.getBoundingClientRect();
+  // Extend to the end of the draggable run (the spacer) — i.e. up to the search / actions.
+  const spacer = document.querySelector(".titlebar__spacer");
+  const right = spacer ? spacer.getBoundingClientRect().right : s.right;
+  return new DOMRect(s.left, b.top, Math.max(0, right - s.left), b.height);
+}
+
+/** Measures how far (CSS px) a point is outside a region; 0 while inside it. */
 export type PastStrip = (x: number, y: number) => number;
 
-/** How far below the title bar (and its tab strip) a point is. */
-export const pastTitlebar: PastStrip = (_x, y) => y - (document.querySelector(".titlebar")?.getBoundingClientRect().bottom ?? Infinity);
+/** How far outside the tab strip's region a point is — in any direction, not just below. */
+export const pastStrip: PastStrip = (x, y) => {
+  const r = stripDropRect();
+  if (!r) return Infinity;
+  const dx = Math.max(r.left - x, x - r.right, 0);
+  const dy = Math.max(r.top - y, y - r.bottom, 0);
+  return Math.max(dx, dy);
+};
 
 /**
- * Pulled this far (CSS px) below its strip, a tab tears off into a window of its own.
- * Small, like Chrome: the drag is locked horizontal in the strip, so a little vertical
- * travel is a clear intent to pull the tab out.
+ * Pulled this far (CSS px) out of its strip — in any direction — a tab tears off into a
+ * window of its own. Small, like Chrome: the drag is locked horizontal in the strip, so
+ * leaving it at all is a clear intent to pull the tab out.
  */
 const TEAR_AT = 14;
 
@@ -98,8 +121,8 @@ export function useTearOff(past: PastStrip | undefined) {
   };
   const onMove = (id: string, p: { x: number; y: number }): boolean => {
     if (!past || !isTauri() || state.current.torn) return state.current.torn;
-    const outside = p.x < 0 || p.y < 0 || p.x >= window.innerWidth || p.y >= window.innerHeight;
-    const distance = outside ? Infinity : past(p.x, p.y);
+    // Distance outside the strip region (any direction); leaving the window is well past it.
+    const distance = past(p.x, p.y);
     if (distance > 0 && !state.current.prepared) {
       state.current.prepared = true;
       prepareTearOff();
