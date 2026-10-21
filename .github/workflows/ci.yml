@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["**.md", "assets/**", "LICENSE"]
+  pull_request:
+    paths-ignore: ["**.md", "assets/**", "LICENSE"]
+  workflow_dispatch:
+
+# A newer push to the same branch supersedes a run in progress.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check (Windows)
+    # The app is Windows-only (WebView2, Win32 APIs), so it's checked where it runs.
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      # The H.264 decoder's assembly needs NASM (built the same way as releases).
+      - uses: ilammy/setup-nasm@v1
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install UI dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck and build the UI
+        run: bun run build
+
+      - name: Rust formatting
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Tests
+        run: cargo test --workspace --locked

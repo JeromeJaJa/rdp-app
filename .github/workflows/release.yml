@@ -1,0 +1,100 @@
+name: Release
+
+# Push a tag matching the app version to publish a release:
+#   git tag v0.1.0 && git push origin v0.1.0
+# Run it by hand (Actions → Release → Run workflow) to build the same files as a
+# downloadable artifact without publishing anything.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Build (Windows x64)
+    runs-on: windows-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version
+        id: version
+        run: |
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          if ($env:GITHUB_REF_TYPE -eq "tag" -and $env:GITHUB_REF_NAME -ne "v$version") {
+            throw "Tag $env:GITHUB_REF_NAME doesn't match the app version $version (src-tauri/tauri.conf.json)"
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      # The H.264 decoder's SIMD assembly needs NASM; without it the codec quietly builds
+      # without assembly and decodes far slower. Fail instead of shipping that.
+      - uses: ilammy/setup-nasm@v1
+
+      - name: Check NASM
+        run: nasm -v
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          # Release builds don't share artifacts with CI's debug ones.
+          shared-key: release
+
+      - name: Install UI dependencies
+        run: bun install --frozen-lockfile
+
+      # Builds the companion, then the app and its installer with the companion bundled
+      # next to the exe (src-tauri/tauri.release.conf.json).
+      - name: Build
+        run: bun run build:release
+
+      - name: Package
+        run: |
+          $v = "${{ steps.version.outputs.version }}"
+          $out = (New-Item -ItemType Directory -Force release-assets).FullName
+          $setup = Get-ChildItem target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+          if (-not $setup) { throw "installer not found" }
+          Copy-Item $setup.FullName "$out/RDP-App_${v}_x64-setup.exe"
+          Copy-Item target/release/rdp-app.exe "$out/RDP-App_${v}_x64.exe"
+          $portable = (New-Item -ItemType Directory -Force portable).FullName
+          Copy-Item target/release/rdp-app.exe, target/release/rdp-companion.exe $portable
+          Compress-Archive -Path "$portable/*" -DestinationPath "$out/RDP-App_${v}_x64-portable.zip"
+          $sums = Get-ChildItem $out | ForEach-Object {
+            "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)"
+          }
+          $sums | Set-Content "$out/SHA256SUMS.txt"
+          Get-ChildItem $out | Format-Table Name, Length
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rdp-app-${{ steps.version.outputs.version }}-windows-x64
+          path: release-assets/*
+          if-no-files-found: error
+
+      - name: Publish the release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $v = "${{ steps.version.outputs.version }}"
+          @"
+          Windows x64. Pick one:
+
+          - **RDP-App_${v}_x64-setup.exe**: the installer (per user, no admin needed; installs WebView2 if it's missing).
+          - **RDP-App_${v}_x64-portable.zip**: no install. Unzip and run ``rdp-app.exe``; keep ``rdp-companion.exe`` next to it for the companion.
+          - **RDP-App_${v}_x64.exe**: just the app executable.
+
+          The builds aren't code-signed yet, so Windows SmartScreen may warn on first run: choose **More info → Run anyway**. ``SHA256SUMS.txt`` lists the files' checksums.
+          "@ | Set-Content notes.md
+          gh release create $env:GITHUB_REF_NAME release-assets/* --title "RDP App $env:GITHUB_REF_NAME" --notes-file notes.md --generate-notes
