@@ -211,8 +211,8 @@ pattern-matching against it.
   copies, sends and drags are unit/mock tested but not yet verified against a live host**. Still to
   build: a no-WinRM delivery path. Release builds bundle `rdp-companion.exe` next to the app.
   Enabled by the layered `companion` setting (off by default); `hostStatsInterval` (s) too: the
-  companion samples every 5 s and sends the batch at that interval, so trend lines have detail
-  without a message every few seconds. `tabStats` picks what tabs show.
+  companion samples every 5 s and sends the batch at that interval, so the hover card's trend lines
+  have detail without a message every few seconds. `tabStats` picks the one stat tabs show.
 
 ## Conventions and constraints
 

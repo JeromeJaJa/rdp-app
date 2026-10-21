@@ -1,179 +1,45 @@
-/* Host load: tiny trend lines on tabs and tiles, a glass card with the details, and the
-   focused host's tiles at the bottom of the sidebar. */
+/* Host load: one labelled stat on tabs and tiles, and a glass card with the details. */
 
-.vitals {
+.vstat {
   flex: none;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
+  font-size: 11px;
   cursor: default;
 }
-.vmini {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+/* Each part's box is trimmed to its capitals (labels and digits have no descenders), so
+   centring them in the row centres the letters, as with the tab's name. */
+.vstat__label,
+.vstat__value {
   line-height: 1;
-}
-.vmini__value {
   text-box: trim-both cap alphabetic;
-  min-width: 26px;
-  font-size: 10.5px;
-  font-weight: 500;
+}
+.vstat__label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+}
+.vstat__value {
+  /* Digits of one width, and room for "100%", so the tab doesn't shift as it updates. */
+  min-width: 3.6ch;
   font-variant-numeric: tabular-nums;
-  color: var(--text-3);
-}
-.vmini__value.is-warn {
-  color: var(--warn);
-}
-.vmini__value.is-hot {
-  color: var(--danger);
-}
-/* Several metrics without values: a hairline label keeps them apart (only on tiles). */
-.vmini__label {
-  display: none;
-}
-
-/* Sidebar rows: the trend lines stay while the row's actions show on hover. */
-.vitals--side {
-  gap: 4px;
-}
-
-/* Grid tiles: all three, labelled, with values. */
-.vitals--tile {
-  gap: 10px;
-}
-.vitals--tile .vmini__value {
-  min-width: 0;
-}
-
-/* Sparklines at tab size: hairline weight, colour only when the value runs high. */
-.spark--mini .spark__line {
-  stroke: var(--text-3);
-  stroke-width: 1.25;
-}
-.spark--mini .spark__area {
-  opacity: 0.1;
-}
-.tab.is-selected .spark--mini .spark__line,
-.tab:hover .spark--mini .spark__line {
-  stroke: var(--text-2);
-}
-.spark--mini.spark--warn .spark__line {
-  stroke: var(--warn);
-}
-.spark--mini.spark--hot .spark__line {
-  stroke: var(--danger);
-}
-.spark--mini.spark--warn .spark__area {
-  fill: var(--warn);
-}
-.spark--mini.spark--hot .spark__area {
-  fill: var(--danger);
-}
-.spark--stretch {
-  display: block;
-}
-
-/* ── Sidebar panel: the focused host ──────────────────────────────────── */
-
-.hostpanel {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 0 -2px;
-  padding: 6px 6px 8px;
-  border-radius: var(--r-md);
-  background: var(--hover);
-}
-.hostpanel:not(.is-open) {
-  padding-bottom: 6px;
-}
-.hostpanel__head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  padding: 0 2px;
+  font-weight: 500;
   color: var(--text-2);
-  font-size: 11.5px;
 }
-.hostpanel__head:hover {
-  color: var(--text);
+/* Sidebar rows stack: right-aligned values keep their % signs in a column. */
+.vstat--side .vstat__value {
+  text-align: right;
 }
-.hostpanel__title {
+.vstat--tile .vstat__value {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 600;
 }
-.hostpanel__age {
-  margin-left: auto;
-  flex: none;
-  font-size: 10.5px;
-  color: var(--text-3);
-}
-.hostpanel__chevron {
-  flex: none;
-  color: var(--text-3);
-  transform: rotate(-90deg);
-  transition: transform var(--t-med) var(--ease-out);
-}
-.hostpanel.is-open .hostpanel__chevron {
-  transform: none;
-}
-
-.vtiles {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-}
-.vtile {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-  padding: 6px 7px 5px;
-  border-radius: 7px;
-  background: var(--bg);
-  box-shadow: inset 0 0 0 1px var(--border);
-}
-.vtile__top {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-}
-.vtile__label {
-  font-size: 10.5px;
-  color: var(--text-3);
-}
-.vtile__value {
-  margin-left: auto;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--text);
-}
-.vtile__value.is-warn {
+.vstat__value.is-warn {
   color: var(--warn);
 }
-.vtile__value.is-hot {
+.vstat__value.is-hot {
   color: var(--danger);
-}
-.vtile__detail {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 10px;
-  color: var(--text-3);
-}
-.vtile .spark__line {
-  stroke-width: 1.5;
-}
-.vtiles__volumes {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 0 2px;
 }
 
 /* ── Card ─────────────────────────────────────────────────────────────── */

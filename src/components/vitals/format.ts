@@ -12,18 +12,6 @@ export function formatBytes(bytes: number): string {
   return `${value.toFixed(digits)} ${UNITS[unit]}`;
 }
 
-/** A compact rate for tight spots: 950, 12K, 1.2M, 3.4G (bytes per second). */
-export function formatRateShort(bytesPerSecond: number): string {
-  const b = Math.max(0, bytesPerSecond);
-  if (b < 1000) return `${Math.round(b)}`;
-  if (b < 1000 * 1024) return `${Math.round(b / 1024)}K`;
-  if (b < 1000 * 1024 * 1024) {
-    const m = b / 1024 / 1024;
-    return `${m < 10 ? m.toFixed(1) : Math.round(m)}M`;
-  }
-  return `${(b / 1024 / 1024 / 1024).toFixed(1)}G`;
-}
-
 /** 1.2 MB/s. */
 export function formatRate(bytesPerSecond: number): string {
   return `${formatBytes(bytesPerSecond)}/s`;

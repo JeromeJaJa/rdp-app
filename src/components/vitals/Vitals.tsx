@@ -1,93 +1,61 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { displayName, useConnection, useStore, type Vitals } from "../../state/store";
-import type { ConnectionId, TabStats } from "../../lib/types";
+import { displayName, useConnection, useStore } from "../../state/store";
+import type { ConnectionId, HostStats, TabStats } from "../../lib/types";
 import { useGlassUnderlay } from "../ui/useGlassUnderlay";
 import { Sparkline } from "./Sparkline";
-import { ago, formatBytes, formatPercent, formatRate, formatRateShort, level } from "./format";
+import { ago, formatBytes, formatPercent, formatRate, level } from "./format";
 import "./vitals.css";
 
 type Side = "bottom" | "right";
 
 const memPercent = (used: number, total: number) => (total ? (used / total) * 100 : 0);
 
-/** Samples a tab's trend line covers (two minutes at the companion's 5 s sampling). */
-const TAB_POINTS = 24;
+type Kind = Exclude<TabStats, "off">;
 
-type Kind = Exclude<TabStats, "all" | "off">;
+/** Tab labels, short enough to sit beside a name. */
+const SHORT: Record<Kind, string> = { cpu: "CPU", memory: "RAM", network: "NET", disk: "DISK" };
+const NAMES: Record<Kind, string> = { cpu: "CPU", memory: "Memory", network: "Network", disk: "Disk" };
 
-const LABELS: Record<Kind, string> = { cpu: "CPU", memory: "Memory", network: "Network", disk: "Disk" };
-
-/** A metric's recent values, its latest value as text, and how loaded it is. */
-function metric(kind: Kind, v: Vitals): { values: number[]; text: string; max?: number; tone: "ok" | "warn" | "hot" } {
-  const l = v.latest;
+/** A metric's latest value as text, and how loaded it is. */
+function reading(kind: Kind, l: HostStats): { text: string; tone: "ok" | "warn" | "hot" } {
   switch (kind) {
     case "cpu":
-      return { values: v.cpu, text: formatPercent(l.cpu), max: 100, tone: level(l.cpu) };
+      return { text: formatPercent(l.cpu), tone: level(l.cpu) };
     case "memory": {
       const m = memPercent(l.memUsed, l.memTotal);
-      return { values: v.mem, text: formatPercent(m), max: 100, tone: level(m) };
+      return { text: formatPercent(m), tone: level(m) };
     }
     case "disk":
-      return {
-        values: v.disk,
-        text: l.diskBusy === undefined ? "—" : formatPercent(l.diskBusy),
-        max: 100,
-        tone: level(l.diskBusy ?? 0),
-      };
+      return l.diskBusy === undefined
+        ? { text: "—", tone: "ok" }
+        : { text: formatPercent(l.diskBusy), tone: level(l.diskBusy) };
     case "network":
-      return { values: v.net, text: formatRateShort(l.netRx + l.netTx), tone: "ok" };
+      return { text: formatRate(l.netRx + l.netTx), tone: "ok" };
   }
 }
 
-function Mini({ kind, vitals, value }: { kind: Kind; vitals: Vitals; value: boolean }) {
-  const m = metric(kind, vitals);
-  return (
-    <span className={`vmini vmini--${kind}`}>
-      {!value && <span className="vmini__label">{kind === "memory" ? "RAM" : kind === "network" ? "NET" : kind.toUpperCase()}</span>}
-      <Sparkline values={m.values.slice(-TAB_POINTS)} max={m.max} width={value ? 26 : 22} height={12} tone={m.tone} mini />
-      {value && <span className={`vmini__value is-${m.tone}`}>{m.text}</span>}
-    </span>
-  );
-}
-
 /**
- * A host's load on its tab, sidebar row or grid tile, as tiny trend lines: CPU, memory and
- * network together, or one metric with its value (setting "Stats on tabs"). Top tabs show
- * one metric; tiles show all with values. Hover for the details. Nothing shows until the
- * host's companion reports.
+ * A host's load on its tab, sidebar row or grid tile: one metric, labelled ("CPU 12%"),
+ * coloured only when it runs high (setting "Stat on tabs"). Hover for everything. Nothing
+ * shows until the host's companion reports.
  */
-export const TabStatsView = memo(function TabStatsView({
-  id,
-  variant,
-}: {
-  id: ConnectionId;
-  variant: "side" | "top" | "tile";
-}) {
-  const vitals = useStore((s) => s.stats[id]);
-  const setting = useStore((s) => s.settings.tabStats);
-  if (!vitals || setting === "off") return null;
-  const kinds: Kind[] =
-    variant === "tile"
-      ? ["cpu", "memory", "network"]
-      : setting === "all"
-        ? variant === "top"
-          ? ["cpu"]
-          : ["cpu", "memory", "network"]
-        : [setting];
-  const values = variant === "tile" || kinds.length === 1;
+export const TabStat = memo(function TabStat({ id, variant }: { id: ConnectionId; variant: "side" | "top" | "tile" }) {
+  const latest = useStore((s) => s.stats[id]?.latest);
+  const kind = useStore((s) => s.settings.tabStats);
+  if (!latest || kind === "off") return null;
+  const { text, tone } = reading(kind, latest);
   return (
     <span
-      className={`vitals vitals--${variant}`}
+      className={`vstat vstat--${variant}`}
       data-vitals={id}
       data-vitals-side={variant === "side" ? "right" : "bottom"}
       // An empty title keeps the tab's own title tooltip from showing over the card.
       title=""
       role="img"
-      aria-label={kinds.map((k) => `${LABELS[k]} ${metric(k, vitals).text}`).join(", ")}
+      aria-label={`${NAMES[kind]} ${text}`}
     >
-      {kinds.map((k) => (
-        <Mini key={k} kind={k} vitals={vitals} value={values} />
-      ))}
+      <span className="vstat__label">{SHORT[kind]}</span>
+      <span className={`vstat__value is-${tone}`}>{text}</span>
     </span>
   );
 });
@@ -193,83 +161,13 @@ function Metric({
 }
 
 /** "updated 12s ago", ticking. */
-export function useNow(): number {
+function useNow(): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const t = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(t);
   }, []);
   return now;
-}
-
-/** A stat tile: label, value, a trend line under them (the sidebar panel). */
-function Tile({ label, value, detail, history, max, tone }: {
-  label: string;
-  value: string;
-  detail?: string;
-  history: number[];
-  max?: number;
-  tone: "ok" | "warn" | "hot";
-}) {
-  return (
-    <div className="vtile">
-      <div className="vtile__top">
-        <span className="vtile__label">{label}</span>
-        <span className={`vtile__value is-${tone}`}>{value}</span>
-      </div>
-      <Sparkline values={history.slice(-60)} max={max} width={110} height={22} tone={tone} stretch />
-      {detail && <span className="vtile__detail">{detail}</span>}
-    </div>
-  );
-}
-
-/** The focused host's load as four tiles and its free space (the sidebar's panel). */
-export function HostTiles({ id }: { id: ConnectionId }) {
-  const vitals = useStore((s) => s.stats[id]);
-  if (!vitals) return null;
-  const l = vitals.latest;
-  const mem = memPercent(l.memUsed, l.memTotal);
-  return (
-    <>
-      <div className="vtiles">
-        <Tile label="CPU" value={formatPercent(l.cpu)} history={vitals.cpu} max={100} tone={level(l.cpu)} />
-        <Tile
-          label="Memory"
-          value={formatPercent(mem)}
-          detail={`${formatBytes(l.memUsed)} / ${formatBytes(l.memTotal)}`}
-          history={vitals.mem}
-          max={100}
-          tone={level(mem)}
-        />
-        <Tile
-          label="Disk"
-          value={l.diskBusy === undefined ? "—" : formatPercent(l.diskBusy)}
-          detail={l.diskBusy === undefined ? "Not shared" : `${formatRateShort((l.diskRead ?? 0) + (l.diskWrite ?? 0))}/s`}
-          history={vitals.disk}
-          max={100}
-          tone={level(l.diskBusy ?? 0)}
-        />
-        <Tile
-          label="Network"
-          value={formatRateShort(l.netRx + l.netTx) + "/s"}
-          detail={`↓ ${formatRateShort(l.netRx)} ↑ ${formatRateShort(l.netTx)}`}
-          history={vitals.net}
-          tone="ok"
-        />
-      </div>
-      {l.volumes.length > 0 && (
-        <div className="vtiles__volumes">
-          {l.volumes.map((v) => (
-            <div key={v.name} className="vvol">
-              <span className="vvol__name mono">{v.name}</span>
-              <Meter value={v.total ? (1 - v.free / v.total) * 100 : 0} />
-              <span className="vvol__free">{formatBytes(v.free)} free</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </>
-  );
 }
 
 function VitalsCard({ id, anchor, side }: Open) {

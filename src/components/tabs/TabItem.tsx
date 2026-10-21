@@ -7,7 +7,7 @@ import { isMainWindow } from "../../lib/env";
 import { AppWindow, X, Zap } from "lucide-react";
 import { StatusDot } from "../common/StatusDot";
 import { ConnectIcon, DisconnectIcon } from "../common/SessionIcons";
-import { TabStatsView } from "../vitals/Vitals";
+import { TabStat } from "../vitals/Vitals";
 import type { ConnectionId } from "../../lib/types";
 import "./tabs.css";
 
@@ -51,7 +51,8 @@ const TabView = forwardRef<HTMLDivElement, ViewProps>(function TabView(
   const elsewhere = useStore((s) => isMainWindow() && inDetachedWindow(s, id));
   // A companion is attached on the remote (deeper integration is live).
   const companion = useStore((s) => !!s.sessions[id]?.companion);
-  const vitals = useStore((s) => !!s.stats[id]);
+  // The host's load shows instead of the companion's mark (unless stats are off).
+  const vitals = useStore((s) => !!s.stats[id] && s.settings.tabStats !== "off");
   if (!conn) return null;
 
   const name = displayName(conn);
@@ -77,7 +78,7 @@ const TabView = forwardRef<HTMLDivElement, ViewProps>(function TabView(
           <Zap size={11} />
         </span>
       )}
-      {vitals && !overlay && <TabStatsView id={id} variant={variant} />}
+      {vitals && !overlay && <TabStat id={id} variant={variant} />}
       {elsewhere && (
         <span className="tab__elsewhere" title="Open in another window">
           <AppWindow size={12} />

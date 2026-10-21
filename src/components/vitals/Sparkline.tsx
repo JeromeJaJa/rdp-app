@@ -11,22 +11,15 @@ export const Sparkline = memo(function Sparkline({
   width = 76,
   height = 22,
   tone = "ok",
-  mini = false,
-  stretch = false,
 }: {
   values: number[];
   max?: number;
   width?: number;
   height?: number;
   tone?: "ok" | "warn" | "hot";
-  /** Tab size: a thinner line, and the end dot only when the value runs high. */
-  mini?: boolean;
-  /** Fill the container's width (the viewBox scales; the line keeps its weight). */
-  stretch?: boolean;
 }) {
-  const cls = `spark spark--${tone} ${mini ? "spark--mini" : ""} ${stretch ? "spark--stretch" : ""}`;
-  if (values.length === 0) return <svg className={cls} width={width} height={height} aria-hidden />;
-  const pad = mini ? 1.5 : 3;
+  if (values.length === 0) return <svg className="spark" width={width} height={height} aria-hidden />;
+  const pad = 3;
   const top = Math.max(max ?? Math.max(...values), 1e-9);
   const n = values.length;
   // A lone sample still draws as a short level line.
@@ -41,17 +34,10 @@ export const Sparkline = memo(function Sparkline({
   const area = `${line}L${pts[pts.length - 1][0].toFixed(1)},${height - pad}L${pad},${height - pad}Z`;
   const [ex, ey] = pts[pts.length - 1];
   return (
-    <svg
-      className={cls}
-      width={stretch ? "100%" : width}
-      height={height}
-      viewBox={`0 0 ${width} ${height}`}
-      preserveAspectRatio="none"
-      aria-hidden
-    >
+    <svg className={`spark spark--${tone}`} width={width} height={height} viewBox={`0 0 ${width} ${height}`} aria-hidden>
       <path className="spark__area" d={area} />
-      <path className="spark__line" d={line} vectorEffect="non-scaling-stroke" />
-      {(!mini || tone !== "ok") && !stretch && <circle className="spark__dot" cx={ex} cy={ey} r={mini ? 1.6 : 2.5} />}
+      <path className="spark__line" d={line} />
+      <circle className="spark__dot" cx={ex} cy={ey} r={2.5} />
     </svg>
   );
 });
