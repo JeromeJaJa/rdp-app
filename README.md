@@ -13,6 +13,15 @@ A fast, minimal Windows Remote Desktop client for managing many connections at o
 - **Import / export** everything or single groups, as JSON (groups, notes) or bulk text. Exports include passwords in plain text, so treat the file like the passwords themselves.
 - Connections only connect when you ask: double-click or Enter on a tab, **Connect all** / **Disconnect all**, per group too.
 - Audio playback (from the session on screen, or all; each connection can override it or be muted), microphone, drive / printer / smart card redirection, RD Gateway (engine and API only for now; hidden in the interface), clipboard sharing (text, images, and files copied either way: copy in Explorer on one side, paste on the other), dynamic resolution, auto-reconnect.
+- **Companion** (experimental, off by default): a small agent inside each remote session, installed over WinRM where
+  the host allows it. With it:
+  - **Fast file copies**: copy files here, paste there (or the other way), streamed instead of fetched a chunk at a
+    time, so a high-latency link no longer caps a copy at a few MB/s.
+  - **Drag and drop** files between this PC and a session, both ways, behaving like a normal Windows drag (remote
+    folders highlight, the cursor shows what a drop would do).
+  - **Send files** to one connection, a group, or a selection: right-click → Send files…, or drop files on a tab, a
+    group or a grid tile. Hosts that aren't connected are connected first.
+  - **Host stats**: CPU, memory, disk and network load on each tab and tile (every 30 s by default, a setting).
 - Server certificates are pinned on first use and you are asked if one ever changes.
 - A **local REST API** (with docs) so scripts and AI agents can do everything you can do in the window.
 - Passwords are encrypted with Windows DPAPI (tied to your Windows account) and never reach the UI.
@@ -91,6 +100,8 @@ src-tauri/               Tauri shell
   src/certs.rs           pinned server certificates
   src/frames.rs          WebView2 shared buffers
   src/tearoff.rs         tabs torn off into windows of their own
+  src/companion_link.rs  attached companions: host stats, sends, fast copies, drags
+  src/file_drop.rs       files dropped in from other apps (the window's own OLE drop target)
 crates/rdp-engine/       the RDP engine (no UI dependencies)
   src/session.rs         per-session thread: connect, reconnect, input, pause/resume, resize
   src/connect.rs         transport (direct or RD Gateway), TLS, channels
@@ -101,6 +112,10 @@ crates/rdp-engine/       the RDP engine (no UI dependencies)
   src/devices.rs         drive / printer / smart card redirection
   src/surface.rs         shared-memory frame format polled by the renderer
 crates/rdp-testserver/   local RDP servers with animated content (RemoteFX, or H.264 with --h264 / --avc444)
+crates/rdp-companion/    the companion (runs in the remote session): stats, clipboard, drags, received files
+crates/rdp-companion-proto/  its wire protocol and the streamed file transfers both ends run
+crates/rdp-vfiles/       files from the other end offered to Windows apps as an OLE data object (paste, drag)
+crates/rdp-clipboard/    clipboard redirection (CLIPRDR), copying files through the companion when attached
 ```
 
 **How frames reach the screen:** each session decodes into a framebuffer in Rust. Changed rectangles are copied into a

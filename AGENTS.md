@@ -138,6 +138,10 @@ pattern-matching against it.
 - **Dynamic resize can be silently dropped.** A monitor-layout PDU sent while the server is still
   applying the previous one is ignored. `session.rs` verifies the size took effect and re-sends a
   few times (`RESIZE_VERIFY`). This is why a session resizes correctly after a window closes.
+- **File drops need our own OLE drop target** (`file_drop.rs`): WebView2 only gives the page
+  `File` objects, no paths. Like wry, revoke and re-register on every child of the window. Don't
+  try to keep WebView2's target via the `OleDropTargetInterface` window property: it isn't a plain
+  interface pointer, and calling it crashed the app at start.
 - **Getting a native stack on Windows.** `lldb` here needs `python310.dll` on `PATH`/`PYTHONHOME`
   (the embeddable Python zip works); its output is buried in debug-info noise — filter for
   `frame #`. This is how the tab-close deadlock was found.
@@ -176,14 +180,29 @@ pattern-matching against it.
 - **Clipboard** (`crates/rdp-clipboard`): CLIPRDR file streaming over OLE `IDataObject`/`IStream`
   on an STA thread, with a direct paste channel. Large transfers are the slow part on a single TCP
   stream — the companion is the real fix.
-- **Companion** (`crates/rdp-companion*`, `rdp-engine/src/companion.rs`, `src-tauri/src/companion.rs`):
-  a remote-side binary opens a DVC back to the client for features pure RDP can't do
-  (parallel-stream transfers, native drag). Protocol is in `rdp-companion-proto` (unit-tested
-  framing). The channel, the WinRM install (launched into the user's session via a one-shot
-  scheduled task), self-persistence, and auto-install on connect are verified against a live host.
-  Still to build: a no-WinRM delivery path, and the transfer/drag features themselves. Release
-  builds bundle `rdp-companion.exe` next to the app (`tauri.release.conf.json`). Enabled by the
-  layered `companion` setting (off by default).
+- **Companion** (`crates/rdp-companion*`, `rdp-engine/src/companion.rs`, `src-tauri/src/companion.rs`
+  for installing, `src-tauri/src/companion_link.rs` for everything once attached): a remote-side
+  binary opens a DVC back to the client for what pure RDP can't do: host stats, fast copies,
+  drags, sends. The engine hands each attached companion to a `CompanionHost` with a
+  `CompanionLink`; its traffic rides a bulk lane the session drains after input and server data.
+  - **Transfers** (`rdp-companion-proto::transfer`) stream against a window sized to the link
+    (delivery rate x min RTT x 1.5), all on the one connection: not parallel TCP connections
+    (the clipboard channel is slow because it asks for one chunk per round trip, not because of
+    TCP). The sink fetches, the source streams that entry and what follows; reads elsewhere
+    refetch. `rdp-vfiles` turns a transfer into an OLE data object for Explorer.
+  - **Clipboard**: the client's clipboard monitor offers copied files to the companion instead of
+    CLIPRDR; the companion marks its clipboard object (`CLIPBOARD_MARKER`) so the client ignores
+    the remote's echo. Remote copies are read as `CF_HDROP` paths; anything else falls back to
+    CLIPRDR.
+  - **Drag in**: the companion shows a near-invisible window under the pointer, the client presses
+    the button there through the session, and the window's `DoDragDrop` follows the client's
+    moves. **Drag out**: the companion puts a drop target under the remote pointer when the client
+    reports leaving the session with the button held; the client then runs a local `DoDragDrop`
+    (only if its button is still physically down). The remote drop is always refused (no deletes).
+  The channel, WinRM install and auto-install are verified against a live host; **stats, fast
+  copies, sends and drags are unit/mock tested but not yet verified against a live host**. Still to
+  build: a no-WinRM delivery path. Release builds bundle `rdp-companion.exe` next to the app.
+  Enabled by the layered `companion` setting (off by default); `hostStatsInterval` (s) too.
 
 ## Conventions and constraints
 
