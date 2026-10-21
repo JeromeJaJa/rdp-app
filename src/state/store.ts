@@ -78,6 +78,27 @@ export interface MenuState {
   target: MenuTarget;
 }
 
+/** A command run on one or more connections (Launch Valor…): one row in the transfers
+ *  panel that fills in as each host answers. */
+export interface Activity {
+  id: number;
+  /** "Launching Valor", while it runs. */
+  doing: string;
+  /** "Valor launched", once it has. */
+  done: string;
+  /** "Couldn't launch Valor". */
+  failedTitle: string;
+  /** "Valor wasn't running": every host answered, and none had anything to do. */
+  noop?: string;
+  /** A program's logo, if it's about one. */
+  icon?: string;
+  ids: ConnectionId[];
+  ok: ConnectionId[];
+  /** Hosts where it succeeded but there was nothing to do. */
+  idle: ConnectionId[];
+  failed: { id: ConnectionId; error: string }[];
+}
+
 /** A server certificate waiting for the user's decision (from a `certificate` session event). */
 export interface CertPrompt {
   id: ConnectionId;
@@ -110,6 +131,8 @@ export interface AppState {
   stats: Record<ConnectionId, Vitals>;
   /** Files being sent to connections, by transfer id. */
   transfers: Record<number, Transfer>;
+  /** Commands run on connections (Launch Valor…), by id. */
+  activities: Record<number, Activity>;
   /** Files dropped onto an open Send dialog (it adds them). */
   droppedPaths: { paths: string[]; seq: number } | null;
 
@@ -156,6 +179,7 @@ export const useStore = create<AppState>(() => ({
   sessions: {},
   stats: {},
   transfers: {},
+  activities: {},
   droppedPaths: null,
 
   selectedId: null,

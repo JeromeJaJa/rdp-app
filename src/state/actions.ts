@@ -26,9 +26,9 @@ import {
   type WindowLayout,
   type WindowTabs,
   type AppAction,
-  type AppOutcome,
 } from "../lib/types";
 import type { RemoteApp } from "../lib/remoteApps";
+import type { Activity } from "./store";
 import { gatewayFromInput } from "../lib/gateway";
 import { isMainWindow, isTauri, windowLabel } from "../lib/env";
 import { morphView } from "../lib/morph";
@@ -715,12 +715,13 @@ export function cancelTransfer(id: number) {
   void be().cancelTransfer(id);
 }
 
-/** Forgets finished transfers (the panel's "Clear"). */
+/** Forgets finished transfers and commands (the panel's "Clear"). */
 export function clearTransfers() {
   setState((s) => ({
     transfers: Object.fromEntries(
       Object.entries(s.transfers).filter(([, t]) => t.state === "waiting" || t.state === "sending"),
     ),
+    activities: Object.fromEntries(Object.entries(s.activities).filter(([, a]) => !activityDone(a))),
   }));
   void be().clearTransfers();
 }
@@ -1178,35 +1179,52 @@ const APP_VERB: Record<AppAction, [string, string, string]> = {
   close: ["Closing", "closed", "close"],
 };
 
-/** Launches, restarts or closes `app` on each connection's host, and says how it went. */
+let activitySeq = 0;
+
+/** Whether an activity has heard from every host. */
+export function activityDone(a: Activity): boolean {
+  return a.ok.length + a.failed.length >= a.ids.length;
+}
+
+/**
+ * Launches, restarts or closes `app` on each connection's host. One row in the transfers
+ * panel follows it ("Launching Valor · 37/100"), turning into the outcome as hosts answer.
+ */
 export async function controlApp(ids: ConnectionId[], app: RemoteApp, action: AppAction) {
   if (!ids.length) return;
-  const name = (id: ConnectionId) => {
-    const c = getState().connById[id];
-    return c ? displayName(c) : id;
-  };
   const [doing, done, verb] = APP_VERB[action];
-  const target = ids.length === 1 ? name(ids[0]) : `${ids.length} connections`;
-  toast("info", `${doing} ${app.name} on ${target}…`);
-  let results: AppOutcome[];
-  try {
-    results = await be().controlApp(ids, action, app.path);
-  } catch (e) {
-    toast("error", `Couldn't ${verb} ${app.name}`, errorText(e));
-    return;
-  }
-  const failed = results.filter((r) => r.error);
-  const ok = results.length - failed.length;
-  if (!failed.length) {
-    const already = action === "close" && results.every((r) => !r.wasRunning);
-    toast("success", already ? `${app.name} wasn't running on ${target}` : `${app.name} ${done} on ${target}`);
-    return;
-  }
-  const first = `${name(failed[0].id)}: ${failed[0].error}`;
-  const more = failed.length > 1 ? ` (and ${failed.length - 1} more)` : "";
-  toast(
-    "error",
-    ok ? `${app.name} ${done} on ${ok} of ${results.length}` : `Couldn't ${verb} ${app.name}`,
-    first + more,
+  const id = ++activitySeq;
+  const activity: Activity = {
+    id,
+    doing: `${doing} ${app.name}`,
+    done: `${app.name} ${done}`,
+    failedTitle: `Couldn't ${verb} ${app.name}`,
+    noop: action === "close" ? `${app.name} wasn't running` : undefined,
+    icon: app.icon,
+    ids,
+    ok: [],
+    idle: [],
+    failed: [],
+  };
+  setState((s) => ({ activities: { ...s.activities, [id]: activity } }));
+  const settle = (host: ConnectionId, outcome: { error?: string | null; idle?: boolean }) =>
+    setState((s) => {
+      const a = s.activities[id];
+      if (!a) return {};
+      const next = outcome.error
+        ? { ...a, failed: [...a.failed, { id: host, error: outcome.error }] }
+        : { ...a, ok: [...a.ok, host], idle: outcome.idle ? [...a.idle, host] : a.idle };
+      return { activities: { ...s.activities, [id]: next } };
+    });
+  // One request per host, so the row counts them off as they answer.
+  await Promise.all(
+    ids.map(async (host) => {
+      try {
+        const [result] = await be().controlApp([host], action, app.path);
+        settle(host, { error: result?.error, idle: action === "close" && !result?.wasRunning });
+      } catch (e) {
+        settle(host, { error: errorText(e) });
+      }
+    }),
   );
 }

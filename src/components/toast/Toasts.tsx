@@ -39,8 +39,10 @@ function ToastItem({ t }: { t: Toast }) {
 
 export function Toasts() {
   const toasts = useStore((s) => s.toasts);
-  // Files being sent show in the main window, under its toasts.
-  const transfers = useStore((s) => isMainWindow() && Object.keys(s.transfers).length > 0);
+  // Files being sent, and commands run on connections, show in the main window under its toasts.
+  const transfers = useStore(
+    (s) => isMainWindow() && (Object.keys(s.transfers).length > 0 || Object.keys(s.activities).length > 0),
+  );
   if (!toasts.length && !transfers) return null;
   return (
     <div className="toasts" aria-live="polite">

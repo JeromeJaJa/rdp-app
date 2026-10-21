@@ -810,12 +810,25 @@ export class MockBackend implements Backend {
     this.transferListeners.forEach((cb) => cb(copy));
   }
 
-  /** Simulated hosts: a connected one answers after a moment; others "connect" first. */
+  /** Simulated hosts: one that isn't connected connects first (and fails if that does);
+   *  then its companion answers after a moment. */
   async controlApp(ids: ConnectionId[], _action: AppAction, _path: string): Promise<AppOutcome[]> {
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
     return Promise.all(
-      ids.map(async (id) => {
-        const live = this.sessions.has(id);
-        await new Promise((r) => setTimeout(r, live ? 500 : 1600));
+      ids.map(async (id): Promise<AppOutcome> => {
+        if (this.sessions.get(id)?.status !== "connected") {
+          await this.connect([id]);
+          const deadline = Date.now() + 20_000;
+          for (;;) {
+            const status = this.sessions.get(id)?.status;
+            if (status === "connected") break;
+            if (status === "error" || status === "idle" || Date.now() > deadline) {
+              return { id, error: "couldn't connect to it", wasRunning: false };
+            }
+            await sleep(200);
+          }
+        }
+        await sleep(400 + Math.random() * 600);
         return { id, error: null, wasRunning: Math.random() > 0.5 };
       }),
     );

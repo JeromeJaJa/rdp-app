@@ -288,6 +288,36 @@
   color: var(--text-2);
   white-space: normal;
 }
+/* A program's logo on a command's row while it runs. */
+.xfer__logo {
+  width: 13px;
+  height: 13px;
+  object-fit: contain;
+}
+.xfer__more {
+  margin-left: 6px;
+  font-size: 11px;
+  color: var(--text-2);
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 2px;
+}
+.xfer__more:hover {
+  color: var(--text);
+}
+/* Every failure of a command, listed under it. */
+.xfer__failures {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 140px;
+  overflow-y: auto;
+  font-size: 11px;
+  color: var(--text-2);
+}
 
 /* ── Files dragged in from other apps ───────────────────────────────────── */
 
