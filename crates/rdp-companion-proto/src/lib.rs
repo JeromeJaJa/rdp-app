@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 pub const CHANNEL_NAME: &str = "RdpApp::Companion";
 
 /// Bumped on any breaking change to [`Message`]. Both sides send it in the handshake.
-pub const PROTOCOL_VERSION: u32 = 5;
+pub const PROTOCOL_VERSION: u32 = 6;
 
 /// A frame larger than this is treated as a desync and ends the channel, rather than
 /// buffering without bound.

@@ -35,6 +35,8 @@ pub(crate) struct Channel {
     read_event: HANDLE,
     /// The write event, held while a write is in progress.
     write: Mutex<HANDLE>,
+    /// The direct link to the client: messages take it while it's up ([`Channel::send`]).
+    direct: rdp_direct::DirectSlot,
 }
 
 // SAFETY: the handles may be used from any thread; writes are serialized by the mutex and
@@ -92,12 +94,22 @@ impl Channel {
                 file,
                 read_event,
                 write: Mutex::new(write_event),
+                direct: rdp_direct::DirectSlot::default(),
             })
         }
     }
 
-    /// Sends one message. False if the channel is gone.
+    /// The direct link to the client, while it's up.
+    pub(crate) fn direct(&self) -> &rdp_direct::DirectSlot {
+        &self.direct
+    }
+
+    /// Sends one message, over the direct link while it's up. False if the channel is gone.
     pub(crate) fn send(&self, message: &Message) -> bool {
+        // Over the direct link while it's up (all but the channel's own handshake).
+        if self.direct.try_send(message) {
+            return true;
+        }
         let bytes = encode(message);
         let event = self.write.lock().unwrap_or_else(PoisonError::into_inner);
         bytes.chunks(MAX_WRITE).all(|piece| self.write_all(*event, piece))

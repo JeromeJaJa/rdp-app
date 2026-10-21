@@ -146,9 +146,13 @@ mod windows_impl {
             bail!("couldn't say hello");
         }
 
-        let stats = Stats::start(Arc::clone(&channel));
+        let stats = Arc::new(Stats::start(Arc::clone(&channel)));
         let transfers = match clipboard {
-            Some(clipboard) => Some(Arc::new(Transfers::new(Arc::clone(&channel), clipboard)?)),
+            Some(clipboard) => Some(Arc::new(Transfers::new(
+                Arc::clone(&channel),
+                clipboard,
+                Arc::clone(&stats),
+            )?)),
             None => None,
         };
         let ended = attached(&channel, &stats, transfers.as_ref());
@@ -187,27 +191,10 @@ mod windows_impl {
                         return Ok(Ended::Detached);
                     }
                     Message::StatsInterval { secs } => stats.set_interval(secs),
+                    // The rest: the same as over the direct link.
                     message => {
-                        let Some(transfers) = transfers else { continue };
-                        match message {
-                            Message::Offer { id, entries, intent } => transfers.offer(id, entries, intent),
-                            Message::Data { id, .. } | Message::End { id, .. } | Message::Unreadable { id, .. } => {
-                                transfers.incoming(id, message)
-                            }
-                            Message::Fetch { .. } | Message::Ack { .. } => transfers.outgoing(&message),
-                            Message::Close { id, error } => transfers.close(id, error),
-                            Message::ClipboardQuery { id } => transfers.clipboard_query(id),
-                            Message::ClipboardOffer { id, formats } => transfers.clipboard_offer(id, formats),
-                            Message::ClipboardRead { id, format } => transfers.clipboard_read(id, format),
-                            Message::DirectOffer {
-                                fingerprint,
-                                candidates,
-                            } => transfers.direct_offer(fingerprint, candidates),
-                            Message::DragIn { id, entries, x, y } => transfers.drag_in(id, entries, x, y),
-                            Message::DragCancel { id } => transfers.drag_cancel(id),
-                            Message::DragOutProbe { id, x, y } => transfers.drag_out_probe(id, x, y),
-                            // Not sent to the companion.
-                            _ => {}
+                        if let Some(transfers) = transfers {
+                            transfers.handle(message);
                         }
                     }
                 }

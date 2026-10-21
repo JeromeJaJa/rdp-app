@@ -252,7 +252,7 @@ impl Companions {
         let attached: Vec<Arc<Attached>> = self.attached.lock().values().cloned().collect();
         for a in attached {
             let secs = self.interval_for(&a.session);
-            a.link.send(&Message::StatsInterval { secs });
+            a.send(&Message::StatsInterval { secs });
             if secs == 0 && self.stats.lock().remove(&a.session).is_some() {
                 let _ = self
                     .app
@@ -311,7 +311,7 @@ impl Companions {
         attached
             .pump
             .start(Source::new(id, Arc::clone(&entries), Box::new(DiskFiles::new(paths))));
-        if !attached.link.send(&Message::Offer {
+        if !attached.send(&Message::Offer {
             id,
             entries: entries.to_vec(),
             intent: Intent::Save {
@@ -387,7 +387,7 @@ impl Companions {
             Arc::clone(&entries),
             Box::new(DiskFiles::new(listing.paths)),
         ));
-        attached.link.send(&Message::DragIn {
+        attached.send(&Message::DragIn {
             id,
             entries: entries.to_vec(),
             x: i32::from(x),
@@ -451,7 +451,7 @@ impl Companions {
             return;
         };
         d.cancelled = true;
-        attached.link.send(&Message::DragCancel { id: d.id });
+        attached.send(&Message::DragCancel { id: d.id });
         if d.pressed {
             // The remote drag notices the cancel on its next input.
             let (x, y) = d.at;
@@ -469,7 +469,7 @@ impl Companions {
         let Some(attached) = self.get(session) else { return };
         let id = self.next_id();
         *attached.drag_out.lock() = Some((id, (x, y)));
-        attached.link.send(&Message::DragOutProbe {
+        attached.send(&Message::DragOutProbe {
             id,
             x: i32::from(x),
             y: i32::from(y),
@@ -482,7 +482,7 @@ impl Companions {
         if probe.map(|(probe, _)| probe) != Some(id)
             || entries.iter().any(|e| transfer::safe_relative(&e.path).is_none())
         {
-            attached.link.send(&Message::Close { id, error: None });
+            attached.send(&Message::Close { id, error: None });
             return;
         }
         attached.inflows.lock().retain(|_, inflow| !inflow.is_closed());
@@ -578,7 +578,7 @@ impl CompanionHost for Companions {
         }
         let prefs = self.prefs_for(session);
         if prefs.stats_interval > 0 {
-            attached.link.send(&Message::StatsInterval {
+            attached.send(&Message::StatsInterval {
                 secs: prefs.stats_interval,
             });
         }
@@ -732,11 +732,23 @@ impl Companions {
                     candidates: prepared.candidates().iter().map(ToString::to_string).collect(),
                 };
                 *attached.preparing.lock() = Some(prepared);
-                attached.link.send(&offer);
+                attached.send(&offer);
             });
         if let Err(error) = spawned {
             tracing::warn!(%error, "couldn't start a direct link");
         }
+    }
+
+    /// The direct link closed: transfers carry on over the companion channel, requests
+    /// waiting for an answer that may have been lost give up (their callers fall back),
+    /// and the companion hears its stats interval again in case that was lost too.
+    fn direct_lost(&self, attached: &Arc<Attached>, reason: &str) {
+        attached.direct_lost(reason);
+        for (_, waiter) in attached.queries.lock().drain() {
+            let _ = waiter.send(None);
+        }
+        let secs = self.interval_for(&attached.session);
+        attached.send(&Message::StatsInterval { secs });
     }
 
     /// The companion answered our offer and is waiting: connect to it.
@@ -772,18 +784,20 @@ impl Companions {
             }
             tracing::info!(session = %attached.session, here = ?prepared.candidates(), companion = ?addrs, "opening a direct link");
             let on_message = {
-                let weak = weak.clone();
+                let (owner, weak) = (owner.clone(), weak.clone());
                 Box::new(move |message| {
                     if let (Some(owner), Some(attached)) = (owner.upgrade(), weak.upgrade()) {
                         owner.on_message(&attached, message);
                     }
                 })
             };
-            let on_closed = Box::new(move |reason: String| {
-                if let Some(attached) = weak.upgrade() {
-                    attached.direct_lost(&reason);
-                }
-            });
+            let on_closed = {
+                Box::new(move |reason: String| {
+                    if let (Some(owner), Some(attached)) = (owner.upgrade(), weak.upgrade()) {
+                        owner.direct_lost(&attached, &reason);
+                    }
+                })
+            };
             let peer = Peer {
                 fingerprint,
                 candidates: addrs,
@@ -844,6 +858,12 @@ struct Attached {
 }
 
 impl Attached {
+    /// Sends to the companion: over the direct link while it's up (all but the
+    /// channel's own handshake), else the companion channel. False if neither took it.
+    fn send(&self, message: &Message) -> bool {
+        self.direct.try_send(message) || self.link.send(message)
+    }
+
     fn outbox(&self) -> Outbox {
         let link = self.link.clone();
         let direct = self.direct.clone();
@@ -873,7 +893,7 @@ impl Attached {
             if unsafe_name {
                 tracing::warn!("the remote offered a file with an unsafe name; ignored");
             }
-            self.link.send(&Message::Close {
+            self.send(&Message::Close {
                 id,
                 error: Some("not expected".into()),
             });
@@ -975,7 +995,7 @@ impl rdp_clipboard::Companion for ClipboardHook {
                     Arc::clone(&entries),
                     Box::new(DiskFiles::new(listing.paths)),
                 ));
-                attached.link.send(&Message::Offer {
+                attached.send(&Message::Offer {
                     id,
                     entries: entries.to_vec(),
                     intent: Intent::Clipboard,
@@ -1012,7 +1032,7 @@ impl rdp_clipboard::Companion for ClipboardHook {
         });
         attached.sources.lock().insert(id);
         attached.pump.start(Source::new(id, entries, Box::new(files)));
-        if !attached.link.send(&Message::ClipboardOffer { id, formats }) {
+        if !attached.send(&Message::ClipboardOffer { id, formats }) {
             attached.sources.lock().remove(&id);
             return false;
         }
@@ -1034,7 +1054,7 @@ impl rdp_clipboard::Companion for ClipboardHook {
         let inflow = Arc::new(Inflow::per_entry(id, entries, attached.outbox()).streaming());
         attached.inflows.lock().insert(id, Arc::clone(&inflow));
         let started = Instant::now();
-        let result = if attached.link.send(&Message::ClipboardRead {
+        let result = if attached.send(&Message::ClipboardRead {
             id,
             format: format.clone(),
         }) {
@@ -1071,7 +1091,7 @@ impl rdp_clipboard::Companion for ClipboardHook {
         let id = companions.next_id();
         let (tx, rx) = mpsc::sync_channel(1);
         attached.queries.lock().insert(id, tx);
-        if !attached.link.send(&Message::ClipboardQuery { id }) {
+        if !attached.send(&Message::ClipboardQuery { id }) {
             attached.queries.lock().remove(&id);
             return None;
         }

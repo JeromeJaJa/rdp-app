@@ -210,10 +210,12 @@ pattern-matching against it.
     reports) and a per-link certificate fingerprint, and swap them over the companion channel
     (`DirectOffer`/`DirectAnswer`); the companion sends openers so the client's packets pass its
     firewall and NAT, and the client tries every address at once. Nothing listens for strangers,
-    and each side accepts only the pinned certificate. `DirectSlot::try_send` routes a transfer's
-    data, fetches and acks over it while it's up; everything else stays on the channel. If it
-    drops, the source forgets what was in flight (`Pump::rewind`) and the sink asks again from
-    where its data ends (`Inflow::resume`), over RDP. Layered setting `directTransfers` (on).
+    and each side accepts only the pinned certificate. While it's up, every companion message
+    rides it (`rides_direct`: all but the handshake, keepalive and the link's own setup): the
+    companion's `Channel::send` and the client's `Attached::send` try it first. If it drops,
+    the source forgets what was in flight (`Pump::rewind`), the sink asks again from where its
+    data ends (`Inflow::resume`), and requests awaiting an answer give up so callers fall back,
+    all over RDP. Layered setting `directTransfers` (on).
     Verified over loopback (including losing the link mid-transfer); NAT traversal needs a
     real host.
   - **Drag in**: the companion shows a near-invisible window under the pointer, the client presses

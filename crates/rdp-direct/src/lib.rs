@@ -22,7 +22,7 @@
 //! address pair works (both ends behind strict NATs), callers carry on over RDP.
 //!
 //! The link carries the same [`Message`]s as the companion channel, in order, on one
-//! stream ([`DirectLink`]).
+//! stream ([`DirectLink`]): everything but what must stay on RDP ([`rides_direct`]).
 
 mod stun;
 mod tls;
@@ -422,16 +422,21 @@ fn transport() -> TransportConfig {
     t
 }
 
-/// The messages that ride the direct link while it's up: a transfer's data and the
-/// fetches and acks steering it. Everything else stays on the companion channel.
+/// The messages that ride the direct link while it's up: all of them, except the
+/// handshake and keepalive (they're about the companion channel itself) and the messages
+/// that set up the direct link.
 pub fn rides_direct(message: &Message) -> bool {
-    matches!(
+    !matches!(
         message,
-        Message::Data { .. }
-            | Message::End { .. }
-            | Message::Unreadable { .. }
-            | Message::Fetch { .. }
-            | Message::Ack { .. }
+        Message::Hello { .. }
+            | Message::Welcome { .. }
+            | Message::Refused { .. }
+            | Message::Ping { .. }
+            | Message::Pong { .. }
+            | Message::Bye
+            | Message::DirectOffer { .. }
+            | Message::DirectAnswer { .. }
+            | Message::DirectUnavailable { .. }
     )
 }
 
