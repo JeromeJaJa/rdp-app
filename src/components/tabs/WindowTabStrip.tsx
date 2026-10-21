@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   closestCenter,
@@ -18,7 +18,7 @@ import { isMainWindow, windowLabel } from "../../lib/env";
 import { closeTab, reorderWindowTabs } from "../../state/actions";
 import { useStore, windowTabs } from "../../state/store";
 import { DockGhost, SoloTab, TabItem, TabOverlay } from "./TabItem";
-import { dragPointer, pastTitlebar, stripWheel, useTearOff } from "./useTabsDnd";
+import { pastTitlebar, stripWheel, useTearOff } from "./useTabsDnd";
 import "./toptabs.css";
 
 // Chrome forces the drag horizontal while the tab is still in the strip; it only gains
@@ -43,6 +43,13 @@ function WindowTabStripInner() {
   const tear = useTearOff(pastTitlebar);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [fade, setFade] = useState({ left: false, right: false });
+
+  // The real pointer, tracked live: tear-off keys off the true cursor, not dnd-kit's
+  // delta (which the horizontal-axis lock has zeroed on Y).
+  const pointer = useRef({ x: 0, y: 0 });
+  const trackPointer = useCallback((e: PointerEvent) => {
+    pointer.current = { x: e.clientX, y: e.clientY };
+  }, []);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -73,8 +80,9 @@ function WindowTabStripInner() {
     reorderWindowTabs(arrayMove(tabs, from, to));
   };
 
-  // A detached window's single tab is a handle to move the window.
-  const soloWindowDrag = !main && tabs.length === 1;
+  // A detached window's single tab is a handle to move the window — unless a tab from
+  // another window is being dragged in, when the strip must show it landing.
+  const soloWindowDrag = !main && tabs.length === 1 && !ghost;
 
   return (
     <div
@@ -94,11 +102,20 @@ function WindowTabStripInner() {
             modifiers={[horizontalOnly]}
             onDragStart={(e: DragStartEvent) => {
               tear.onStart();
+              const ev = e.activatorEvent as PointerEvent | null;
+              if (ev) pointer.current = { x: ev.clientX, y: ev.clientY };
+              window.addEventListener("pointermove", trackPointer);
               setActiveId(String(e.active.id));
             }}
-            onDragMove={(e: DragMoveEvent) => tear.onMove(String(e.active.id), dragPointer(e))}
-            onDragEnd={onDragEnd}
-            onDragCancel={() => setActiveId(null)}
+            onDragMove={(e: DragMoveEvent) => tear.onMove(String(e.active.id), pointer.current)}
+            onDragEnd={(e: DragEndEvent) => {
+              window.removeEventListener("pointermove", trackPointer);
+              onDragEnd(e);
+            }}
+            onDragCancel={() => {
+              window.removeEventListener("pointermove", trackPointer);
+              setActiveId(null);
+            }}
           >
             <div className="top-seg">
               <SortableContext items={tabs} strategy={horizontalListSortingStrategy}>

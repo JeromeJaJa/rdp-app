@@ -124,11 +124,10 @@ export function useTabAreaReporter() {
     };
     const report = () => {
       frame = 0;
-      // Drop targets: the whole title bar and (main window) the library sidebar.
-      const areas = [".titlebar", ".sidebar"].flatMap((sel) => {
-        const el = document.querySelector(sel);
-        return el ? rectOf(el) : [];
-      });
+      // The drop target is the tab strip itself — not the rest of the title bar
+      // (brand, search, window controls) nor the library sidebar.
+      const strip = document.querySelector(".top-tabs");
+      const areas = strip ? rectOf(strip) : [];
       // The individual tabs, in order: where a dragged tab would slot in.
       const slots = Array.from(document.querySelectorAll(".top-tabs .tab--top")).flatMap(rectOf);
       const key = JSON.stringify([areas, slots]);
