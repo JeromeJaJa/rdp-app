@@ -188,12 +188,20 @@ pattern-matching against it.
   - **Transfers** (`rdp-companion-proto::transfer`) stream against a window sized to the link
     (delivery rate x min RTT x 1.5), all on the one connection: not parallel TCP connections
     (the clipboard channel is slow because it asks for one chunk per round trip, not because of
-    TCP). The sink fetches, the source streams that entry and what follows; reads elsewhere
-    refetch. `rdp-vfiles` turns a transfer into an OLE data object for Explorer.
-  - **Clipboard**: the client's clipboard monitor offers copied files to the companion instead of
-    CLIPRDR; the companion marks its clipboard object (`CLIPBOARD_MARKER`) so the client ignores
-    the remote's echo. Remote copies are read as `CF_HDROP` paths; anything else falls back to
-    CLIPRDR.
+    TCP). The sink fetches, the source streams that entry and what follows (or just that entry,
+    `single`, for clipboard formats); reads elsewhere refetch. Chunks are zstd-compressed when
+    that shrinks them (a source backs off on data that doesn't); windows and acks count the
+    uncompressed bytes. Both ends log a transfer's `Throughput` (MiB/s, share on the wire): an
+    upload that doesn't compress runs at the link's upload speed, whatever the protocol does.
+    `rdp-vfiles` turns a transfer into an OLE data object for Explorer.
+  - **Clipboard**: once CLIPRDR is set up, the client's clipboard monitor offers every local copy
+    to the companion instead: files as a listing, anything else as its plain-memory formats
+    (`ClipFormat::is_memory`; registered formats go by name), which the companion puts on the
+    remote clipboard with delayed rendering and fetches from the client when pasted. It marks what
+    it puts there (`CLIPBOARD_MARKER`) so the client ignores the remote's echo. Pasting a remote
+    copy here asks the companion first (`ClipboardRead`: it streams the format straight away);
+    files are read as `CF_HDROP` paths. If the companion can't serve it, CLIPRDR does. The
+    companion's clipboard test runs on a private window station, so it never touches yours.
   - **Drag in**: the companion shows a near-invisible window under the pointer, the client presses
     the button there through the session, and the window's `DoDragDrop` follows the client's
     moves. **Drag out**: the companion puts a drop target under the remote pointer when the client

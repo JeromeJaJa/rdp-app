@@ -197,6 +197,8 @@ mod windows_impl {
                             Message::Fetch { .. } | Message::Ack { .. } => transfers.outgoing(&message),
                             Message::Close { id, error } => transfers.close(id, error),
                             Message::ClipboardQuery { id } => transfers.clipboard_query(id),
+                            Message::ClipboardOffer { id, formats } => transfers.clipboard_offer(id, formats),
+                            Message::ClipboardRead { id, format } => transfers.clipboard_read(id, format),
                             Message::DragIn { id, entries, x, y } => transfers.drag_in(id, entries, x, y),
                             Message::DragCancel { id } => transfers.drag_cancel(id),
                             Message::DragOutProbe { id, x, y } => transfers.drag_out_probe(id, x, y),

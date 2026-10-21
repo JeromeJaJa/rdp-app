@@ -15,7 +15,7 @@
 //!   also unbounded now, so a busy UI thread never stalls the session's network loop);
 //! - file transfer capabilities are advertised;
 //! - dropping the monitor destroys its window and state (upstream leaked both);
-//! - with a companion attached, copied files go through it instead (see [`Companion`]).
+//! - with a companion attached, copies go through it instead (see [`Companion`]).
 #![cfg(windows)]
 #![warn(unsafe_op_in_unsafe_fn)]
 
@@ -125,11 +125,11 @@ impl From<Error> for WinCliprdrError {
     }
 }
 
-/// Copies files faster through the session's companion, when one is attached.
+/// Copies faster through the session's companion, when one is attached.
 ///
-/// The clipboard channel moves file contents one request at a time; the companion
-/// streams them. Text, images and anything the companion can't serve still go over the
-/// clipboard channel.
+/// The clipboard channel moves file contents one request at a time, and anything else in
+/// one uncompressed reply; the companion streams both, compressed. Whatever the companion
+/// can't serve still goes over the clipboard channel.
 pub trait Companion: Send + Sync {
     /// Files were copied on this PC: put them on the remote clipboard through the
     /// companion. Returns false (use the clipboard channel) if none is attached. Must not
@@ -140,6 +140,57 @@ pub trait Companion: Send + Sync {
     /// attached or it can't serve what the remote copied. Blocks briefly; should let
     /// sent messages through while it waits ([`rdp_vfiles::pump_sent_messages`]).
     fn remote_files(&self) -> Option<Arc<rdp_companion_proto::transfer::Inflow>>;
+
+    /// Something other than files was copied on this PC: put `formats` on the remote
+    /// clipboard through the companion, each read from this clipboard ([`read_format`])
+    /// when something there pastes it. Returns false (use the clipboard channel) if none is
+    /// attached. Must not block.
+    fn offer_formats(&self, formats: Vec<rdp_companion_proto::ClipFormat>) -> bool;
+
+    /// Something here is pasting `format` of what the remote copied: read it through the
+    /// companion. `None` (use the clipboard channel) if none is attached or it can't. Blocks
+    /// until the data is in: it's needed before `WM_RENDERFORMAT` returns.
+    fn remote_format(&self, format: rdp_companion_proto::ClipFormat) -> Option<Vec<u8>>;
+}
+
+/// The bytes of one format on this PC's clipboard (plain-memory formats: see
+/// [`rdp_companion_proto::ClipFormat::is_memory`]). Any thread; waits briefly if another
+/// program has the clipboard open.
+pub fn read_format(format: u32) -> std::io::Result<Vec<u8>> {
+    use windows::Win32::Foundation::HGLOBAL;
+    use windows::Win32::System::DataExchange::{CloseClipboard, GetClipboardData, OpenClipboard};
+    use windows::Win32::System::Memory::{GlobalLock, GlobalSize, GlobalUnlock};
+
+    let failed = |what: &str| std::io::Error::other(what.to_owned());
+    let mut opened = false;
+    for _ in 0..25 {
+        // SAFETY: opening the clipboard for this thread; closed below.
+        if unsafe { OpenClipboard(None) }.is_ok() {
+            opened = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    if !opened {
+        return Err(failed("the clipboard stayed busy"));
+    }
+    // SAFETY: the clipboard is open; the handle stays valid until it closes, and the
+    // locked bytes are copied out before unlocking.
+    let data = unsafe {
+        GetClipboardData(format).ok().and_then(|handle| {
+            let handle = HGLOBAL(handle.0);
+            let ptr = GlobalLock(handle).cast::<u8>().cast_const();
+            if ptr.is_null() {
+                return None;
+            }
+            let bytes = core::slice::from_raw_parts(ptr, GlobalSize(handle)).to_vec();
+            let _ = GlobalUnlock(handle);
+            Some(bytes)
+        })
+    };
+    // SAFETY: closing what was opened above.
+    let _ = unsafe { CloseClipboard() };
+    data.ok_or_else(|| failed("the clipboard no longer has that format"))
 }
 
 /// Sent from the clipboard backend shim to the actual WinAPI subproc event loop

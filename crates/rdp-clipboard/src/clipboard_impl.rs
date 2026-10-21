@@ -7,6 +7,7 @@ use ironrdp_cliprdr::backend::{ClipboardMessage, ClipboardMessageProxy};
 use ironrdp_cliprdr::pdu::{
     ClipboardFormat, ClipboardFormatId, ClipboardGeneralCapabilityFlags, FormatDataRequest, FormatDataResponse,
 };
+use rdp_companion_proto::ClipFormat;
 use tracing::info;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::DataExchange::GetClipboardOwner;
@@ -46,7 +47,7 @@ pub(crate) struct WinClipboardImpl {
     remote: Remote,
     /// That thread, started the first time the remote copies files.
     ole: Option<OleClipboard>,
-    /// Streams copied files when a companion is attached.
+    /// Streams copies when a companion is attached.
     companion: Option<Arc<dyn crate::Companion>>,
     // Number of attempts spent to process current clipboard message
     attempt: u32,
@@ -163,6 +164,26 @@ impl WinClipboardImpl {
         // attachments...) whose contents this side cannot serve.
         formats.retain(|format| filtered_format_ids.contains(&format.id()) && !is_file_format(format));
 
+        // The companion streams it compressed, much faster than the clipboard channel's
+        // one-piece reply (once the channel is set up: its first list must go over it).
+        if self.ready
+            && let Some(companion) = &self.companion
+        {
+            let offered: Vec<ClipFormat> = formats
+                .iter()
+                .map(|f| ClipFormat {
+                    id: f.id().value(),
+                    name: f.name().map(|n| n.value().to_owned()),
+                })
+                .filter(ClipFormat::is_memory)
+                .collect();
+            let count = offered.len();
+            if count > 0 && companion.offer_formats(offered) {
+                info!(formats = count, "copy offered through the companion");
+                return Ok(None);
+            }
+        }
+
         Ok(Some(ClipboardMessage::SendInitiateCopy(formats)))
     }
 
@@ -178,6 +199,19 @@ impl WinClipboardImpl {
             // Format is unknown or not supported on the local machine
             return Ok(None);
         };
+
+        // Through the companion if one is attached: streamed and compressed.
+        if let Some(companion) = &self.companion {
+            let format = ClipFormat {
+                id: remote_format.value(),
+                name: self.remote_format_registry.remote_name(remote_format),
+            };
+            if format.is_memory()
+                && let Some(data) = companion.remote_format(format)
+            {
+                return Ok(Some(FormatDataResponse::new_data(data)));
+            }
+        }
 
         // We need to receive data from the remote clipboard immediately, because Windows
         // expects us to set clipboard data before returning from `WM_RENDERFORMAT` handler.

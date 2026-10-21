@@ -11,6 +11,8 @@ use crate::utils::get_last_winapi_error;
 pub(crate) struct RemoteClipboardFormatRegistry {
     remote_to_local: HashMap<ClipboardFormatId, ClipboardFormatId>,
     local_to_remote: HashMap<ClipboardFormatId, ClipboardFormatId>,
+    /// Names of the remote's registered formats.
+    names: HashMap<ClipboardFormatId, String>,
 }
 
 impl RemoteClipboardFormatRegistry {
@@ -19,6 +21,7 @@ impl RemoteClipboardFormatRegistry {
     pub(crate) fn clear(&mut self) {
         self.remote_to_local.clear();
         self.local_to_remote.clear();
+        self.names.clear();
     }
 
     /// Registers remote clipboard format on local machine. Registered format ids could differ
@@ -82,9 +85,15 @@ impl RemoteClipboardFormatRegistry {
         // save mapping for future use
         self.remote_to_local.insert(remote_format.id(), mapped_format_id);
         self.local_to_remote.insert(mapped_format_id, remote_format.id());
+        self.names.insert(remote_format.id(), format_name.value().to_owned());
 
         // We either registered new format or found previously registered one
         Some(mapped_format_id)
+    }
+
+    /// The name of a remote registered format (`None` for standard ones).
+    pub(crate) fn remote_name(&self, remote_format: ClipboardFormatId) -> Option<String> {
+        self.names.get(&remote_format).cloned()
     }
 
     pub(crate) fn local_to_remote(&self, local_format: ClipboardFormatId) -> Option<ClipboardFormatId> {

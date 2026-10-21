@@ -15,8 +15,9 @@ A fast, minimal Windows Remote Desktop client for managing many connections at o
 - Audio playback (from the session on screen, or all; each connection can override it or be muted), microphone, drive / printer / smart card redirection, RD Gateway (engine and API only for now; hidden in the interface), clipboard sharing (text, images, and files copied either way: copy in Explorer on one side, paste on the other), dynamic resolution, auto-reconnect.
 - **Companion** (experimental, off by default): a small agent inside each remote session, installed over WinRM where
   the host allows it. With it:
-  - **Fast file copies**: copy files here, paste there (or the other way), streamed instead of fetched a chunk at a
-    time, so a high-latency link no longer caps a copy at a few MB/s.
+  - **Fast copies**: copy files, text or anything else here and paste there (or the other way), streamed and
+    compressed instead of fetched a chunk at a time, so a high-latency link no longer caps a copy at a few MB/s and
+    text moves several times faster than the link's raw speed.
   - **Drag and drop** files between this PC and a session, both ways, behaving like a normal Windows drag (remote
     folders highlight, the cursor shows what a drop would do).
   - **Send files** to one connection, a group, or a selection: right-click → Send files…, or drop files on a tab, a

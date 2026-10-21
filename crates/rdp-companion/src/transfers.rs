@@ -2,14 +2,14 @@
 //!
 //! Incoming offers are saved into a folder ("Send files to…") or put on the clipboard (a
 //! copy on the client); the client streams their contents ([`rdp_companion_proto::transfer`]).
-//! The other way, files copied here are served when the client pastes them.
+//! The other way, what was copied here is served when the client pastes it.
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use rdp_companion_proto::transfer::{self, DiskFiles, Inflow, Outbox, Pump, Source};
-use rdp_companion_proto::{Entry, Intent, Message};
+use rdp_companion_proto::transfer::{self, DiskFiles, Inflow, Note, Outbox, Produced, Pump, Source};
+use rdp_companion_proto::{ClipFormat, Entry, Intent, Message};
 use windows::Win32::System::Com::CoTaskMemFree;
 use windows::Win32::System::Environment::ExpandEnvironmentStringsW;
 use windows::Win32::UI::Shell::{
@@ -45,7 +45,12 @@ impl Transfers {
         let pump = Pump::spawn(
             "transfers",
             move |message| sender.send(&message),
-            |note| tracing::debug!(?note, "transfer"),
+            |note| match note {
+                Note::Closed { id, error, throughput } => {
+                    tracing::info!(id, ?error, %throughput, "transfer to the client ended");
+                }
+                Note::Progress { .. } => {}
+            },
         )?;
         Ok(Self {
             channel,
@@ -215,6 +220,63 @@ impl Transfers {
             });
         if spawned.is_err() {
             self.channel.send(&Message::NoFiles { id });
+        }
+    }
+
+    /// The client copied something other than files: put it on the clipboard, each
+    /// format fetched from the client when something pastes it.
+    pub(crate) fn clipboard_offer(&self, id: u64, formats: Vec<ClipFormat>) {
+        lock(&self.inflows).retain(|_, inflow| !inflow.is_closed());
+        let entries: Arc<[Entry]> = formats
+            .iter()
+            .map(|f| Entry {
+                path: f.name.clone().unwrap_or_else(|| format!("#{}", f.id)),
+                dir: false,
+                size: 0,
+                modified: 0,
+            })
+            .collect();
+        let inflow = Arc::new(Inflow::per_entry(id, entries, self.outbox()));
+        lock(&self.inflows).insert(id, Arc::clone(&inflow));
+        self.clipboard.offer_formats(inflow, formats);
+    }
+
+    /// The client is pasting what was copied here: stream `format` of it as transfer `id`
+    /// straight away (or close the transfer if the clipboard can't give it).
+    pub(crate) fn clipboard_read(self: &Arc<Self>, id: u64, format: ClipFormat) {
+        let this = Arc::clone(self);
+        let spawned = std::thread::Builder::new()
+            .name("clipboard-read".into())
+            .spawn(move || {
+                let data = match clipboard::read_format(&format) {
+                    Ok(data) => data,
+                    Err(error) => {
+                        tracing::debug!(%error, format = format.id, "can't serve a paste");
+                        this.channel.send(&Message::Close { id, error: Some(error) });
+                        return;
+                    }
+                };
+                tracing::info!(format = format.id, bytes = data.len(), "serving a paste");
+                let entries: Arc<[Entry]> = vec![Entry {
+                    path: "clipboard".into(),
+                    dir: false,
+                    size: data.len() as u64,
+                    modified: 0,
+                }]
+                .into();
+                // Read once; the source keeps it while the client reads it.
+                let mut data = Some(data);
+                let files = Produced::new(move |_| data.take().ok_or_else(|| std::io::Error::other("already sent")));
+                let mut source = Source::new(id, entries, Box::new(files));
+                source.fetch(0, 0, 0, true);
+                lock(&this.sources).insert(id);
+                this.pump.start(source);
+            });
+        if spawned.is_err() {
+            self.channel.send(&Message::Close {
+                id,
+                error: Some("couldn't start".into()),
+            });
         }
     }
 

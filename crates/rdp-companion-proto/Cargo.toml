@@ -11,3 +11,5 @@ serde = { version = "1", features = ["derive"] }
 rmp-serde = "1"
 serde_bytes = "0.11"
 sha2 = "0.10"
+# Already in the tree through IronRDP; compresses transfer chunks.
+zstd-safe = "7.2"

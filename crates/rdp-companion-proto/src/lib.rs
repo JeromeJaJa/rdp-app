@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 pub const CHANNEL_NAME: &str = "RdpApp::Companion";
 
 /// Bumped on any breaking change to [`Message`]. Both sides send it in the handshake.
-pub const PROTOCOL_VERSION: u32 = 3;
+pub const PROTOCOL_VERSION: u32 = 4;
 
 /// A frame larger than this is treated as a desync and ends the channel, rather than
 /// buffering without bound.
@@ -48,6 +48,33 @@ pub struct Entry {
     pub size: u64,
     /// Last write time as a Windows FILETIME (100 ns ticks since 1601), 0 if unknown.
     pub modified: u64,
+}
+
+/// A clipboard format: standard ones by id, registered ones by name (their ids differ
+/// between machines).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ClipFormat {
+    pub id: u32,
+    pub name: Option<String>,
+}
+
+impl ClipFormat {
+    /// First id of registered (named) formats.
+    pub const REGISTERED: u32 = 0xC000;
+
+    /// Whether the format's data is plain memory (an `HGLOBAL`) that can be copied as bytes:
+    /// registered formats, and the standard ones that aren't GDI handles or file lists.
+    pub fn is_memory(&self) -> bool {
+        // CF_TEXT, SYLK, DIF, TIFF, OEMTEXT, DIB, PENDATA, RIFF, WAVE, UNICODETEXT, LOCALE, DIBV5.
+        const STANDARD: [u32; 12] = [1, 4, 5, 6, 7, 8, 10, 11, 12, 13, 16, 17];
+        if self.id >= Self::REGISTERED {
+            self.name
+                .as_deref()
+                .is_some_and(|n| !n.is_empty() && n != CLIPBOARD_MARKER)
+        } else {
+            STANDARD.contains(&self.id)
+        }
+    }
 }
 
 /// What the receiving side does with offered files.
@@ -151,15 +178,19 @@ pub enum Message {
         intent: Intent,
     },
     /// Sink → source: stream entry `index` from `offset`, then carry on through the
-    /// following entries until the window fills. `seq` numbers fetches so the sink can
-    /// drop data still in flight from an earlier one.
+    /// following entries until the window fills (or stop at the end of this one, if
+    /// `single`). `seq` numbers fetches so the sink can drop data still in flight from an
+    /// earlier one.
     Fetch {
         id: u64,
         seq: u32,
         index: u32,
         offset: u64,
+        #[serde(default)]
+        single: bool,
     },
-    /// Source → sink: bytes of entry `index` at `offset`.
+    /// Source → sink: bytes of entry `index` at `offset`; `bytes` is a zstd frame if
+    /// `compressed` (offsets and acks count the bytes it decompresses to).
     Data {
         id: u64,
         seq: u32,
@@ -167,6 +198,8 @@ pub enum Message {
         offset: u64,
         #[serde(with = "serde_bytes")]
         bytes: Vec<u8>,
+        #[serde(default)]
+        compressed: bool,
     },
     /// Source → sink: entry `index` ended; `size` is its true size.
     End {
@@ -202,6 +235,21 @@ pub enum Message {
     /// Companion → client: the clipboard holds no files it can serve.
     NoFiles {
         id: u64,
+    },
+    /// Client → companion: something other than files was copied on the client. Put these
+    /// formats on the remote clipboard (with [`CLIPBOARD_MARKER`]); they are transfer `id`,
+    /// one entry per format in this order, each fetched (`single`) when something pastes it.
+    ClipboardOffer {
+        id: u64,
+        formats: Vec<ClipFormat>,
+    },
+    /// Client → companion: something on the client is pasting what the remote copied.
+    /// Stream that format of the remote clipboard as transfer `id`: one entry, sent
+    /// straight away (as if fetched with seq 0, `single`), or close the transfer with an
+    /// error if the clipboard can't give it.
+    ClipboardRead {
+        id: u64,
+        format: ClipFormat,
     },
 
     /// Client → companion: files from this PC are being dragged onto the session at
@@ -406,6 +454,21 @@ mod tests {
                 index: 0,
                 offset: 0,
                 bytes: b"hello".to_vec(),
+                compressed: false,
+            },
+            Message::ClipboardOffer {
+                id: 4,
+                formats: vec![
+                    ClipFormat { id: 13, name: None },
+                    ClipFormat {
+                        id: 0xC0F1,
+                        name: Some("HTML Format".into()),
+                    },
+                ],
+            },
+            Message::ClipboardRead {
+                id: 6,
+                format: ClipFormat { id: 13, name: None },
             },
             Message::Close { id: 2, error: None },
             Message::Bye,
@@ -431,6 +494,7 @@ mod tests {
             index: 0,
             offset: 0,
             bytes,
+            compressed: false,
         });
         // MessagePack would spend up to two bytes per element on a plain integer array.
         assert!(frame.len() < 64 * 1024 + 100, "{} bytes", frame.len());
@@ -464,6 +528,23 @@ mod tests {
             assert_eq!(decoder.next_message().unwrap(), Some(message));
         }
         assert_eq!(decoder.next_message().unwrap(), None);
+    }
+
+    #[test]
+    fn knows_which_formats_are_plain_memory() {
+        let standard = |id| ClipFormat { id, name: None };
+        let named = |name: &str| ClipFormat {
+            id: 0xC123,
+            name: Some(name.into()),
+        };
+        assert!(standard(13).is_memory() && standard(8).is_memory() && standard(17).is_memory());
+        // Bitmaps, metafiles, palettes and file lists are handles, not bytes.
+        for id in [2, 3, 9, 14, 15, 0x82, 0x200, 0x300] {
+            assert!(!standard(id).is_memory(), "{id:#x}");
+        }
+        assert!(named("HTML Format").is_memory());
+        assert!(!named(CLIPBOARD_MARKER).is_memory());
+        assert!(!ClipFormat { id: 0xC123, name: None }.is_memory());
     }
 
     #[test]

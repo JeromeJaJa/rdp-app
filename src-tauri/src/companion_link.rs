@@ -13,8 +13,8 @@ use std::sync::{Arc, Weak, mpsc};
 use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
-use rdp_companion_proto::transfer::{self, DiskFiles, Inflow, Listing, Note, Outbox, Pump, Source};
-use rdp_companion_proto::{Entry, HostStats, Intent, Message};
+use rdp_companion_proto::transfer::{self, CHUNK, DiskFiles, Inflow, Listing, Note, Outbox, Produced, Pump, Source};
+use rdp_companion_proto::{ClipFormat, Entry, HostStats, Intent, Message};
 use rdp_engine::{CompanionHandler, CompanionHost, CompanionLink, Engine, InputEvent};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
@@ -24,6 +24,11 @@ const STATS_HISTORY: usize = 120;
 
 /// How long a paste waits for the companion to list what the remote copied.
 const LIST_WAIT: Duration = Duration::from_secs(30);
+/// A paste through the companion falls back to the clipboard channel if nothing of the
+/// remote's copy arrives this soon...
+const PASTE_FIRST_WAIT: Duration = Duration::from_secs(5);
+/// ...and fails if it then stalls this long.
+const PASTE_STALL: Duration = Duration::from_secs(30);
 /// How long a drag onto a session waits for the companion to get ready.
 const DRAG_READY_WAIT: Duration = Duration::from_secs(3);
 
@@ -515,7 +520,10 @@ impl CompanionHost for Companions {
                 Note::Progress { id, consumed } => {
                     Companions::update(&transfers, &app, id, |t| t.sent = consumed.min(t.total));
                 }
-                Note::Closed { id, error } => {
+                Note::Closed { id, error, throughput } => {
+                    if throughput.bytes > 0 {
+                        tracing::info!(id, ?error, %throughput, "transfer to the remote ended");
+                    }
                     pump_sources.lock().remove(&id);
                     Companions::update(&transfers, &app, id, |t| {
                         if t.state == TransferState::Sending {
@@ -824,6 +832,87 @@ impl rdp_clipboard::Companion for ClipboardHook {
         spawned.is_ok()
     }
 
+    fn offer_formats(&self, formats: Vec<ClipFormat>) -> bool {
+        let Some(companions) = self.companions.upgrade() else {
+            return false;
+        };
+        let Some(attached) = companions.get(&self.session) else {
+            return false;
+        };
+        let id = companions.next_id();
+        let entries: Arc<[Entry]> = formats
+            .iter()
+            .map(|f| Entry {
+                path: f.name.clone().unwrap_or_else(|| format!("#{}", f.id)),
+                dir: false,
+                size: 0,
+                modified: 0,
+            })
+            .collect();
+        // Each format is read off this clipboard when something on the remote pastes it.
+        let local: Vec<u32> = formats.iter().map(|f| f.id).collect();
+        let files = Produced::new(move |index: u32| {
+            let format = local
+                .get(index as usize)
+                .copied()
+                .ok_or_else(|| std::io::Error::other("no such format"))?;
+            rdp_clipboard::read_format(format)
+        });
+        attached.sources.lock().insert(id);
+        attached.pump.start(Source::new(id, entries, Box::new(files)));
+        if !attached.link.send(&Message::ClipboardOffer { id, formats }) {
+            attached.sources.lock().remove(&id);
+            return false;
+        }
+        true
+    }
+
+    fn remote_format(&self, format: ClipFormat) -> Option<Vec<u8>> {
+        let companions = self.companions.upgrade()?;
+        let attached = companions.get(&self.session)?;
+        let id = companions.next_id();
+        let entries: Arc<[Entry]> = vec![Entry {
+            path: "clipboard".into(),
+            dir: false,
+            size: 0,
+            modified: 0,
+        }]
+        .into();
+        // The companion starts streaming as soon as it has read its clipboard.
+        let inflow = Arc::new(Inflow::per_entry(id, entries, attached.outbox()).streaming());
+        attached.inflows.lock().insert(id, Arc::clone(&inflow));
+        let started = Instant::now();
+        let result = if attached.link.send(&Message::ClipboardRead {
+            id,
+            format: format.clone(),
+        }) {
+            read_whole(&inflow)
+        } else {
+            Err("the companion went away".to_owned())
+        };
+        attached.inflows.lock().remove(&id);
+        match result {
+            Ok(data) => {
+                inflow.finish(None);
+                let secs = started.elapsed().as_secs_f64();
+                tracing::info!(
+                    format = format.id,
+                    bytes = data.len(),
+                    ms = (secs * 1000.0) as u64,
+                    mib_per_s = format!("{:.2}", data.len() as f64 / 1_048_576.0 / secs.max(0.001)),
+                    wire = %inflow.throughput(),
+                    "pasted the remote's copy through the companion"
+                );
+                Some(data)
+            }
+            Err(error) => {
+                inflow.finish(Some(error.clone()));
+                tracing::info!(format = format.id, %error, "pasting over the clipboard channel instead");
+                None
+            }
+        }
+    }
+
     fn remote_files(&self) -> Option<Arc<Inflow>> {
         let companions = self.companions.upgrade()?;
         let attached = companions.get(&self.session)?;
@@ -848,6 +937,21 @@ impl rdp_clipboard::Companion for ClipboardHook {
                     return None;
                 }
             }
+        }
+    }
+}
+
+/// All of a single-entry transfer (a clipboard format being pasted).
+#[cfg(windows)]
+fn read_whole(inflow: &Inflow) -> Result<Vec<u8>, String> {
+    let mut data = Vec::new();
+    let mut buf = vec![0u8; CHUNK * 4];
+    loop {
+        let wait = if data.is_empty() { PASTE_FIRST_WAIT } else { PASTE_STALL };
+        match inflow.read(0, data.len() as u64, &mut buf, wait) {
+            Ok(0) => return Ok(data),
+            Ok(n) => data.extend_from_slice(&buf[..n]),
+            Err(error) => return Err(error.to_string()),
         }
     }
 }

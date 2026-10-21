@@ -12,6 +12,10 @@
 //! connection. Sizing the window to the link (bandwidth × round trip, plus a little)
 //! keeps the queue short, so a big copy doesn't make the session itself laggy.
 //!
+//! Chunks are compressed (zstd) when that shrinks them: the session's link is usually
+//! the limit, so text and documents move several times faster, while data that's already
+//! compressed (archives, media) goes as is without spending much time trying.
+//!
 //! - [`Source`]: the sending state machine; a [`Pump`] thread drives a session's sources.
 //! - [`Inflow`]: the receiving buffer; readers block on it (an OLE stream being pasted,
 //!   or [`save`] writing files to disk).
@@ -28,6 +32,112 @@ use crate::{Entry, Message};
 pub const CHUNK: usize = 64 * 1024;
 /// The sink acknowledges at least this often (and whenever it runs dry).
 const ACK_EVERY: u64 = 64 * 1024;
+
+/// zstd level for chunks: far faster than any link a session runs over (hundreds of MB/s
+/// a core), and plain text typically shrinks to a quarter.
+const ZSTD_LEVEL: i32 = 3;
+/// A chunk that doesn't shrink below this share of its size goes as is...
+const WORTH_IT: f64 = 0.9;
+/// ...and this many after it aren't tried (the rest of an archive or video won't either).
+const SKIP_AFTER_MISS: u32 = 16;
+
+/// Compresses a source's chunks, backing off on data that doesn't compress.
+struct Packer {
+    cctx: zstd_safe::CCtx<'static>,
+    skip: u32,
+}
+
+impl Packer {
+    fn new() -> Self {
+        Self {
+            cctx: zstd_safe::CCtx::create(),
+            skip: 0,
+        }
+    }
+
+    /// `chunk` compressed, or `None` to send it as is.
+    fn pack(&mut self, chunk: &[u8]) -> Option<Vec<u8>> {
+        if self.skip > 0 {
+            self.skip -= 1;
+            return None;
+        }
+        let mut out = vec![0u8; zstd_safe::compress_bound(chunk.len())];
+        match self.cctx.compress(&mut out[..], chunk, ZSTD_LEVEL) {
+            Ok(n) if (n as f64) < chunk.len() as f64 * WORTH_IT => {
+                out.truncate(n);
+                Some(out)
+            }
+            _ => {
+                self.skip = SKIP_AFTER_MISS;
+                None
+            }
+        }
+    }
+
+    /// A new file: its data may compress differently.
+    fn reset(&mut self) {
+        self.skip = 0;
+    }
+}
+
+/// The bytes a [`Message::Data`] carries, decompressed if they were compressed.
+fn unpack(bytes: Vec<u8>, compressed: bool) -> Result<Vec<u8>, String> {
+    if !compressed {
+        return Ok(bytes);
+    }
+    let mut out = vec![0u8; CHUNK];
+    let n = zstd_safe::decompress(&mut out[..], &bytes)
+        .map_err(|code| format!("corrupt data ({})", zstd_safe::get_error_name(code)))?;
+    out.truncate(n);
+    Ok(out)
+}
+
+/// How much a transfer moved, for logging.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Throughput {
+    /// Bytes of file data.
+    pub bytes: u64,
+    /// What they took on the wire (less when they compressed).
+    pub wire: u64,
+    /// From the first data to the last.
+    pub elapsed: Duration,
+}
+
+impl Throughput {
+    /// File data per second, in MiB.
+    pub fn mib_per_s(&self) -> f64 {
+        self.bytes as f64 / 1_048_576.0 / self.elapsed.as_secs_f64().max(0.001)
+    }
+
+    /// Wire bytes per byte of data (1 when nothing compressed).
+    pub fn ratio(&self) -> f64 {
+        if self.bytes == 0 {
+            1.0
+        } else {
+            self.wire as f64 / self.bytes as f64
+        }
+    }
+
+    fn add(&mut self, bytes: u64, wire: u64, first: &mut Option<Instant>, now: Instant) {
+        self.bytes += bytes;
+        self.wire += wire;
+        let first = *first.get_or_insert(now);
+        self.elapsed = now.saturating_duration_since(first);
+    }
+}
+
+impl core::fmt::Display for Throughput {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "{:.1} MiB in {:.1} s ({:.2} MiB/s, {:.0}% on the wire)",
+            self.bytes as f64 / 1_048_576.0,
+            self.elapsed.as_secs_f64(),
+            self.mib_per_s(),
+            self.ratio() * 100.0
+        )
+    }
+}
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
@@ -145,6 +255,8 @@ struct Cursor {
     index: u32,
     offset: u64,
     reader: Option<Box<dyn Read + Send>>,
+    /// Stop at the end of this entry (the sink asked for just it).
+    single: bool,
 }
 
 /// The sending side of one transfer.
@@ -157,6 +269,11 @@ pub struct Source {
     sent: u64,
     consumed: u64,
     window: Window,
+    packer: Packer,
+    /// What was sent (wire bytes) and when the sink took it, for logging.
+    throughput: Throughput,
+    first_sent: Option<Instant>,
+    wire_sent: u64,
 }
 
 impl Source {
@@ -170,6 +287,10 @@ impl Source {
             sent: 0,
             consumed: 0,
             window: Window::default(),
+            packer: Packer::new(),
+            throughput: Throughput::default(),
+            first_sent: None,
+            wire_sent: 0,
         }
     }
 
@@ -182,14 +303,20 @@ impl Source {
         self.consumed
     }
 
-    /// The sink asked for entry `index` from `offset` (and what follows).
-    pub fn fetch(&mut self, seq: u32, index: u32, offset: u64) {
+    /// What the sink has taken so far, and what it took on the wire.
+    pub fn throughput(&self) -> Throughput {
+        self.throughput
+    }
+
+    /// The sink asked for entry `index` from `offset`, and what follows unless `single`.
+    pub fn fetch(&mut self, seq: u32, index: u32, offset: u64, single: bool) {
         self.seq = seq;
         self.cursor = Self::start(&self.entries, index).map(|first| Cursor {
             index: first,
             // Folders are skipped; an offset only applies to the entry asked for.
             offset: if first == index { offset } else { 0 },
             reader: None,
+            single,
         });
     }
 
@@ -206,7 +333,16 @@ impl Source {
 
     pub fn ack(&mut self, consumed: u64, now: Instant) {
         if consumed > self.consumed {
-            self.consumed = consumed.min(self.sent);
+            let consumed = consumed.min(self.sent);
+            // Wire bytes are only known per chunk sent: count them in the same share.
+            let wire = if self.sent == 0 {
+                0
+            } else {
+                (self.wire_sent as f64 * consumed as f64 / self.sent as f64) as u64
+            };
+            let (bytes, wire) = (consumed - self.consumed, wire.saturating_sub(self.throughput.wire));
+            self.throughput.add(bytes, wire, &mut self.first_sent, now);
+            self.consumed = consumed;
             self.window.acked(self.consumed, now);
         }
     }
@@ -230,6 +366,7 @@ impl Source {
         let cursor = self.cursor.as_mut()?;
         let index = cursor.index;
         if cursor.reader.is_none() {
+            self.packer.reset();
             match self.files.open(index, cursor.offset) {
                 Ok(reader) => cursor.reader = Some(reader),
                 Err(error) => {
@@ -256,13 +393,20 @@ impl Source {
                 let offset = cursor.offset;
                 cursor.offset += n as u64;
                 self.sent += n as u64;
+                self.first_sent.get_or_insert(now);
                 self.window.sent(self.sent, now);
+                let (bytes, compressed) = match self.packer.pack(&bytes) {
+                    Some(packed) => (packed, true),
+                    None => (bytes, false),
+                };
+                self.wire_sent += bytes.len() as u64;
                 Some(Message::Data {
                     id,
                     seq,
                     index,
                     offset,
                     bytes,
+                    compressed,
                 })
             }
             Err(error) => {
@@ -277,16 +421,16 @@ impl Source {
         }
     }
 
-    /// On to the next file (folders carry no data).
+    /// On to the next file (folders carry no data), unless the sink asked for just one.
     fn advance(&mut self) {
-        let next = self
-            .cursor
-            .as_ref()
-            .and_then(|c| Self::start(&self.entries, c.index.saturating_add(1)));
-        self.cursor = next.map(|index| Cursor {
+        let Some(current) = self.cursor.take().filter(|c| !c.single) else {
+            return;
+        };
+        self.cursor = Self::start(&self.entries, current.index.saturating_add(1)).map(|index| Cursor {
             index,
             offset: 0,
             reader: None,
+            single: false,
         });
     }
 }
@@ -338,6 +482,9 @@ struct InflowState {
     acked: u64,
     /// Set once the transfer is over: `Some(error)`.
     closed: Option<Option<String>>,
+    /// What arrived, for logging.
+    throughput: Throughput,
+    first_data: Option<Instant>,
 }
 
 /// Why a read failed.
@@ -371,6 +518,8 @@ pub struct Inflow {
     id: u64,
     entries: Arc<[Entry]>,
     outbox: Outbox,
+    /// Entries are fetched one at a time (`single`).
+    per_entry: bool,
     state: Mutex<InflowState>,
     changed: Condvar,
 }
@@ -381,9 +530,32 @@ impl Inflow {
             id,
             entries,
             outbox,
+            per_entry: false,
             state: Mutex::new(InflowState::default()),
             changed: Condvar::new(),
         }
+    }
+
+    /// Entries that are each read whole, on their own (clipboard formats): the source
+    /// stops at the end of the one asked for instead of running on into the next.
+    pub fn per_entry(id: u64, entries: Arc<[Entry]>, outbox: Outbox) -> Self {
+        Self {
+            per_entry: true,
+            ..Self::new(id, entries, outbox)
+        }
+    }
+
+    /// The source is already streaming the first entry, without waiting for a fetch
+    /// ([`Message::ClipboardRead`]): a read of it waits for that data.
+    pub fn streaming(self) -> Self {
+        let first = self.file_at_or_after(0);
+        lock(&self.state).next = Some((first, 0));
+        self
+    }
+
+    /// What has arrived so far, and what it took on the wire.
+    pub fn throughput(&self) -> Throughput {
+        lock(&self.state).throughput
     }
 
     pub fn id(&self) -> u64 {
@@ -403,6 +575,40 @@ impl Inflow {
     /// Network side: a message for this transfer arrived. Never blocks for long.
     pub fn receive(&self, message: Message) {
         let mut ack = None;
+        let message = match message {
+            Message::Data {
+                id,
+                seq,
+                index,
+                offset,
+                bytes,
+                compressed,
+            } => {
+                let wire = bytes.len() as u64;
+                match unpack(bytes, compressed) {
+                    Ok(bytes) => {
+                        let mut state = lock(&self.state);
+                        let st = &mut *state;
+                        st.throughput
+                            .add(bytes.len() as u64, wire, &mut st.first_data, Instant::now());
+                        drop(state);
+                        Message::Data {
+                            id,
+                            seq,
+                            index,
+                            offset,
+                            bytes,
+                            compressed: false,
+                        }
+                    }
+                    Err(error) => {
+                        self.finish(Some(error));
+                        return;
+                    }
+                }
+            }
+            other => other,
+        };
         {
             let mut state = lock(&self.state);
             match message {
@@ -430,11 +636,11 @@ impl Inflow {
                     }
                 }
                 Message::End { seq, index, size, .. } if seq == state.seq => {
-                    state.next = Some((self.file_at_or_after(index.saturating_add(1)), 0));
+                    state.next = self.after(index);
                     state.queue.push_back(Item::End { index, size });
                 }
                 Message::Unreadable { seq, index, reason, .. } if seq == state.seq => {
-                    state.next = Some((self.file_at_or_after(index.saturating_add(1)), 0));
+                    state.next = self.after(index);
                     state.queue.push_back(Item::Unreadable { index, reason });
                 }
                 Message::Close { error, .. } => {
@@ -445,6 +651,12 @@ impl Inflow {
             self.changed.notify_all();
         }
         self.send(ack);
+    }
+
+    /// Where the stream goes on after entry `index` ends: the next file, or nowhere when
+    /// entries are fetched one at a time.
+    fn after(&self, index: u32) -> Option<(u32, u64)> {
+        (!self.per_entry).then(|| (self.file_at_or_after(index.saturating_add(1)), 0))
     }
 
     /// Whether the transfer is over (closed by either side, or aborted).
@@ -593,6 +805,7 @@ impl Inflow {
                         seq: st.seq,
                         index,
                         offset: position,
+                        single: self.per_entry,
                     };
                     let ack = Self::due_ack(st, true);
                     drop(state);
@@ -622,7 +835,11 @@ pub enum Note {
     /// The sink has taken `consumed` bytes (reported a few times a second at most).
     Progress { id: u64, consumed: u64 },
     /// The transfer ended; `error` is what the sink reported, if anything.
-    Closed { id: u64, error: Option<String> },
+    Closed {
+        id: u64,
+        error: Option<String>,
+        throughput: Throughput,
+    },
 }
 
 enum PumpEvent {
@@ -632,6 +849,7 @@ enum PumpEvent {
         seq: u32,
         index: u32,
         offset: u64,
+        single: bool,
     },
     Ack {
         id: u64,
@@ -688,9 +906,15 @@ impl Pump {
                 for event in first.into_iter().chain(rx.try_iter()) {
                     match event {
                         PumpEvent::Start(source) => sources.push((source, now, 0)),
-                        PumpEvent::Fetch { id, seq, index, offset } => {
+                        PumpEvent::Fetch {
+                            id,
+                            seq,
+                            index,
+                            offset,
+                            single,
+                        } => {
                             if let Some((s, ..)) = sources.iter_mut().find(|(s, ..)| s.id() == id) {
-                                s.fetch(seq, index, offset);
+                                s.fetch(seq, index, offset, single);
                             }
                         }
                         PumpEvent::Ack { id, consumed } => {
@@ -705,7 +929,11 @@ impl Pump {
                                     id,
                                     consumed: s.consumed(),
                                 });
-                                notes(Note::Closed { id, error });
+                                notes(Note::Closed {
+                                    id,
+                                    error,
+                                    throughput: s.throughput(),
+                                });
                             }
                         }
                         PumpEvent::Withdraw { id } => {
@@ -754,7 +982,19 @@ impl Pump {
     /// messages that aren't for a source.
     pub fn receive(&self, message: &Message) -> bool {
         let event = match *message {
-            Message::Fetch { id, seq, index, offset } => PumpEvent::Fetch { id, seq, index, offset },
+            Message::Fetch {
+                id,
+                seq,
+                index,
+                offset,
+                single,
+            } => PumpEvent::Fetch {
+                id,
+                seq,
+                index,
+                offset,
+                single,
+            },
             Message::Ack { id, consumed } => PumpEvent::Ack { id, consumed },
             _ => return false,
         };
@@ -874,6 +1114,44 @@ impl Files for DiskFiles {
             file.seek(SeekFrom::Start(offset))?;
         }
         Ok(Box::new(file))
+    }
+}
+
+/// Entries made whole when opened (clipboard formats, read off the clipboard when they
+/// are pasted); the last one is kept while it's being read.
+pub struct Produced<F> {
+    produce: F,
+    last: Option<(u32, Arc<Vec<u8>>)>,
+}
+
+impl<F> Produced<F> {
+    pub fn new(produce: F) -> Self {
+        Self { produce, last: None }
+    }
+}
+
+/// Shared bytes, for a cursor.
+struct SharedBytes(Arc<Vec<u8>>);
+
+impl AsRef<[u8]> for SharedBytes {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl<F: FnMut(u32) -> io::Result<Vec<u8>> + Send> Files for Produced<F> {
+    fn open(&mut self, index: u32, offset: u64) -> io::Result<Box<dyn Read + Send>> {
+        let data = match &self.last {
+            Some((i, data)) if *i == index => Arc::clone(data),
+            _ => {
+                let data = Arc::new((self.produce)(index)?);
+                self.last = Some((index, Arc::clone(&data)));
+                data
+            }
+        };
+        let mut reader = io::Cursor::new(SharedBytes(data));
+        reader.set_position(offset);
+        Ok(Box::new(reader))
     }
 }
 
@@ -1124,7 +1402,19 @@ mod tests {
         std::thread::spawn(move || {
             for message in from_sink {
                 let event = match message {
-                    Message::Fetch { id, seq, index, offset } => PumpEvent::Fetch { id, seq, index, offset },
+                    Message::Fetch {
+                        id,
+                        seq,
+                        index,
+                        offset,
+                        single,
+                    } => PumpEvent::Fetch {
+                        id,
+                        seq,
+                        index,
+                        offset,
+                        single,
+                    },
                     Message::Ack { id, consumed } => PumpEvent::Ack { id, consumed },
                     Message::Close { id, error } => PumpEvent::Closed { id, error },
                     _ => continue,
@@ -1159,6 +1449,19 @@ mod tests {
             .collect()
     }
 
+    /// Bytes that don't compress.
+    fn noise(len: usize, seed: u64) -> Vec<u8> {
+        let mut x = seed | 1;
+        (0..len)
+            .map(|_| {
+                x ^= x << 13;
+                x ^= x >> 7;
+                x ^= x << 17;
+                x as u8
+            })
+            .collect()
+    }
+
     #[test]
     fn streams_files_in_order_across_folders() {
         let big = pattern(CHUNK * 5 + 123, 1);
@@ -1181,8 +1484,9 @@ mod tests {
     #[test]
     fn streaming_beats_a_round_trip_per_chunk() {
         // A 20 ms round trip: asking for one 64 KiB chunk at a time would top out near
-        // 3 MB/s. Streaming against the window should do several times better.
-        let data = pattern(16 * 1024 * 1024, 8);
+        // 3 MB/s. Streaming against the window should do several times better (on data
+        // that doesn't compress, so it's the window being measured).
+        let data = noise(16 * 1024 * 1024, 8);
         let link = link_over(vec![file("f", &data)], vec![data.clone()], Duration::from_millis(10));
         let started = Instant::now();
         assert_eq!(read_all(&link.inflow, 0, 256 * 1024).unwrap(), data);
@@ -1243,17 +1547,164 @@ mod tests {
         let data = pattern(Window::INITIAL as usize * 4, 6);
         let entries: Arc<[Entry]> = vec![file("f", &data)].into();
         let mut source = Source::new(4, entries, Box::new(Memory(vec![data])));
-        source.fetch(1, 0, 0);
+        source.fetch(1, 0, 0, false);
         let now = Instant::now();
         let mut sent = 0u64;
         while let Some(message) = source.poll(now) {
-            if let Message::Data { bytes, .. } = message {
-                sent += bytes.len() as u64;
+            if let Message::Data { bytes, compressed, .. } = message {
+                sent += unpack(bytes, compressed).unwrap().len() as u64;
             }
         }
         assert_eq!(sent, Window::INITIAL, "stops at the initial window");
         source.ack(CHUNK as u64, now);
         assert!(source.ready(), "an ack opens the window again");
+    }
+
+    /// Every message `source` has to send now, in order.
+    fn drain(source: &mut Source) -> Vec<Message> {
+        let now = Instant::now();
+        std::iter::from_fn(|| source.poll(now)).collect()
+    }
+
+    #[test]
+    fn text_is_compressed_and_noise_is_not() {
+        let text: Vec<u8> = "the quick brown fox jumps over the lazy dog\r\n"
+            .repeat(CHUNK / 16)
+            .into_bytes();
+        let random = noise(CHUNK * 3, 9);
+        let entries: Arc<[Entry]> = vec![file("a.txt", &text), file("b.bin", &random)].into();
+        let mut source = Source::new(6, entries, Box::new(Memory(vec![text.clone(), random.clone()])));
+        source.fetch(1, 0, 0, false);
+        let mut got: Vec<(u32, bool, usize, Vec<u8>)> = Vec::new();
+        let now = Instant::now();
+        while let Some(message) = source.poll(now) {
+            source.ack(u64::MAX, now); // taken at once: the window never closes
+            if let Message::Data {
+                index,
+                bytes,
+                compressed,
+                ..
+            } = message
+            {
+                let wire = bytes.len();
+                got.push((index, compressed, wire, unpack(bytes, compressed).unwrap()));
+            }
+        }
+        let text_chunks: Vec<_> = got.iter().filter(|g| g.0 == 0).collect();
+        assert!(
+            text_chunks.iter().all(|g| g.1 && g.2 < CHUNK / 10),
+            "text compresses well"
+        );
+        assert_eq!(text_chunks.iter().flat_map(|g| g.3.clone()).collect::<Vec<_>>(), text);
+        let noise_chunks: Vec<_> = got.iter().filter(|g| g.0 == 1).collect();
+        assert!(noise_chunks.iter().all(|g| !g.1), "noise goes as is");
+        assert_eq!(
+            noise_chunks.iter().flat_map(|g| g.3.clone()).collect::<Vec<_>>(),
+            random
+        );
+    }
+
+    #[test]
+    fn corrupt_compressed_data_fails_the_transfer() {
+        let entries: Arc<[Entry]> = vec![file("x", &[0; 10])].into();
+        let sent = Arc::new(Mutex::new(Vec::new()));
+        let outbox_sent = Arc::clone(&sent);
+        let inflow = Inflow::new(2, entries, Arc::new(move |m| outbox_sent.lock().unwrap().push(m)));
+        inflow.receive(Message::Data {
+            id: 2,
+            seq: 0,
+            index: 0,
+            offset: 0,
+            bytes: vec![1, 2, 3, 4],
+            compressed: true,
+        });
+        assert!(inflow.is_closed());
+        assert!(matches!(
+            sent.lock().unwrap()[..],
+            [Message::Close { error: Some(_), .. }]
+        ));
+    }
+
+    #[test]
+    fn a_single_fetch_stops_at_the_end_of_its_entry() {
+        let a = pattern(CHUNK + 10, 1);
+        let b = pattern(100, 2);
+        let entries: Arc<[Entry]> = vec![file("a", &a), file("b", &b)].into();
+        let mut source = Source::new(8, entries, Box::new(Memory(vec![a, b])));
+        source.fetch(1, 0, 0, true);
+        let messages = drain(&mut source);
+        assert!(matches!(messages.last(), Some(Message::End { index: 0, .. })));
+        assert!(messages.iter().all(|m| !matches!(m, Message::Data { index: 1, .. })));
+        assert!(!source.ready());
+    }
+
+    #[test]
+    fn a_streamed_entry_needs_no_fetch_and_the_next_is_fetched_alone() {
+        let a = pattern(CHUNK * 2 + 3, 4);
+        let b = pattern(500, 5);
+        let entries: Arc<[Entry]> = vec![file("a", &a), file("b", &b)].into();
+        let sent = Arc::new(Mutex::new(Vec::<Message>::new()));
+        let outbox_sent = Arc::clone(&sent);
+        let inflow = Inflow::per_entry(
+            10,
+            Arc::clone(&entries),
+            Arc::new(move |m| outbox_sent.lock().unwrap().push(m)),
+        )
+        .streaming();
+        // The source starts on its own (seq 0, just the first entry).
+        let mut source = Source::new(10, entries, Box::new(Memory(vec![a.clone(), b.clone()])));
+        source.fetch(0, 0, 0, true);
+        for message in drain(&mut source) {
+            inflow.receive(message);
+        }
+        assert_eq!(read_all(&inflow, 0, 4096).unwrap(), a);
+        let fetches = |sent: &[Message]| {
+            sent.iter()
+                .filter_map(|m| match m {
+                    Message::Fetch { seq, index, single, .. } => Some((*seq, *index, *single)),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        assert!(
+            fetches(&sent.lock().unwrap()).is_empty(),
+            "no fetch for a streamed entry"
+        );
+        assert!(inflow.throughput().bytes >= a.len() as u64);
+
+        // Reading the second entry asks for it, alone.
+        let reader = {
+            let inflow = Arc::new(inflow);
+            let reading = Arc::clone(&inflow);
+            (inflow, std::thread::spawn(move || read_all(&reading, 1, 64)))
+        };
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while fetches(&sent.lock().unwrap()).is_empty() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(fetches(&sent.lock().unwrap()), vec![(1, 1, true)]);
+        source.fetch(1, 1, 0, true);
+        for message in drain(&mut source) {
+            reader.0.receive(message);
+        }
+        assert_eq!(reader.1.join().unwrap().unwrap(), b);
+    }
+
+    #[test]
+    fn produced_entries_are_made_once_while_read() {
+        let made = Arc::new(Mutex::new(0));
+        let counter = Arc::clone(&made);
+        let mut files = Produced::new(move |index: u32| {
+            *counter.lock().unwrap() += 1;
+            Ok(vec![index as u8; 10])
+        });
+        let mut out = Vec::new();
+        files.open(3, 4).unwrap().read_to_end(&mut out).unwrap();
+        assert_eq!(out, vec![3; 6]);
+        files.open(3, 0).unwrap().read_to_end(&mut out).unwrap();
+        assert_eq!(*made.lock().unwrap(), 1);
+        files.open(1, 0).unwrap();
+        assert_eq!(*made.lock().unwrap(), 2);
     }
 
     #[test]
