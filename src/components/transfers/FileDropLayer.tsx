@@ -10,7 +10,7 @@ type Target =
   | { kind: "send"; ids: ConnectionId[]; label: string; el: Element }
   /** The session on screen, whose companion takes the drag: a real drag on the remote. */
   | { kind: "remote"; id: ConnectionId; label: string; el: Element; canvas: HTMLCanvasElement }
-  /** The open Send dialog: they join its list. */
+  /** The open Send dialog (a drop anywhere on it): they join its list. `el` is its drop box. */
   | { kind: "dialog"; el: Element };
 
 function nameOf(id: ConnectionId): string {
@@ -26,7 +26,9 @@ function targetAt(x: number, y: number): Target | null {
   const s = getState();
   if (s.dialog) {
     const dialog = el.closest(".dialog");
-    return s.dialog.kind === "send" && dialog ? { kind: "dialog", el: dialog } : null;
+    if (s.dialog.kind !== "send" || !dialog) return null;
+    // Anywhere on the dialog takes them; its drop box is what lights up.
+    return { kind: "dialog", el: dialog.querySelector(".send__drop") ?? dialog };
   }
   if (s.menu || s.paletteOpen) return null;
   const tab = el.closest("[data-tab-id]");
@@ -34,7 +36,8 @@ function targetAt(x: number, y: number): Target | null {
   if (tab && tabId) return { kind: "send", ids: [tabId], label: nameOf(tabId), el: tab };
   const tile = el.closest(".tile[data-id]");
   const tileId = tile?.getAttribute("data-id");
-  if (tile && tileId) return { kind: "send", ids: [tileId], label: nameOf(tileId), el: tile };
+  // The thumbnail lights up (it's the rounded part), wherever on the tile the pointer is.
+  if (tile && tileId) return { kind: "send", ids: [tileId], label: nameOf(tileId), el: tile.querySelector(".tile__screen") ?? tile };
   const group = el.closest("[data-group-id]");
   const groupId = group?.getAttribute("data-group-id");
   if (group && groupId) {
@@ -236,7 +239,7 @@ export function FileDropLayer() {
       >
         <BorderBeam size={rect.height < 48 ? "sm" : "md"} colorVariant="colorful" theme={dark ? "dark" : "light"}>
           <div
-            className={`drop-frame__box ${target.kind === "remote" ? "is-remote" : ""}`}
+            className={`drop-frame__box ${target.kind === "send" ? "" : "is-plain"}`}
             style={{ width: rect.width, height: rect.height, borderRadius: radius }}
           />
         </BorderBeam>

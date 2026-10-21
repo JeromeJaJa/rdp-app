@@ -101,11 +101,11 @@ export function SendDialog({ ids, paths: initial }: { ids: ConnectionId[]; paths
           </div>
         </div>
         {paths.length === 0 ? (
-          <button type="button" className="send__empty" onClick={() => add("files")}>
+          <button type="button" className="send__empty send__drop" onClick={() => add("files")}>
             Choose files or a folder to send
           </button>
         ) : (
-          <ul className="send__list">
+          <ul className="send__list send__drop">
             {paths.map((p) => {
               const [name, dir] = splitPath(p);
               return (

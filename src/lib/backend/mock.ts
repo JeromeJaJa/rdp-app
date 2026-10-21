@@ -870,9 +870,14 @@ export class MockBackend implements Backend {
     return () => this.transferListeners.delete(cb);
   }
 
-  /** A browser can't give dropped files' paths: no file drags in the preview. */
-  onFileDrag(_cb: (drag: FileDrag) => void): Unsubscribe {
-    return () => {};
+  /** A browser can't give dropped files' paths, so file drags only happen when a test
+   *  calls `window.__mockFileDrag(drag)` (development only). */
+  onFileDrag(cb: (drag: FileDrag) => void): Unsubscribe {
+    const w = window as unknown as { __mockFileDrag?: (drag: FileDrag) => void };
+    w.__mockFileDrag = cb;
+    return () => {
+      if (w.__mockFileDrag === cb) delete w.__mockFileDrag;
+    };
   }
 
   setDropEffect(_copy: boolean): void {}
