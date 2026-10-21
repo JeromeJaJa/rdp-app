@@ -142,6 +142,11 @@ pattern-matching against it.
   `File` objects, no paths. Like wry, revoke and re-register on every child of the window. Don't
   try to keep WebView2's target via the `OleDropTargetInterface` window property: it isn't a plain
   interface pointer, and calling it crashed the app at start.
+- **`tauri dev` fails to link with LNK2019 "unresolved external symbol" for std generics**
+  (`JoinInner::join`, `Builder::spawn_unchecked`, …) after many rebuilds in a row: rustc's
+  incremental cache for the app crate went stale. `cargo clean -p rdp-app` fixes it (a full
+  rebuild, ~1 min). Turning incremental off for the crate prevents it but makes every rebuild
+  ~45 s instead of ~7 s, so it stays on.
 - **Getting a native stack on Windows.** `lldb` here needs `python310.dll` on `PATH`/`PYTHONHOME`
   (the embeddable Python zip works); its output is buried in debug-info noise — filter for
   `frame #`. This is how the tab-close deadlock was found.
