@@ -46,7 +46,7 @@ function firePointer(type: "pointerdown" | "pointerup", target: EventTarget, x: 
 /**
  * A window's tab strip (the main window and detached windows alike): a flat row of the
  * window's open tabs. Reorder them, pull one out into a window of its own (or onto another
- * window's strip), × closes and disconnects. A detached window with a single
+ * window's strip), × or middle-click closes and disconnects. A detached window with a single
  * tab lets you drag it to move the window.
  */
 function WindowTabStripInner() {

@@ -21,6 +21,22 @@ interface ViewProps extends HTMLAttributes<HTMLDivElement> {
   onClose?: () => void;
 }
 
+/** Middle-click closes a tab, browser-style (the press is swallowed so it can't autoscroll). */
+function middleClickCloses(onClose: (() => void) | undefined): HTMLAttributes<HTMLDivElement> {
+  if (!onClose) return {};
+  return {
+    onMouseDown: (e) => {
+      if (e.button === 1) e.preventDefault();
+    },
+    onAuxClick: (e) => {
+      if (e.button !== 1) return;
+      e.preventDefault();
+      e.stopPropagation();
+      onClose();
+    },
+  };
+}
+
 const TabView = forwardRef<HTMLDivElement, ViewProps>(function TabView(
   { id, variant, dragging, overlay, onClose, style, ...rest },
   ref,
@@ -128,6 +144,7 @@ function SortableTab({ id, variant, onClose }: { id: ConnectionId; variant: Vari
       style={{ transform: CSS.Translate.toString(transform), transition }}
       {...attributes}
       {...listeners}
+      {...middleClickCloses(onClose)}
       tabIndex={-1}
       onClick={() => select(id)}
       onDoubleClick={() => select(id, { connect: true })}
@@ -153,6 +170,7 @@ export function SoloTab({ id, onClose }: { id: ConnectionId; onClose: () => void
       id={id}
       variant="top"
       onClose={onClose}
+      {...middleClickCloses(onClose)}
       onPointerDown={(e) => {
         if (e.button === 0) dragWindow();
       }}
