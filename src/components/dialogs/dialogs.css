@@ -5,19 +5,29 @@
   display: grid;
   place-items: center;
   padding: 32px 16px;
+}
+/* The scrim's dim, blur and fade live on a pseudo-element. The backdrop element itself must
+   not be a "backdrop root" (a backdrop-filter or an opacity below 1 makes one), or the glass
+   panel on it would blur only the flat scrim instead of the app behind. */
+.dialog-backdrop::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
   background: var(--backdrop);
   backdrop-filter: blur(6px);
   animation: backdrop-in var(--t-med) ease;
 }
 
+/* Glass (the .glass class), like menus and the palette. It enters by transform only: fading
+   its opacity would hold its blur back until the fade ended. */
 .dialog {
+  position: relative;
   display: flex;
   flex-direction: column;
   max-width: 100%;
   max-height: min(760px, calc(100vh - 64px));
   border-radius: 14px;
-  background: var(--elevated);
-  box-shadow: var(--shadow-lg);
   animation: dialog-in 220ms var(--ease-out);
   overflow: hidden;
 }
@@ -75,7 +85,7 @@
   gap: 8px;
   padding: 12px 16px 12px 20px;
   border-top: 1px solid var(--border);
-  background: color-mix(in srgb, var(--elevated) 70%, var(--panel));
+  background: var(--glass-well);
 }
 .dialog__footer-spacer {
   flex: 1;
@@ -243,7 +253,7 @@
   font-weight: 500;
   font-size: 11px;
   color: var(--text-3);
-  background: var(--elevated-2);
+  background: var(--glass-head);
   border-bottom: 1px solid var(--border);
 }
 .bulk__table th:nth-child(1) {
@@ -398,7 +408,6 @@
 }
 @keyframes dialog-in {
   from {
-    opacity: 0;
     transform: translateY(8px) scale(0.985);
   }
 }

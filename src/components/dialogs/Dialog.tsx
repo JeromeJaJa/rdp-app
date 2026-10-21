@@ -1,6 +1,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { closeDialog } from "../../state/actions";
+import { useGlassUnderlay } from "../ui/useGlassUnderlay";
 import "./dialogs.css";
 import "./extra.css";
 
@@ -27,7 +28,11 @@ export function Dialog({
   bare,
 }: DialogProps) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const backdropRef = useRef<HTMLDivElement>(null);
   const downOnBackdrop = useRef(false);
+  // The scrim covers the window, so (in acrylic) the opaque patch does too: the scrim and
+  // the glass panel then both blur what's behind.
+  useGlassUnderlay(backdropRef);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -53,6 +58,7 @@ export function Dialog({
 
   return (
     <div
+      ref={backdropRef}
       className="dialog-backdrop"
       onMouseDown={(e) => (downOnBackdrop.current = e.target === e.currentTarget)}
       onMouseUp={(e) => {
@@ -62,7 +68,7 @@ export function Dialog({
     >
       <div
         ref={panelRef}
-        className={`dialog ${className ?? ""}`}
+        className={`dialog glass ${className ?? ""}`}
         style={{ width }}
         role="dialog"
         aria-modal="true"
