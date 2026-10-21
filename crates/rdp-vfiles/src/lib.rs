@@ -570,32 +570,90 @@ fn co_task_string(value: &str) -> PWSTR {
     }
 }
 
-/// Starts dragging `files` from this process (the left button must be down), on a thread
-/// of its own: the user drops them wherever they like (Explorer copies them, reading the
-/// streams). `ended` hears what the drop did (`DROPEFFECT` bits; 0 if cancelled). The thread
-/// keeps serving the files until the drop target lets go of them.
+/// Starts dragging `files` from this process (the primary button must be down, in the
+/// window in front), on a thread of its own: the user drops them wherever they like
+/// (Explorer copies them, reading the streams). `ended` hears what the drop did
+/// (`DROPEFFECT` bits; 0 if cancelled). The thread keeps serving the files until the drop
+/// target lets go of them.
+///
+/// The button was pressed in another thread's window (a webview's), so this thread's input
+/// state doesn't know it's down, and the release goes there. A drag that never saw the
+/// release would run forever, holding the mouse: no other app could drag until this one
+/// quit. So the drag thread joins the input of the thread holding the button for the drag,
+/// follows the physical button ([`ButtonSource`]), and a watchdog wakes the drag's loop once
+/// the button comes up, whatever reached it.
 pub fn drag(
     files: Arc<dyn VirtualFiles>,
     options: Options,
     ended: impl FnOnce(u32) + Send + 'static,
 ) -> std::io::Result<()> {
-    use windows::Win32::System::Ole::{DROPEFFECT_NONE, DoDragDrop, IDropSource, OleInitialize, OleUninitialize};
-    use windows::Win32::System::Threading::GetCurrentThreadId;
-    use windows::Win32::UI::WindowsAndMessaging::{DispatchMessageW, GetMessageW, TranslateMessage};
+    use std::sync::atomic::{AtomicBool, Ordering};
 
+    use windows::Win32::Foundation::{LPARAM, WPARAM};
+    use windows::Win32::System::Ole::{DROPEFFECT_NONE, DoDragDrop, IDropSource, OleInitialize, OleUninitialize};
+    use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
+    use windows::Win32::UI::Input::KeyboardAndMouse::VK_ESCAPE;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        DispatchMessageW, GUITHREADINFO, GetForegroundWindow, GetGUIThreadInfo, GetMessageW, GetWindowThreadProcessId,
+        PostMessageW, PostThreadMessageW, TranslateMessage, WM_KEYDOWN, WM_MOUSEMOVE,
+    };
+
+    // The thread whose window has the button (the one in front).
+    // SAFETY: plain queries.
+    let holder = unsafe { GetWindowThreadProcessId(GetForegroundWindow(), None) };
     std::thread::Builder::new().name("drag-files".into()).spawn(move || {
         // SAFETY: OLE for this thread, paired with OleUninitialize; the objects live through
-        // the modal drag and the loop that serves them afterwards.
+        // the modal drag and the loop that serves them afterwards. The input join lasts
+        // only the drag.
         unsafe {
             if OleInitialize(None).is_err() {
                 ended(0);
                 return;
             }
             let thread = GetCurrentThreadId();
+            let joined = holder != 0 && holder != thread && AttachThreadInput(thread, holder, true).as_bool();
             let data = data_object(Arc::new(QuitWhenReleased { files, thread }), options);
             let source: IDropSource = ButtonSource.into();
             let mut effect = DROPEFFECT_NONE;
+            // Wakes the drag's loop when the button is up (or Esc down), in case the release
+            // never reached it: the loop then asks the source, which ends the drag. If even
+            // that doesn't end it soon, the drag's own window hears Esc (it cancels).
+            let dragging = Arc::new(AtomicBool::new(true));
+            let watchdog = {
+                let dragging = Arc::clone(&dragging);
+                std::thread::spawn(move || {
+                    let mut released_at: Option<std::time::Instant> = None;
+                    while dragging.load(Ordering::SeqCst) {
+                        std::thread::sleep(std::time::Duration::from_millis(50));
+                        if primary_button_down() && !escape_down() {
+                            released_at = None;
+                            continue;
+                        }
+                        let since = *released_at.get_or_insert_with(std::time::Instant::now);
+                        let (message, key) = if since.elapsed() >= std::time::Duration::from_millis(500) {
+                            (WM_KEYDOWN, WPARAM(usize::from(VK_ESCAPE.0)))
+                        } else {
+                            (WM_MOUSEMOVE, WPARAM(0))
+                        };
+                        let mut info = GUITHREADINFO {
+                            cbSize: core::mem::size_of::<GUITHREADINFO>() as u32,
+                            ..Default::default()
+                        };
+                        let capture = GetGUIThreadInfo(thread, &mut info).is_ok() && !info.hwndCapture.is_invalid();
+                        if capture {
+                            let _ = PostMessageW(Some(info.hwndCapture), message, key, LPARAM(0));
+                        } else {
+                            let _ = PostThreadMessageW(thread, message, key, LPARAM(0));
+                        }
+                    }
+                })
+            };
             let result = DoDragDrop(&data, &source, DROPEFFECT_COPY, &mut effect);
+            dragging.store(false, Ordering::SeqCst);
+            let _ = watchdog.join();
+            if joined {
+                let _ = AttachThreadInput(thread, holder, false);
+            }
             ended(if result == DRAGDROP_S_DROP { effect.0 } else { 0 });
             drop(data);
             // Explorer may read the files after the drop returns: serve until it lets go.
@@ -647,7 +705,31 @@ impl Drop for QuitWhenReleased {
     }
 }
 
-/// A drag that follows the physical left button: released drops, Esc cancels.
+/// Whether the user's primary mouse button is physically down (the right one when the
+/// buttons are swapped).
+fn primary_button_down() -> bool {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON};
+    use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_SWAPBUTTON};
+    // SAFETY: plain state queries (physical buttons).
+    unsafe {
+        let key = if GetSystemMetrics(SM_SWAPBUTTON) != 0 {
+            VK_RBUTTON
+        } else {
+            VK_LBUTTON
+        };
+        GetAsyncKeyState(i32::from(key.0)) < 0
+    }
+}
+
+/// Whether Esc is physically down.
+fn escape_down() -> bool {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_ESCAPE};
+    // SAFETY: plain state query.
+    unsafe { GetAsyncKeyState(i32::from(VK_ESCAPE.0)) < 0 }
+}
+
+/// A drag that follows the physical primary button, not the drag thread's idea of it
+/// (which may never have seen it pressed or released): released drops, Esc cancels.
 #[implement(windows::Win32::System::Ole::IDropSource)]
 struct ButtonSource;
 
@@ -655,12 +737,11 @@ impl windows::Win32::System::Ole::IDropSource_Impl for ButtonSource_Impl {
     fn QueryContinueDrag(
         &self,
         escape: BOOL,
-        keys: windows::Win32::System::SystemServices::MODIFIERKEYS_FLAGS,
+        _keys: windows::Win32::System::SystemServices::MODIFIERKEYS_FLAGS,
     ) -> HRESULT {
-        use windows::Win32::System::SystemServices::MK_LBUTTON;
-        if escape.as_bool() {
+        if escape.as_bool() || escape_down() {
             DRAGDROP_S_CANCEL
-        } else if keys.0 & MK_LBUTTON.0 == 0 {
+        } else if !primary_button_down() {
             DRAGDROP_S_DROP
         } else {
             S_OK

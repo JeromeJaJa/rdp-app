@@ -227,6 +227,11 @@ pattern-matching against it.
     moves. **Drag out**: the companion puts a drop target under the remote pointer when the client
     reports leaving the session with the button held; the client then runs a local `DoDragDrop`
     (only if its button is still physically down). The remote drop is always refused (no deletes).
+    That local drag runs on its own thread while the button is held in the webview's: it joins
+    that thread's input, follows the physical button, and a watchdog ends it once the button
+    is up (a drag that never saw the release held the mouse until the app quit:
+    `rdp-vfiles/tests/drag_ends.rs`). Files dropped on a window bring it to the front
+    (`file_drop::bring_to_front`, without Tauri's `set_focus`, which presses Alt).
   The channel, WinRM install and auto-install are verified against a live host; **stats, fast
   copies, sends and drags are unit/mock tested but not yet verified against a live host**. Still to
   build: a no-WinRM delivery path. Release builds bundle `rdp-companion.exe` next to the app.
