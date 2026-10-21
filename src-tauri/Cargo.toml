@@ -5,9 +5,11 @@ edition.workspace = true
 version.workspace = true
 license.workspace = true
 
+# Only the exe links this. Tauri's template also builds a staticlib and a cdylib (for mobile), which
+# made every debug build write a 1.5 GB archive and every release build run fat LTO three times.
 [lib]
 name = "rdp_app_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+crate-type = ["rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
