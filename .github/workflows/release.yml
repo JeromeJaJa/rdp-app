@@ -62,6 +62,9 @@ jobs:
       - name: Package
         run: |
           $v = "${{ steps.version.outputs.version }}"
+          if (-not (Select-String target/release/nsis/x64/installer.nsi -SimpleMatch "rdp-companion.exe" -Quiet)) {
+            throw "the installer doesn't include rdp-companion.exe"
+          }
           $out = (New-Item -ItemType Directory -Force release-assets).FullName
           $setup = Get-ChildItem target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
           if (-not $setup) { throw "installer not found" }
