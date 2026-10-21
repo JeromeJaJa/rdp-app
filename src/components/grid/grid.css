@@ -211,32 +211,42 @@
   background: rgba(0, 0, 0, 0.45);
 }
 
+/* The name, address and stat sit on one baseline. Centred one by one, each in its own font
+   at a fractional position (tiles scale), they snapped to different pixels at some sizes.
+   Each is trimmed to its capitals, so the row is as tall as the name's capitals and the
+   dot, centred in it, lines up with them. */
 .tile__meta {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 8px;
   min-width: 0;
   padding: 0 2px;
 }
-.tile__name {
-  flex: 0 1 auto;
+.tile__meta > .status-dot {
+  align-self: center;
+}
+.tile__name,
+.tile__host {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  line-height: 1;
+  text-box: trim-both cap alphabetic;
+  /* Keep descenders (g, y) visible: trimming moves them outside the clipped box. */
+  padding-bottom: 0.25em;
+  margin-bottom: -0.25em;
+}
+/* The name takes the free space, so the address and stat sit at the right (the address,
+   hidden on small tiles, gives up its space first). */
+.tile__name {
+  flex: 1 1 auto;
   font-weight: 500;
   color: var(--text);
 }
 .tile__host {
-  margin-left: auto;
   flex: 0 1000 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   font-size: 11px;
-  /* The mono font's line box puts its digits high; a tight line box centers them. */
-  line-height: 1;
   color: var(--text-3);
 }
 @container (max-width: 230px) {
