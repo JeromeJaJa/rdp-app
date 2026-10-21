@@ -14,7 +14,8 @@
 //!   and the threads that need them, not through the UI thread's event queue (which is
 //!   also unbounded now, so a busy UI thread never stalls the session's network loop);
 //! - file transfer capabilities are advertised;
-//! - dropping the monitor destroys its window and state (upstream leaked both).
+//! - dropping the monitor destroys its window and state (upstream leaked both);
+//! - with a companion attached, copied files go through it instead (see [`Companion`]).
 #![cfg(windows)]
 #![warn(unsafe_op_in_unsafe_fn)]
 
@@ -124,6 +125,23 @@ impl From<Error> for WinCliprdrError {
     }
 }
 
+/// Copies files faster through the session's companion, when one is attached.
+///
+/// The clipboard channel moves file contents one request at a time; the companion
+/// streams them. Text, images and anything the companion can't serve still go over the
+/// clipboard channel.
+pub trait Companion: Send + Sync {
+    /// Files were copied on this PC: put them on the remote clipboard through the
+    /// companion. Returns false (use the clipboard channel) if none is attached. Must not
+    /// block: list the files elsewhere.
+    fn offer_files(&self, paths: Vec<std::path::PathBuf>) -> bool;
+
+    /// The remote copied files: ask the companion for them. `None` if no companion is
+    /// attached or it can't serve what the remote copied. Blocks briefly; should let
+    /// sent messages through while it waits ([`rdp_vfiles::pump_sent_messages`]).
+    fn remote_files(&self) -> Option<Arc<rdp_companion_proto::transfer::Inflow>>;
+}
+
 /// Sent from the clipboard backend shim to the actual WinAPI subproc event loop
 #[derive(Debug)]
 pub(crate) enum BackendEvent {
@@ -186,7 +204,11 @@ impl WinClipboard {
     /// Creates new clipboard instance.
     ///
     /// Under the hood, a hidden window is created for capturing the clipboard events.
-    pub fn new(message_proxy: impl ClipboardMessageProxy + 'static) -> WinCliprdrResult<Self> {
+    /// `companion` (if given) speeds up file copies while one is attached.
+    pub fn new(
+        message_proxy: impl ClipboardMessageProxy + 'static,
+        companion: Option<Arc<dyn Companion>>,
+    ) -> WinCliprdrResult<Self> {
         extern "system" fn wndproc(window: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
             // SAFETY: default handler
             unsafe { DefWindowProcA(window, message, wparam, lparam) }
@@ -257,6 +279,7 @@ impl WinClipboard {
             backend_rx,
             paste_rx,
             direct.clone(),
+            companion,
         ));
 
         // We need to receive winapi messages in the main thread, so we need to add a subclass to

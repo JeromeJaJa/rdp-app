@@ -9,6 +9,8 @@ publish = false
 [dependencies]
 ironrdp-cliprdr.workspace = true
 ironrdp-core.workspace = true
+rdp-companion-proto = { path = "../rdp-companion-proto" }
+rdp-vfiles = { path = "../rdp-vfiles" }
 tracing = "0.1"
 windows-core = "0.62"
 

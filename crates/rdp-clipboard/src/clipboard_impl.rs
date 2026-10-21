@@ -43,6 +43,8 @@ pub(crate) struct WinClipboardImpl {
     remote: Remote,
     /// That thread, started the first time the remote copies files.
     ole: Option<OleClipboard>,
+    /// Streams copied files when a companion is attached.
+    companion: Option<Arc<dyn crate::Companion>>,
     // Number of attempts spent to process current clipboard message
     attempt: u32,
     // Message to retry
@@ -59,6 +61,7 @@ impl WinClipboardImpl {
         backend_rx: mpsc::Receiver<BackendEvent>,
         paste_rx: mpsc::Receiver<FormatDataResponse<'static>>,
         direct: crate::Direct,
+        companion: Option<Arc<dyn crate::Companion>>,
     ) -> Self {
         Self {
             window,
@@ -72,6 +75,7 @@ impl WinClipboardImpl {
                 proxy,
             },
             ole: None,
+            companion,
             attempt: 0,
             retry_message: None,
             available_formats_on_remote: Vec::new(),
@@ -124,14 +128,21 @@ impl WinClipboardImpl {
 
     fn on_clipboard_update(&mut self) -> WinCliprdrResult<Option<ClipboardMessage>> {
         let mut clipboard = OwnedOsClipboard::new(self.window)?;
-        if self.file_transfer
-            && let Some(paths) = clipboard.dropped_files()
-        {
+        if let Some(paths) = clipboard.dropped_files() {
             drop(clipboard); // walking folders can take a moment; don't hold the clipboard
-            let files = crate::files::collect(&paths);
-            if !files.descriptors.is_empty() {
-                self.files.offer(files.paths);
-                return Ok(Some(ClipboardMessage::SendInitiateFileCopy(files.descriptors)));
+            // The companion streams them much faster than the clipboard channel can.
+            if let Some(companion) = &self.companion
+                && companion.offer_files(paths.clone())
+            {
+                info!(items = paths.len(), "copied files offered through the companion");
+                return Ok(None);
+            }
+            if self.file_transfer {
+                let files = crate::files::collect(&paths);
+                if !files.descriptors.is_empty() {
+                    self.files.offer(files.paths);
+                    return Ok(Some(ClipboardMessage::SendInitiateFileCopy(files.descriptors)));
+                }
             }
             clipboard = OwnedOsClipboard::new(self.window)?;
         }
@@ -226,6 +237,14 @@ impl WinClipboardImpl {
     }
 
     fn on_remote_format_list(&mut self, formats: &[ClipboardFormat]) -> WinCliprdrResult<Option<ClipboardMessage>> {
+        // The companion put files copied here on the remote clipboard; the remote is just
+        // echoing that back. This side already has the originals.
+        if formats.iter().any(|f| {
+            f.name()
+                .is_some_and(|n| n.value() == rdp_companion_proto::CLIPBOARD_MARKER)
+        }) {
+            return Ok(None);
+        }
         let generation = self.remote.inbox.next_generation();
         self.available_formats_on_remote.clear();
 
@@ -238,7 +257,7 @@ impl WinClipboardImpl {
             .find(|f| f.name().is_some_and(|n| n.value() == FILE_LIST_FORMAT_NAME));
         if let (true, Some(file_list)) = (self.file_transfer, file_list) {
             if self.ole.is_none() {
-                self.ole = OleClipboard::spawn(self.remote.clone());
+                self.ole = OleClipboard::spawn(self.remote.clone(), self.companion.clone());
             }
             if let Some(ole) = &self.ole {
                 ole.offer(generation, file_list.id());
