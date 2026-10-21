@@ -3,7 +3,7 @@ import { AppWindow, Undo2 } from "lucide-react";
 import { RemoteSurface } from "../../engine";
 import { isMainWindow } from "../../lib/env";
 import { moveToMainWindow, showTabWindow } from "../../state/actions";
-import { displayName, hostOf, isLive, setState, useConnection, useStatus, useStore } from "../../state/store";
+import { displayName, inDetachedWindow, isLive, setState, useConnection, useStatus, useStore } from "../../state/store";
 import { Button, Spinner } from "../ui/ui";
 import { EmptyState } from "./EmptyState";
 import { IdleCard } from "./IdleCard";
@@ -60,7 +60,7 @@ function SessionAreaInner() {
   const selectedId = useStore((s) => s.selectedId);
   const hasConnections = useStore((s) => s.order.length > 0);
   const status = useStore((s) => (s.selectedId ? s.sessions[s.selectedId]?.status ?? "idle" : "idle"));
-  const elsewhere = useStore((s) => !!s.selectedId && isMainWindow() && hostOf(s, s.selectedId) !== "main");
+  const elsewhere = useStore((s) => !!s.selectedId && isMainWindow() && inDetachedWindow(s, s.selectedId));
 
   if (!hasConnections) return <EmptyState />;
   if (!selectedId)

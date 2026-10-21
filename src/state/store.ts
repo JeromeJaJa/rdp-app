@@ -253,6 +253,12 @@ export function hostOf(s: Pick<AppState, "windows" | "mainTabs">, id: Connection
   return s.mainTabs.includes(id) ? "main" : null;
 }
 
+/** Whether a connection's tab is in a detached window (open, and not in the main one). */
+export function inDetachedWindow(s: Pick<AppState, "windows" | "mainTabs">, id: ConnectionId): boolean {
+  const host = hostOf(s, id);
+  return host !== null && host !== "main";
+}
+
 /** Whether a connection is open as a tab in any window. */
 export function isOpen(s: Pick<AppState, "windows" | "mainTabs">, id: ConnectionId): boolean {
   return hostOf(s, id) !== null;

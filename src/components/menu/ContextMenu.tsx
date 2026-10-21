@@ -125,13 +125,15 @@ function WindowItems({ id }: { id: string }) {
   const alone = useStore((s) => !isMainWindow() && windowTabs(s, windowLabel()).length <= 1);
   if (!isTauri()) return null;
   const here = host === windowLabel();
+  // No tab anywhere yet (tabs only for active connections): it can still get a window.
+  const none = host === null;
   return (
     <>
-      {here && !alone && (
+      {(here || none) && !alone && (
         <Item icon={<AppWindow size={14} />} label="Open in new window" onSelect={() => openInNewWindow(id)} />
       )}
-      {!here && <Item icon={<AppWindow size={14} />} label="Show window" onSelect={() => showTabWindow(id)} />}
-      {host !== "main" && (
+      {!here && !none && <Item icon={<AppWindow size={14} />} label="Show window" onSelect={() => showTabWindow(id)} />}
+      {!none && host !== "main" && (
         <Item icon={<Undo2 size={14} />} label="Move to main window" onSelect={() => moveToMainWindow(id)} />
       )}
       <Sep />

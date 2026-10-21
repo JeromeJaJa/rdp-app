@@ -2,7 +2,7 @@ import { forwardRef, memo, useEffect, useRef, type CSSProperties, type HTMLAttri
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { connect, disconnect, dragWindow, openMenu, select } from "../../state/actions";
-import { displayName, hostOf, isBusy, isLive, useConnection, useStatus, useStore } from "../../state/store";
+import { displayName, hostOf, inDetachedWindow, isBusy, isLive, useConnection, useStatus, useStore } from "../../state/store";
 import { isMainWindow } from "../../lib/env";
 import { AppWindow, X, Zap } from "lucide-react";
 import { StatusDot } from "../common/StatusDot";
@@ -47,7 +47,7 @@ const TabView = forwardRef<HTMLDivElement, ViewProps>(function TabView(
   // In the library (sidebar): this connection already has an open tab somewhere.
   const open = useStore((s) => hostOf(s, id) !== null);
   // In the main window, a tab that lives in another window.
-  const elsewhere = useStore((s) => isMainWindow() && hostOf(s, id) !== "main");
+  const elsewhere = useStore((s) => isMainWindow() && inDetachedWindow(s, id));
   // A companion is attached on the remote (deeper integration is live).
   const companion = useStore((s) => !!s.sessions[id]?.companion);
   if (!conn) return null;
