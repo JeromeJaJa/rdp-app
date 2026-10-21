@@ -8,33 +8,48 @@ on:
     paths-ignore: ["**.md", "assets/**", "LICENSE"]
   workflow_dispatch:
 
-# A newer push to the same branch supersedes a run in progress.
+# A newer push to a pull request supersedes its run in progress. Runs on main always finish, so
+# each one leaves a warm cache behind (a cancelled job saves nothing).
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
 
+env:
+  # No debug info: much less to compile, link and cache (Windows debug info is huge).
+  CARGO_PROFILE_DEV_DEBUG: "0"
+
+# The app is Windows-only (WebView2, Win32 APIs), so it's checked where it runs. Lint and tests
+# run side by side, each with its own cache. A cold cache (first run, or a new Rust release)
+# rebuilds every dependency, which takes a long time on a hosted runner; warm runs only rebuild
+# the workspace crates.
 jobs:
-  check:
-    name: Check (Windows)
-    # The app is Windows-only (WebView2, Win32 APIs), so it's checked where it runs.
+  lint:
+    name: Lint (Windows)
     runs-on: windows-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Rust formatting
+        run: cargo fmt --all --check
 
       # The H.264 decoder's assembly needs NASM (built the same way as releases).
       - uses: ilammy/setup-nasm@v1
 
       - uses: oven-sh/setup-bun@v2
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
-
       - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          # Pull requests read main's cache but don't add their own (it would crowd main's out).
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install UI dependencies
         run: bun install --frozen-lockfile
@@ -42,11 +57,30 @@ jobs:
       - name: Typecheck and build the UI
         run: bun run build
 
-      - name: Rust formatting
-        run: cargo fmt --all --check
-
       - name: Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+  test:
+    name: Test (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ilammy/setup-nasm@v1
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # The app embeds the built UI, so it has to exist before the app crate compiles.
+      - name: Build the UI
+        run: bun install --frozen-lockfile && bun run build
 
       - name: Tests
         run: cargo test --workspace --locked
