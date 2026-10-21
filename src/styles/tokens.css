@@ -129,16 +129,14 @@
   --thumb-bg: rgba(5, 5, 6, 0.9);
   /* On screen, WebView2 leaves see-through content (these translucent surfaces) unblurred
      under a backdrop blur, so glass lays an opaque patch of this beneath itself (see
-     useGlassUnderlay). Tooltips are pseudo-elements and can't, so they tint densely. */
+     useGlassUnderlay). */
   --glass-underlay: #0b0b0e;
-  --tip-bg: linear-gradient(180deg, rgba(18, 18, 21, 0.92), rgba(8, 8, 10, 0.95));
 }
 :root[data-material="acrylic"][data-theme="light"] {
   --bg: rgba(244, 244, 247, 0.82);
   --panel: rgba(249, 249, 251, 0.8);
   --thumb-bg: rgba(233, 233, 236, 0.84);
   --glass-underlay: #f7f7f8;
-  --tip-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(246, 246, 248, 0.95));
 }
 /* Only the leaf surfaces paint; stacked translucent layers would turn opaque. */
 :root[data-material="acrylic"] body,

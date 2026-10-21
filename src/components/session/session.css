@@ -193,11 +193,6 @@
   }
 }
 
-.session-toolbar [data-tip]::after {
-  color: #ededef;
-  background: #1a1a1f;
-}
-
 /* ---------- Idle card ---------- */
 .idle {
   position: absolute;

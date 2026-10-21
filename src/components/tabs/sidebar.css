@@ -32,9 +32,6 @@
   .sidebar__actions .tb-btn {
     padding: 0 6px;
   }
-  .sidebar__actions .tb-btn::after {
-    display: block;
-  }
 }
 
 .sidebar__top {

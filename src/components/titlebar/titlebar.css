@@ -297,10 +297,6 @@
   background: var(--active);
   box-shadow: inset 0 0 0 1px var(--border-strong);
 }
-/* Tooltips only when the label is hidden. */
-.tb-btn::after {
-  display: none;
-}
 .tb-view .segmented__item {
   padding: 0 8px;
 }
@@ -312,9 +308,6 @@
   }
   .titlebar--top .tb-btn {
     padding: 0 6px;
-  }
-  .titlebar--top .tb-btn::after {
-    display: block;
   }
 }
 

@@ -47,7 +47,7 @@ export function TransferButtons({ tipSide }: { tipSide?: TipSide }) {
   );
 }
 
-/** "+ New"; the label collapses to a tooltip when space runs out (CSS). */
+/** "+ New"; the label collapses to a tooltip when space runs out (CSS hides the label). */
 export function NewConnectionButton({ tipSide = "bottom" }: { tipSide?: TipSide }) {
   return (
     <button
@@ -59,7 +59,9 @@ export function NewConnectionButton({ tipSide = "bottom" }: { tipSide?: TipSide 
       onClick={() => openDialog({ kind: "add", mode: "single" })}
     >
       <Plus size={15} />
-      <span className="tb-btn__label">New</span>
+      <span className="tb-btn__label" data-tip-label>
+        New
+      </span>
     </button>
   );
 }

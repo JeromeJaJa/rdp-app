@@ -7,6 +7,7 @@ import { Dialogs } from "./components/dialogs/Dialogs";
 import { CertificatePrompts } from "./components/dialogs/CertificatePrompt";
 import { ContextMenu } from "./components/menu/ContextMenu";
 import { Toasts } from "./components/toast/Toasts";
+import { Tooltips } from "./components/ui/Tooltips";
 import { useEngineSync, useShortcuts, useTabAreaReporter, useViewportReporter } from "./state/hooks";
 import { useStore } from "./state/store";
 import "./app.css";
@@ -42,6 +43,7 @@ export function DetachedApp() {
       <CertificatePrompts />
       <ContextMenu />
       <Toasts />
+      <Tooltips />
     </div>
   );
 }
