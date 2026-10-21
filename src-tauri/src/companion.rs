@@ -71,6 +71,18 @@ pub fn companion_exe() -> anyhow::Result<PathBuf> {
         .context("companion binary not found (set RDPAPP_COMPANION_EXE)")
 }
 
+/// Fingerprint of the companion this app carries (see `rdp_companion_proto::build_id`), if
+/// it can find one.
+pub fn bundled_build() -> Option<String> {
+    static BUILD: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    BUILD
+        .get_or_init(|| {
+            let bytes = std::fs::read(companion_exe().ok()?).ok()?;
+            Some(rdp_companion_proto::build_id(&bytes))
+        })
+        .clone()
+}
+
 /// Installs the companion on `target` over WinRM. Blocking (runs PowerShell); call off
 /// the UI thread.
 pub fn install_over_winrm(target: &Target, exe: &Path) -> anyhow::Result<Outcome> {

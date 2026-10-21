@@ -80,6 +80,8 @@ pub enum EngineEvent {
         version: String,
         /// The remote machine's name it reported.
         host: String,
+        /// Fingerprint of its executable (`rdp_companion_proto::build_id`).
+        build: String,
     },
     /// The companion channel closed (its process exited, or the session dropped it).
     CompanionDisconnected {

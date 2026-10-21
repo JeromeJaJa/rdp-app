@@ -209,6 +209,8 @@ pub struct Core {
 struct CompanionState {
     attached: std::collections::HashSet<String>,
     pending: std::collections::HashSet<String>,
+    /// Sessions whose outdated companion we're replacing (once per connection).
+    updating: std::collections::HashSet<String>,
 }
 
 impl Core {
@@ -241,8 +243,9 @@ impl Core {
     /// companion-enabled connection comes up without one attaching shortly, installs it.
     pub fn on_engine_event(self: &Arc<Self>, event: &EngineEvent) {
         match event {
-            EngineEvent::CompanionConnected { id, .. } => {
+            EngineEvent::CompanionConnected { id, build, .. } => {
                 self.companion.lock().attached.insert(id.clone());
+                self.maybe_update_companion(id.clone(), build);
             }
             EngineEvent::CompanionDisconnected { id } => {
                 self.companion.lock().attached.remove(id);
@@ -254,6 +257,7 @@ impl Core {
                     let mut c = self.companion.lock();
                     c.attached.remove(id);
                     c.pending.remove(id);
+                    c.updating.remove(id);
                 }
                 _ => {}
             },
@@ -298,6 +302,38 @@ impl Core {
                     tracing::warn!(error = %format!("{e:#}"), "companion auto-install failed");
                     core.emit_companion("failed", &id, None);
                 }
+                Err(_) => {}
+            }
+        });
+    }
+
+    /// A companion attached that isn't the build this app carries (an older one left on the
+    /// host, say): replace it over WinRM, once per connection. It keeps working meanwhile
+    /// (it speaks the same protocol), and the new one attaches in its place.
+    fn maybe_update_companion(self: &Arc<Self>, id: String, build: &str) {
+        let Some(bundled) = crate::companion::bundled_build() else {
+            return;
+        };
+        if build == bundled {
+            return;
+        }
+        if self.effective_settings(&id).get("companion").and_then(Value::as_bool) != Some(true) {
+            return;
+        }
+        if !self.companion.lock().updating.insert(id.clone()) {
+            return;
+        }
+        tracing::info!(session = %id, running = %build, bundled = %bundled, "replacing an outdated companion");
+        let core = Arc::clone(self);
+        tauri::async_runtime::spawn(async move {
+            let outcome = {
+                let core = Arc::clone(&core);
+                let id = id.clone();
+                tauri::async_runtime::spawn_blocking(move || core.install_companion(&id)).await
+            };
+            match outcome {
+                Ok(Ok(outcome)) => tracing::info!(session = %id, ?outcome, "companion update"),
+                Ok(Err(e)) => tracing::warn!(session = %id, error = %format!("{e:#}"), "companion update failed"),
                 Err(_) => {}
             }
         });

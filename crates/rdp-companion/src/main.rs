@@ -141,6 +141,7 @@ mod windows_impl {
             version: env!("CARGO_PKG_VERSION").to_owned(),
             host,
             session,
+            build: build(),
         }) {
             bail!("couldn't say hello");
         }
@@ -206,6 +207,19 @@ mod windows_impl {
                 }
             }
         }
+    }
+
+    /// This executable's fingerprint (so the client can tell an outdated companion).
+    fn build() -> String {
+        static BUILD: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+        BUILD
+            .get_or_init(|| {
+                std::env::current_exe()
+                    .and_then(std::fs::read)
+                    .map(|bytes| rdp_companion_proto::build_id(&bytes))
+                    .unwrap_or_default()
+            })
+            .clone()
     }
 
     fn computer_name() -> String {

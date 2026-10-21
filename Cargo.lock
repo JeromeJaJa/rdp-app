@@ -4757,6 +4757,7 @@ dependencies = [
  "rmp-serde",
  "serde",
  "serde_bytes",
+ "sha2 0.10.9",
 ]
 
 [[package]]

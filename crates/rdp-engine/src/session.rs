@@ -968,8 +968,8 @@ async fn active(
                         }
                         Command::Companion(update) => {
                             let event = match update {
-                                crate::companion::Update::Connected { version, host } => {
-                                    EngineEvent::CompanionConnected { id: s.id.clone(), version, host }
+                                crate::companion::Update::Connected { version, host, build } => {
+                                    EngineEvent::CompanionConnected { id: s.id.clone(), version, host, build }
                                 }
                                 crate::companion::Update::Disconnected => {
                                     EngineEvent::CompanionDisconnected { id: s.id.clone() }

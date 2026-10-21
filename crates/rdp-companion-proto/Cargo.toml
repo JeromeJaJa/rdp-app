@@ -10,3 +10,4 @@ publish = false
 serde = { version = "1", features = ["derive"] }
 rmp-serde = "1"
 serde_bytes = "0.11"
+sha2 = "0.10"

@@ -111,6 +111,10 @@ pub enum Message {
         host: String,
         /// The remote session the companion is running in (WTS session id).
         session: u32,
+        /// Fingerprint of the companion's executable ([`build_id`]): the client replaces a
+        /// companion that isn't the build it carries. Empty from companions before it.
+        #[serde(default)]
+        build: String,
     },
     /// Client → companion, reply to `Hello`: the handshake is accepted.
     Welcome {
@@ -255,6 +259,16 @@ pub enum Message {
     },
 }
 
+/// Fingerprint of a companion executable's bytes: the same build gives the same id on both
+/// ends, whatever its version number says.
+pub fn build_id(executable: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(executable)[..8]
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
 /// Serializes a message into a self-framed `[len][body]` buffer.
 pub fn encode(message: &Message) -> Vec<u8> {
     let body = rmp_serde::to_vec_named(message).expect("companion messages always serialize");
@@ -349,6 +363,7 @@ mod tests {
                 version: "0.1.0".into(),
                 host: "REMOTE-PC".into(),
                 session: 2,
+                build: build_id(b"companion"),
             },
             Message::Welcome {
                 protocol: PROTOCOL_VERSION,

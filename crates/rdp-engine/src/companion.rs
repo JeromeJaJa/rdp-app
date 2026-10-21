@@ -25,7 +25,11 @@ use crate::Command;
 /// A presence change reported by the channel; the session loop emits the engine event.
 #[derive(Debug, Clone)]
 pub(crate) enum Update {
-    Connected { version: String, host: String },
+    Connected {
+        version: String,
+        host: String,
+        build: String,
+    },
     Disconnected,
 }
 
@@ -170,6 +174,7 @@ impl CompanionChannel {
                 protocol,
                 version,
                 host,
+                build,
                 ..
             } => {
                 if protocol != PROTOCOL_VERSION {
@@ -184,6 +189,7 @@ impl CompanionChannel {
                 self.report(Update::Connected {
                     version: version.clone(),
                     host: host.clone(),
+                    build,
                 });
                 out.push(frame(&Message::Welcome {
                     protocol: PROTOCOL_VERSION,
