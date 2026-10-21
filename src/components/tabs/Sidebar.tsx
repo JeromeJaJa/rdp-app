@@ -4,7 +4,7 @@ import { DndContext, DragOverlay, useDroppable } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { FolderPlus, Search, X } from "lucide-react";
 import { createGroup, updateSettings } from "../../state/actions";
-import { displayName, getState, isLive, setState, useStore } from "../../state/store";
+import { displayName, getState, isBusy, isLive, setState, useStore } from "../../state/store";
 import { IconButton } from "../ui/ui";
 import { BulkSessionButtons, NewConnectionButton, TransferButtons, ViewToggle } from "../common/GlobalActions";
 import { GroupHeader } from "./GroupHeader";
@@ -105,13 +105,22 @@ function Summary() {
     for (const id in s.sessions) if (isLive(s.sessions[id].status)) n++;
     return n;
   });
+  const connecting = useStore((s) => {
+    let n = 0;
+    for (const id in s.sessions) {
+      const st = s.sessions[id].status;
+      if (isBusy(st) && !isLive(st)) n++;
+    }
+    return n;
+  });
   return (
-    <div className="side-summary" title={`${connected} connected · ${total} total`}>
+    <div className="side-summary">
       <span className={`side-summary__dot ${connected ? "is-on" : ""}`} />
       <span className="side-summary__text">
-        <span className="side-summary__live">{connected}</span> / {total}
-        <span className="side-summary__word"> connected</span>
+        <span className="side-summary__live">{connected}</span> connected
+        {connecting > 0 && <span className="side-summary__busy"> · {connecting} connecting</span>}
       </span>
+      <span className="side-summary__total">{total} total</span>
     </div>
   );
 }
@@ -183,8 +192,8 @@ function SidebarInner() {
         {filter.trim() ? <FilteredList filter={filter.trim()} /> : <SidebarList />}
       </div>
       <div className="sidebar__footer">
-        <ViewToggle className="side-view" />
         <Summary />
+        <ViewToggle className="side-view" labeled />
       </div>
       <div className="sidebar__resize" onPointerDown={onResizeStart} />
     </aside>

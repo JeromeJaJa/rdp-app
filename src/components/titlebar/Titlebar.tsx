@@ -5,7 +5,7 @@ import { cycleTheme, openDialog, toggleSidebar } from "../../state/actions";
 import { useStore } from "../../state/store";
 import { IconButton } from "../ui/ui";
 import { WindowTabStrip } from "../tabs/WindowTabStrip";
-import { BulkSessionButtons, NewConnectionButton, TransferButtons, ViewToggle } from "../common/GlobalActions";
+import { NewConnectionButton } from "../common/GlobalActions";
 import { WindowControls } from "./WindowControls";
 import "./titlebar.css";
 
@@ -49,11 +49,7 @@ function TitlebarInner() {
           <span className="tb-search__label">Search</span>
           <kbd className="tb-search__kbd">Ctrl K</kbd>
         </button>
-        <ViewToggle />
-        <span className="titlebar__divider" />
-        <BulkSessionButtons />
         <NewConnectionButton />
-        <TransferButtons />
         <span className="titlebar__divider" />
         <IconButton label={sidebarShown ? "Hide the sidebar" : "Show the sidebar"} onClick={toggleSidebar}>
           <PanelLeft size={15} />

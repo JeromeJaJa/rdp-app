@@ -1,6 +1,7 @@
-// Controls that act on every connection. They live in the sidebar when tabs are on
-// the left (next to the list they act on) and in the title bar when tabs are on top.
+// Controls that act on every connection, shown in the library sidebar next to the list
+// they act on (and in the command palette).
 
+import type { ReactNode } from "react";
 import { Download, LayoutGrid, Monitor, Plus, Upload } from "lucide-react";
 import { connectAll, disconnectAll, openDialog, setView } from "../../state/actions";
 import { isBusy, isLive, useStore } from "../../state/store";
@@ -66,8 +67,18 @@ export function NewConnectionButton({ tipSide = "bottom" }: { tipSide?: TipSide 
   );
 }
 
-export function ViewToggle({ className }: { className?: string }) {
+/** Session view vs grid. `labeled` adds text next to the icons (CSS may hide it when narrow). */
+export function ViewToggle({ className, labeled }: { className?: string; labeled?: boolean }) {
   const view = useStore((s) => s.view);
+  const label = (icon: ReactNode, text: string) =>
+    labeled ? (
+      <>
+        {icon}
+        <span className="view-toggle__text">{text}</span>
+      </>
+    ) : (
+      icon
+    );
   return (
     <Segmented
       size="sm"
@@ -75,8 +86,8 @@ export function ViewToggle({ className }: { className?: string }) {
       value={view}
       onChange={setView}
       options={[
-        { value: "session", label: <Monitor size={14} />, title: "Session view" },
-        { value: "grid", label: <LayoutGrid size={14} />, title: "Grid view (Ctrl+G)" },
+        { value: "session", label: label(<Monitor size={14} />, "Session"), title: "Session view" },
+        { value: "grid", label: label(<LayoutGrid size={14} />, "Grid"), title: "Grid view (Ctrl+G)" },
       ]}
     />
   );
