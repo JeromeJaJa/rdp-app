@@ -239,7 +239,7 @@ export function FileDropLayer() {
       >
         <BorderBeam size={rect.height < 48 ? "sm" : "md"} colorVariant="colorful" theme={dark ? "dark" : "light"}>
           <div
-            className={`drop-frame__box ${target.kind === "send" ? "" : "is-plain"}`}
+            className={`drop-frame__box ${target.kind === "remote" ? "is-plain" : target.kind === "dialog" ? "is-soft" : ""}`}
             style={{ width: rect.width, height: rect.height, borderRadius: radius }}
           />
         </BorderBeam>

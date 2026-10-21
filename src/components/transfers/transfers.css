@@ -316,8 +316,11 @@
   color: var(--text);
   --glass-blur: var(--glass-blur-sm);
 }
-/* Over a session the remote's own feedback shows through, and the Send dialog's drop box
-   has its own look: no tint, just the beam. */
+/* Over a session the remote's own feedback shows through: no tint, just the beam. */
 .drop-frame__box.is-plain {
   background: none;
+}
+/* The Send dialog's drop box: the light tint it has on hover, under the beam. */
+.drop-frame__box.is-soft {
+  background: var(--accent-soft);
 }
