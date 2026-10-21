@@ -186,7 +186,7 @@ function Connections() {
           ]}
         />
       </Row>
-      <Row title="Stat on tabs" desc="Which of its host's load each tab shows. Hover it for everything.">
+      <Row title="Host stat" desc="Which of its host's load the sidebar and grid show. Hover it, or a tab, for everything.">
         <Select
           value={s.tabStats}
           onChange={(tabStats) => updateSettings({ tabStats })}

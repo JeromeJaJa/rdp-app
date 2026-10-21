@@ -22,8 +22,8 @@ A fast, minimal Windows Remote Desktop client for managing many connections at o
     folders highlight, the cursor shows what a drop would do).
   - **Send files** to one connection, a group, or a selection: right-click → Send files…, or drop files on a tab, a
     group or a grid tile. Hosts that aren't connected are connected first.
-  - **Host stats**: one labelled stat on each tab and tile (CPU by default; memory, network or disk, your pick), and
-    CPU, memory, disk and network with their recent history when you hover it. Sampled every 5 s and sent every 30 s
+  - **Host stats**: one labelled stat on each sidebar row and grid tile (CPU by default; memory, network or disk,
+    your pick), and CPU, memory, disk and network with their recent history when you hover it or a tab. Sampled every 5 s and sent every 30 s
     by default (a setting).
 - Server certificates are pinned on first use and you are asked if one ever changes.
 - A **local REST API** (with docs) so scripts and AI agents can do everything you can do in the window.

@@ -51,8 +51,12 @@ const TabView = forwardRef<HTMLDivElement, ViewProps>(function TabView(
   const elsewhere = useStore((s) => isMainWindow() && inDetachedWindow(s, id));
   // A companion is attached on the remote (deeper integration is live).
   const companion = useStore((s) => !!s.sessions[id]?.companion);
-  // The host's load shows instead of the companion's mark (unless stats are off).
-  const vitals = useStore((s) => !!s.stats[id] && s.settings.tabStats !== "off");
+  // The host reports its load: top tabs open the card on hover; sidebar rows show a stat
+  // (unless stats are off) in place of the companion's mark.
+  const stats = useStore((s) => !!s.stats[id]);
+  const statShown = useStore((s) => variant === "side" && s.settings.tabStats !== "off");
+  const vitals = stats && (variant === "top" || statShown);
+  const card = stats && variant === "top" && !overlay;
   if (!conn) return null;
 
   const name = displayName(conn);
@@ -67,8 +71,12 @@ const TabView = forwardRef<HTMLDivElement, ViewProps>(function TabView(
       } ${elsewhere ? "is-elsewhere" : ""} ${variant === "side" && open ? "is-open" : ""}`}
       role="tab"
       aria-selected={selected}
-      title={variant === "top" ? `${name} — ${conn.host}` : undefined}
+      // The card names the host too, so the plain tooltip only shows without it.
+      title={variant === "top" && !card ? `${name} — ${conn.host}` : undefined}
       data-tab-id={overlay ? undefined : id}
+      data-vitals={card ? id : undefined}
+      data-vitals-side={card ? "bottom" : undefined}
+      data-vitals-delay={card ? 600 : undefined}
       {...rest}
     >
       <StatusDot status={status} />
@@ -78,7 +86,7 @@ const TabView = forwardRef<HTMLDivElement, ViewProps>(function TabView(
           <Zap size={11} />
         </span>
       )}
-      {vitals && !overlay && <TabStat id={id} variant={variant} />}
+      {vitals && variant === "side" && !overlay && <TabStat id={id} variant="side" />}
       {elsewhere && (
         <span className="tab__elsewhere" title="Open in another window">
           <AppWindow size={12} />

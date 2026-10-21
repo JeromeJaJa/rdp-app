@@ -169,7 +169,7 @@ export interface Settings {
   companion: boolean;
   /** How often a companion reports its host's load, in seconds (0 = never). */
   hostStatsInterval: number;
-  /** Which of its host's load a tab shows ("CPU 12%"), or nothing. */
+  /** Which of its host's load sidebar rows and grid tiles show ("CPU 12%"), or nothing. */
   tabStats: TabStats;
   /** Share the clipboard (text, images, files) with remote sessions. */
   clipboardSync: boolean;
@@ -399,7 +399,7 @@ export interface ContinueDrag {
   grabX: number;
 }
 
-/** Which of its host's load a tab shows, labelled, or nothing. */
+/** Which of its host's load sidebar rows and grid tiles show, labelled, or nothing. */
 export type TabStats = "cpu" | "memory" | "network" | "disk" | "off";
 
 /** A host's load, reported by its session's companion. Rates average over `span` seconds. */

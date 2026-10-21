@@ -35,11 +35,11 @@ function reading(kind: Kind, l: HostStats): { text: string; tone: "ok" | "warn" 
 }
 
 /**
- * A host's load on its tab, sidebar row or grid tile: one metric, labelled ("CPU 12%"),
- * coloured only when it runs high (setting "Stat on tabs"). Hover for everything. Nothing
- * shows until the host's companion reports.
+ * A host's load on its sidebar row or grid tile: one metric, labelled ("CPU 12%"),
+ * coloured only when it runs high (setting "Host stat"). Hover it (or a top tab) for
+ * everything. Nothing shows until the host's companion reports.
  */
-export const TabStat = memo(function TabStat({ id, variant }: { id: ConnectionId; variant: "side" | "top" | "tile" }) {
+export const TabStat = memo(function TabStat({ id, variant }: { id: ConnectionId; variant: "side" | "tile" }) {
   const latest = useStore((s) => s.stats[id]?.latest);
   const kind = useStore((s) => s.settings.tabStats);
   if (!latest || kind === "off") return null;
@@ -66,7 +66,7 @@ interface Open {
   side: Side;
 }
 
-/** Hover this long (ms) before the card shows. */
+/** Hover this long (ms) before the card shows (a whole tab says longer: `data-vitals-delay`). */
 const DELAY = 280;
 const GAP = 8;
 const EDGE = 8;
@@ -89,12 +89,13 @@ export function VitalsCards() {
       clearTimeout(timer);
       target = el;
       setOpen(null);
-      if (!(el instanceof HTMLElement)) return;
+      // Not while a button is held: that's a tab being dragged across others.
+      if (!(el instanceof HTMLElement) || e.buttons !== 0) return;
       timer = window.setTimeout(() => {
         const id = el.dataset.vitals;
         if (target !== el || !el.isConnected || !id) return;
         setOpen({ id, anchor: el.getBoundingClientRect(), side: (el.dataset.vitalsSide as Side) ?? "bottom" });
-      }, DELAY);
+      }, Number(el.dataset.vitalsDelay) || DELAY);
     };
     // The card stays while the pointer is away from the window (taking a screenshot, say)
     // and closes when it moves to something else here, on a click or key, or if what it

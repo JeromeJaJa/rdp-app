@@ -212,7 +212,8 @@ pattern-matching against it.
   build: a no-WinRM delivery path. Release builds bundle `rdp-companion.exe` next to the app.
   Enabled by the layered `companion` setting (off by default); `hostStatsInterval` (s) too: the
   companion samples every 5 s and sends the batch at that interval, so the hover card's trend lines
-  have detail without a message every few seconds. `tabStats` picks the one stat tabs show.
+  have detail without a message every few seconds. `tabStats` picks the one stat sidebar rows and tiles show (top tabs show none; hovering one
+  opens the card).
 
 ## Conventions and constraints
 
