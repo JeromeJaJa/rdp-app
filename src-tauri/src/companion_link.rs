@@ -15,6 +15,7 @@ use std::time::{Duration, Instant};
 use parking_lot::Mutex;
 use rdp_companion_proto::transfer::{self, CHUNK, DiskFiles, Inflow, Listing, Note, Outbox, Produced, Pump, Source};
 use rdp_companion_proto::{ClipFormat, Entry, HostStats, Intent, Message};
+use rdp_direct::{DirectSlot, Peer, Prepared};
 use rdp_engine::{CompanionHandler, CompanionHost, CompanionLink, Engine, InputEvent};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
@@ -165,11 +166,22 @@ pub struct Companions {
     stats: Mutex<HashMap<String, VecDeque<StatsView>>>,
     transfers: Arc<Mutex<HashMap<u64, TransferView>>>,
     next_id: AtomicU64,
-    interval: Mutex<Option<IntervalSource>>,
+    prefs: Mutex<Option<PrefsSource>>,
 }
 
-/// The stats interval (seconds, 0 = off) a session's settings ask for.
-pub type IntervalSource = Arc<dyn Fn(&str) -> u32 + Send + Sync>;
+/// What a session's settings ask of its companion.
+#[derive(Debug, Clone, Default)]
+pub struct CompanionPrefs {
+    /// Seconds between host stats reports (0 = off).
+    pub stats_interval: u32,
+    /// Open a direct link for transfers.
+    pub direct: bool,
+    /// The host the session connects to (one more address to try for the direct link).
+    pub host: String,
+}
+
+/// Looks up a session's [`CompanionPrefs`].
+pub type PrefsSource = Arc<dyn Fn(&str) -> CompanionPrefs + Send + Sync>;
 
 impl Companions {
     pub fn new(app: AppHandle, engine: Engine) -> Arc<Self> {
@@ -181,13 +193,18 @@ impl Companions {
             stats: Mutex::default(),
             transfers: Arc::default(),
             next_id: AtomicU64::new(2),
-            interval: Mutex::default(),
+            prefs: Mutex::default(),
         })
     }
 
-    /// Where to look up a session's stats interval.
-    pub fn set_interval_source(&self, source: IntervalSource) {
-        *self.interval.lock() = Some(source);
+    /// Where to look up what a session's settings ask of its companion.
+    pub fn set_prefs_source(&self, source: PrefsSource) {
+        *self.prefs.lock() = Some(source);
+    }
+
+    fn prefs_for(&self, session: &str) -> CompanionPrefs {
+        let source = self.prefs.lock().clone();
+        source.map(|f| f(session)).unwrap_or_default()
     }
 
     /// Transfer ids this side picks are even (the companion's are odd).
@@ -227,8 +244,7 @@ impl Companions {
     }
 
     fn interval_for(&self, session: &str) -> u32 {
-        let source = self.interval.lock().clone();
-        source.map_or(0, |f| f(session))
+        self.prefs_for(session).stats_interval
     }
 
     /// Re-sends each attached companion its stats interval (settings changed).
@@ -513,9 +529,12 @@ impl CompanionHost for Companions {
         let sources: Arc<Mutex<HashSet<u64>>> = Arc::default();
         let pump_sources = Arc::clone(&sources);
         let sender = link.clone();
+        // Transfer traffic takes the direct link while it's up.
+        let direct = DirectSlot::default();
+        let route = direct.clone();
         let pump = Pump::spawn(
             &format!("companion-{session}"),
-            move |message| sender.send(&message),
+            move |message| route.try_send(&message) || sender.send(&message),
             move |note| match note {
                 Note::Progress { id, consumed } => {
                     Companions::update(&transfers, &app, id, |t| t.sent = consumed.min(t.total));
@@ -550,16 +569,23 @@ impl CompanionHost for Companions {
             queries: Mutex::default(),
             drag: Mutex::default(),
             drag_out: Mutex::default(),
+            direct,
+            preparing: Mutex::default(),
         });
         let replaced = self.attached.lock().insert(session.to_owned(), Arc::clone(&attached));
         if let Some(old) = replaced {
             old.abort("the companion reattached");
         }
-        let secs = self.interval_for(session);
-        if secs > 0 {
-            attached.link.send(&Message::StatsInterval { secs });
+        let prefs = self.prefs_for(session);
+        if prefs.stats_interval > 0 {
+            attached.link.send(&Message::StatsInterval {
+                secs: prefs.stats_interval,
+            });
         }
         tracing::info!(session, "companion ready for stats and transfers");
+        if prefs.direct {
+            Self::start_direct(&attached);
+        }
         Arc::new(Handler {
             attached,
             owner: self.me.clone(),
@@ -589,6 +615,14 @@ impl Companions {
                 attached.pump.receive(&message);
             }
             Message::Offer { id, entries, intent } => attached.offered(id, entries, intent),
+            Message::DirectAnswer {
+                fingerprint,
+                candidates,
+            } => self.direct_answer(attached, fingerprint, candidates),
+            Message::DirectUnavailable { reason } => {
+                attached.preparing.lock().take();
+                tracing::info!(session = %attached.session, %reason, "no direct link; transfers stay on the RDP channel");
+            }
             Message::NoFiles { id } => {
                 if let Some(waiter) = attached.queries.lock().remove(&id) {
                     let _ = waiter.send(None);
@@ -670,9 +704,109 @@ impl Companions {
             }
         }
         attached.abort("the connection closed");
+        attached.direct.close();
+        attached.preparing.lock().take();
         let sending: Vec<u64> = attached.sources.lock().drain().collect();
         for id in sending {
             self.fail(id, "The connection closed before it finished");
+        }
+    }
+
+    /// Starts a direct link for this companion's transfers: gathers this side's addresses
+    /// (asking a STUN server for the public one) and offers them; the companion answers
+    /// with its own ([`Self::direct_answer`]).
+    fn start_direct(attached: &Arc<Attached>) {
+        let attached = Arc::clone(attached);
+        let spawned = std::thread::Builder::new()
+            .name("direct-prepare".into())
+            .spawn(move || {
+                let prepared = match Prepared::new(rdp_direct::STUN_SERVERS) {
+                    Ok(prepared) => prepared,
+                    Err(error) => {
+                        tracing::info!(session = %attached.session, error = %format!("{error:#}"), "no direct link");
+                        return;
+                    }
+                };
+                let offer = Message::DirectOffer {
+                    fingerprint: prepared.fingerprint().to_vec(),
+                    candidates: prepared.candidates().iter().map(ToString::to_string).collect(),
+                };
+                *attached.preparing.lock() = Some(prepared);
+                attached.link.send(&offer);
+            });
+        if let Err(error) = spawned {
+            tracing::warn!(%error, "couldn't start a direct link");
+        }
+    }
+
+    /// The companion answered our offer and is waiting: connect to it.
+    fn direct_answer(&self, attached: &Arc<Attached>, fingerprint: Vec<u8>, candidates: Vec<String>) {
+        let Some(prepared) = attached.preparing.lock().take() else {
+            return;
+        };
+        let fingerprint = match rdp_direct::parse_fingerprint(&fingerprint) {
+            Ok(fingerprint) => fingerprint,
+            Err(error) => {
+                tracing::warn!(%error, "the companion's direct-link answer is malformed");
+                return;
+            }
+        };
+        let host = self.prefs_for(&attached.session).host;
+        let owner = self.me.clone();
+        let weak = Arc::downgrade(attached);
+        let attached = Arc::clone(attached);
+        // Off the session thread: resolving the host and connecting take a moment.
+        let spawned = std::thread::Builder::new().name("direct-connect".into()).spawn(move || {
+            let mut addrs = rdp_direct::parse_candidates(&candidates);
+            // The address this session reaches the host at, with each port the companion
+            // listed (a host behind a one-to-one NAT keeps its ports).
+            let ports: Vec<u16> = addrs.iter().map(|a| a.port()).collect();
+            let resolved = std::net::ToSocketAddrs::to_socket_addrs(&(host.as_str(), 0)).map(|a| a.collect::<Vec<_>>());
+            for ip in resolved.unwrap_or_default().into_iter().filter(|a| a.is_ipv4()).map(|a| a.ip()) {
+                for &port in &ports {
+                    let addr = std::net::SocketAddr::new(ip, port);
+                    if !addrs.contains(&addr) {
+                        addrs.push(addr);
+                    }
+                }
+            }
+            tracing::info!(session = %attached.session, here = ?prepared.candidates(), companion = ?addrs, "opening a direct link");
+            let on_message = {
+                let weak = weak.clone();
+                Box::new(move |message| {
+                    if let (Some(owner), Some(attached)) = (owner.upgrade(), weak.upgrade()) {
+                        owner.on_message(&attached, message);
+                    }
+                })
+            };
+            let on_closed = Box::new(move |reason: String| {
+                if let Some(attached) = weak.upgrade() {
+                    attached.direct_lost(&reason);
+                }
+            });
+            let peer = Peer {
+                fingerprint,
+                candidates: addrs,
+            };
+            match rdp_direct::connect(prepared, peer, rdp_direct::CONNECT_TIMEOUT, on_message, on_closed) {
+                Ok(link) => {
+                    tracing::info!(
+                        session = %attached.session,
+                        remote = %link.remote(),
+                        rtt_ms = link.rtt().as_millis() as u64,
+                        "direct link to the companion; transfers go over it"
+                    );
+                    attached.direct.set(Some(link));
+                }
+                Err(error) => tracing::info!(
+                    session = %attached.session,
+                    error = %format!("{error:#}"),
+                    "no direct link to the companion; transfers stay on the RDP channel"
+                ),
+            }
+        });
+        if let Err(error) = spawned {
+            tracing::warn!(%error, "couldn't connect a direct link");
         }
     }
 
@@ -703,14 +837,32 @@ struct Attached {
     drag: Mutex<Option<RemoteDrag>>,
     /// Looking for a drag out of the session: (transfer id, where the pointer left).
     drag_out: Mutex<Option<(u64, (u16, u16))>>,
+    /// The direct link for transfers, while it's up.
+    direct: DirectSlot,
+    /// This side of a direct link being set up, until the companion answers.
+    preparing: Mutex<Option<Prepared>>,
 }
 
 impl Attached {
     fn outbox(&self) -> Outbox {
         let link = self.link.clone();
+        let direct = self.direct.clone();
         Arc::new(move |message| {
-            link.send(&message);
+            if !direct.try_send(&message) {
+                link.send(&message);
+            }
         })
+    }
+
+    /// The direct link closed: what was in flight on it is lost, so sources forget it and
+    /// sinks ask again, over the RDP channel.
+    fn direct_lost(&self, reason: &str) {
+        self.direct.set(None);
+        self.pump.rewind();
+        for inflow in self.inflows.lock().values() {
+            inflow.resume();
+        }
+        tracing::info!(session = %self.session, %reason, "direct link closed; transfers carry on over the RDP channel");
     }
 
     /// The companion offered files: the answer to a paste's query.

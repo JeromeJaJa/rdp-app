@@ -72,6 +72,7 @@ export const OVERRIDABLE = [
   "videoDecoder",
   "companion",
   "hostStatsInterval",
+  "directTransfers",
 ] as const;
 export type OverridableKey = (typeof OVERRIDABLE)[number];
 /** Only the overridden settings; anything absent is inherited. */
@@ -169,6 +170,8 @@ export interface Settings {
   companion: boolean;
   /** How often a companion reports its host's load, in seconds (0 = never). */
   hostStatsInterval: number;
+  /** Companion transfers go over a direct, encrypted link beside the session when one can be made. */
+  directTransfers: boolean;
   /** Which of its host's load sidebar rows and grid tiles show ("CPU 12%"), or nothing. */
   tabStats: TabStats;
   /** Share the clipboard (text, images, files) with remote sessions. */
@@ -211,6 +214,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoReconnect: true,
   companion: false,
   hostStatsInterval: 30,
+  directTransfers: true,
   tabStats: "cpu",
   clipboardSync: true,
   audio: "active",

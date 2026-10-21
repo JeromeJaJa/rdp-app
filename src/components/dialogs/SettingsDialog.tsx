@@ -171,6 +171,12 @@ function Connections() {
         <Switch checked={s.companion} onChange={(companion) => updateSettings({ companion })} />
       </Row>
       <Row
+        title="Direct transfers"
+        desc="Copies and sends go over a direct, encrypted link to each host's companion when one can be made, instead of the remote desktop connection (which caps uploads at about 1 MB/s on a distant host). Nothing listens on a port: both sides connect out, and a public STUN server tells this PC its own address."
+      >
+        <Switch checked={s.directTransfers} onChange={(directTransfers) => updateSettings({ directTransfers })} />
+      </Row>
+      <Row
         title="Host stats"
         desc="How often each host's companion reports its CPU, memory, disk and network load (shown on its tab). Sampling is a few system calls; nothing runs in between."
       >

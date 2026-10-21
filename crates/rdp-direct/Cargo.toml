@@ -1,0 +1,18 @@
+[package]
+name = "rdp-direct"
+description = "A direct, encrypted link between the RDP App client and its companion, beside the RDP connection."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+anyhow = "1"
+if-addrs = "0.15"
+quinn = { version = "0.11", default-features = false, features = ["runtime-tokio", "rustls-ring"] }
+rcgen = { version = "0.13", default-features = false, features = ["ring"] }
+rdp-companion-proto = { path = "../rdp-companion-proto" }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+sha2 = "0.10"
+tokio = { version = "1", features = ["rt", "net", "time", "sync", "macros"] }
+tracing = "0.1"

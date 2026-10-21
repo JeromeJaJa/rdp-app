@@ -119,6 +119,7 @@ pub fn default_settings() -> Map<String, Value> {
         "autoReconnect": true,
         "companion": false,
         "hostStatsInterval": 30,
+        "directTransfers": true,
         "tabStats": "cpu",
         "clipboardSync": true,
         "audio": "active",
@@ -458,6 +459,17 @@ impl Core {
     }
 
     /// A connection's host stats interval in seconds (0: off), from its settings.
+    /// What a session's settings ask of its companion.
+    pub fn companion_prefs(&self, id: &str) -> crate::companion_link::CompanionPrefs {
+        let s = self.effective_settings(id);
+        let on = s.get("companion").and_then(Value::as_bool) == Some(true);
+        crate::companion_link::CompanionPrefs {
+            stats_interval: self.stats_interval(id),
+            direct: on && s.get("directTransfers").and_then(Value::as_bool) != Some(false),
+            host: self.store.lock().connection(id).map(|c| c.host).unwrap_or_default(),
+        }
+    }
+
     pub fn stats_interval(&self, id: &str) -> u32 {
         let s = self.effective_settings(id);
         let on = s.get("companion").and_then(Value::as_bool) == Some(true);

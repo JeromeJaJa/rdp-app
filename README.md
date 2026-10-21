@@ -17,7 +17,9 @@ A fast, minimal Windows Remote Desktop client for managing many connections at o
   the host allows it. With it:
   - **Fast copies**: copy files, text or anything else here and paste there (or the other way), streamed and
     compressed instead of fetched a chunk at a time, so a high-latency link no longer caps a copy at a few MB/s and
-    text moves several times faster than the link's raw speed.
+    text moves several times faster than the link's raw speed. Where it can, it goes over a direct, encrypted link
+    beside the session (set up like Tailscale: both sides connect out, no port is opened), since the remote desktop
+    connection itself caps uploads near 1 MB/s on a distant host.
   - **Drag and drop** files between this PC and a session, both ways, behaving like a normal Windows drag (remote
     folders highlight, the cursor shows what a drop would do).
   - **Send files** to one connection, a group, or a selection: right-click → Send files…, or drop files on a tab, a
@@ -117,6 +119,7 @@ crates/rdp-engine/       the RDP engine (no UI dependencies)
 crates/rdp-testserver/   local RDP servers with animated content (RemoteFX, or H.264 with --h264 / --avc444)
 crates/rdp-companion/    the companion (runs in the remote session): stats, clipboard, drags, received files
 crates/rdp-companion-proto/  its wire protocol and the streamed file transfers both ends run
+crates/rdp-direct/       the direct link for transfers (UDP hole punching, QUIC, pinned certificates)
 crates/rdp-vfiles/       files from the other end offered to Windows apps as an OLE data object (paste, drag)
 crates/rdp-clipboard/    clipboard redirection (CLIPRDR), copying files through the companion when attached
 ```

@@ -190,6 +190,11 @@ impl Window {
         self.limit
     }
 
+    /// What was in flight is gone: no round trips to time from it.
+    pub fn forget_in_flight(&mut self) {
+        self.marks.clear();
+    }
+
     /// `total` bytes have now been sent.
     pub fn sent(&mut self, total: u64, now: Instant) {
         if self.marks.len() >= Self::MAX_MARKS {
@@ -349,6 +354,13 @@ impl Source {
 
     fn window_open(&self) -> bool {
         self.sent.saturating_sub(self.consumed) < self.window.limit()
+    }
+
+    /// What was in flight went on a path that's gone (the direct link closed): count it
+    /// as never sent, so the window opens for the sink's fetch to resend it.
+    pub fn rewind(&mut self) {
+        self.sent = self.consumed;
+        self.window.forget_in_flight();
     }
 
     /// Whether [`Source::poll`] would produce a message now.
@@ -659,6 +671,29 @@ impl Inflow {
         (!self.per_entry).then(|| (self.file_at_or_after(index.saturating_add(1)), 0))
     }
 
+    /// What the source had in flight may be lost (the direct link it came over closed):
+    /// ask again from where the data received so far ends. What's already here stays.
+    pub fn resume(&self) {
+        let fetch = {
+            let mut state = lock(&self.state);
+            let st: &mut InflowState = &mut state;
+            match (st.closed.is_some(), st.next) {
+                (false, Some((index, offset))) if usize::try_from(index).is_ok_and(|i| i < self.entries.len()) => {
+                    st.seq = st.seq.wrapping_add(1);
+                    Some(Message::Fetch {
+                        id: self.id,
+                        seq: st.seq,
+                        index,
+                        offset,
+                        single: self.per_entry,
+                    })
+                }
+                _ => None,
+            }
+        };
+        self.send(fetch);
+    }
+
     /// Whether the transfer is over (closed by either side, or aborted).
     pub fn is_closed(&self) -> bool {
         lock(&self.state).closed.is_some()
@@ -864,6 +899,8 @@ enum PumpEvent {
     Withdraw {
         id: u64,
     },
+    /// What was in flight is lost: see [`Source::rewind`].
+    Rewind,
 }
 
 /// Drives one link's sources on a thread of its own: reads files and sends their data
@@ -936,6 +973,7 @@ impl Pump {
                                 });
                             }
                         }
+                        PumpEvent::Rewind => sources.iter_mut().for_each(|(s, ..)| s.rewind()),
                         PumpEvent::Withdraw { id } => {
                             if let Some(at) = sources.iter().position(|(s, ..)| s.id() == id) {
                                 sources.swap_remove(at);
@@ -1005,6 +1043,11 @@ impl Pump {
     /// The sink closed transfer `id`.
     pub fn closed(&self, id: u64, error: Option<String>) {
         let _ = self.events.send(PumpEvent::Closed { id, error });
+    }
+
+    /// What every source had in flight is lost (the direct link closed).
+    pub fn rewind(&self) {
+        let _ = self.events.send(PumpEvent::Rewind);
     }
 
     /// Stops serving `id` and tells the sink (the files are no longer on offer).
@@ -1688,6 +1731,65 @@ mod tests {
             reader.0.receive(message);
         }
         assert_eq!(reader.1.join().unwrap().unwrap(), b);
+    }
+
+    #[test]
+    fn a_lost_stream_resumes_where_it_stopped() {
+        let a = pattern(CHUNK * 6, 7);
+        let entries: Arc<[Entry]> = vec![file("a", &a)].into();
+        let sent = Arc::new(Mutex::new(Vec::<Message>::new()));
+        let outbox_sent = Arc::clone(&sent);
+        let inflow = Arc::new(Inflow::new(
+            12,
+            Arc::clone(&entries),
+            Arc::new(move |m| outbox_sent.lock().unwrap().push(m)),
+        ));
+        let mut source = Source::new(12, entries, Box::new(Memory(vec![a.clone()])));
+        // The reader asks; two chunks arrive, the rest are lost with the link.
+        let reader = {
+            let inflow = Arc::clone(&inflow);
+            std::thread::spawn(move || read_all(&inflow, 0, 4096))
+        };
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let fetch = loop {
+            let found = sent.lock().unwrap().iter().find_map(|m| match m {
+                Message::Fetch { seq, index, offset, .. } => Some((*seq, *index, *offset)),
+                _ => None,
+            });
+            if let Some(f) = found {
+                break f;
+            }
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(5));
+        };
+        source.fetch(fetch.0, fetch.1, fetch.2, false);
+        let messages = drain(&mut source);
+        assert!(messages.len() > 2);
+        for message in messages.into_iter().take(2) {
+            inflow.receive(message);
+        }
+        assert!(!source.ready(), "the window is full of what was lost");
+        // The link closes: the source forgets what was in flight, the sink asks again.
+        source.rewind();
+        sent.lock().unwrap().clear();
+        inflow.resume();
+        let again = sent
+            .lock()
+            .unwrap()
+            .iter()
+            .find_map(|m| match m {
+                Message::Fetch { seq, index, offset, .. } => Some((*seq, *index, *offset)),
+                _ => None,
+            })
+            .expect("a fetch from where the data stopped");
+        assert_eq!(again.2, 2 * CHUNK as u64);
+        source.fetch(again.0, again.1, again.2, false);
+        let now = Instant::now();
+        while let Some(message) = source.poll(now) {
+            source.ack(u64::MAX, now);
+            inflow.receive(message);
+        }
+        assert_eq!(reader.join().unwrap().unwrap(), a);
     }
 
     #[test]

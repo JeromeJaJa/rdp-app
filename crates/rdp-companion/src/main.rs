@@ -199,6 +199,10 @@ mod windows_impl {
                             Message::ClipboardQuery { id } => transfers.clipboard_query(id),
                             Message::ClipboardOffer { id, formats } => transfers.clipboard_offer(id, formats),
                             Message::ClipboardRead { id, format } => transfers.clipboard_read(id, format),
+                            Message::DirectOffer {
+                                fingerprint,
+                                candidates,
+                            } => transfers.direct_offer(fingerprint, candidates),
                             Message::DragIn { id, entries, x, y } => transfers.drag_in(id, entries, x, y),
                             Message::DragCancel { id } => transfers.drag_cancel(id),
                             Message::DragOutProbe { id, x, y } => transfers.drag_out_probe(id, x, y),

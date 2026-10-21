@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 rdp-companion-proto = { path = "../rdp-companion-proto" }
+rdp-direct = { path = "../rdp-direct" }
 anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

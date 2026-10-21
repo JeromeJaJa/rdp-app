@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 pub const CHANNEL_NAME: &str = "RdpApp::Companion";
 
 /// Bumped on any breaking change to [`Message`]. Both sides send it in the handshake.
-pub const PROTOCOL_VERSION: u32 = 4;
+pub const PROTOCOL_VERSION: u32 = 5;
 
 /// A frame larger than this is treated as a desync and ends the channel, rather than
 /// buffering without bound.
@@ -252,6 +252,25 @@ pub enum Message {
         format: ClipFormat,
     },
 
+    /// Client → companion: let's open a direct link for transfers (see the `rdp-direct`
+    /// crate): the fingerprint of this side's certificate for it, and the addresses
+    /// (`ip:port`) it might be reached at.
+    DirectOffer {
+        #[serde(with = "serde_bytes")]
+        fingerprint: Vec<u8>,
+        candidates: Vec<String>,
+    },
+    /// Companion → client: the same for the companion, which now waits for the client.
+    DirectAnswer {
+        #[serde(with = "serde_bytes")]
+        fingerprint: Vec<u8>,
+        candidates: Vec<String>,
+    },
+    /// Companion → client: no direct link from here (why); transfers stay on this channel.
+    DirectUnavailable {
+        reason: String,
+    },
+
     /// Client → companion: files from this PC are being dragged onto the session at
     /// (`x`, `y`) (remote desktop pixels). Get a drag ready there and answer
     /// [`Message::DragReady`]; the client then presses the button there through the
@@ -469,6 +488,10 @@ mod tests {
             Message::ClipboardRead {
                 id: 6,
                 format: ClipFormat { id: 13, name: None },
+            },
+            Message::DirectOffer {
+                fingerprint: vec![7; 32],
+                candidates: vec!["192.0.2.1:50000".into()],
             },
             Message::Close { id: 2, error: None },
             Message::Bye,

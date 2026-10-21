@@ -202,6 +202,20 @@ pattern-matching against it.
     copy here asks the companion first (`ClipboardRead`: it streams the format straight away);
     files are read as `CF_HDROP` paths. If the companion can't serve it, CLIPRDR does. The
     companion's clipboard test runs on a private window station, so it never touches yours.
+  - **Direct link** (`crates/rdp-direct`): Windows' RDP listener keeps its TCP receive window at
+    64 KiB whatever the host's TCP tuning (measured: `server_window=62KiB`, auto-tuning `normal`),
+    so anything sent to the remote over RDP tops out near 64 KiB per round trip. Transfers
+    therefore ride a QUIC link of their own when one can be made, set up Tailscale/WebRTC-style:
+    both sides bind UDP, list their addresses (interfaces, plus the public one a STUN server
+    reports) and a per-link certificate fingerprint, and swap them over the companion channel
+    (`DirectOffer`/`DirectAnswer`); the companion sends openers so the client's packets pass its
+    firewall and NAT, and the client tries every address at once. Nothing listens for strangers,
+    and each side accepts only the pinned certificate. `DirectSlot::try_send` routes a transfer's
+    data, fetches and acks over it while it's up; everything else stays on the channel. If it
+    drops, the source forgets what was in flight (`Pump::rewind`) and the sink asks again from
+    where its data ends (`Inflow::resume`), over RDP. Layered setting `directTransfers` (on).
+    Verified over loopback (including losing the link mid-transfer); NAT traversal needs a
+    real host.
   - **Drag in**: the companion shows a near-invisible window under the pointer, the client presses
     the button there through the session, and the window's `DoDragDrop` follows the client's
     moves. **Drag out**: the companion puts a drop target under the remote pointer when the client
@@ -212,8 +226,8 @@ pattern-matching against it.
   build: a no-WinRM delivery path. Release builds bundle `rdp-companion.exe` next to the app.
   Enabled by the layered `companion` setting (off by default); `hostStatsInterval` (s) too: the
   companion samples every 5 s and sends the batch at that interval, so the hover card's trend lines
-  have detail without a message every few seconds. `tabStats` picks the one stat sidebar rows and tiles show (top tabs show none; hovering one
-  opens the card).
+  have detail without a message every few seconds. `tabStats` picks the one stat sidebar rows and
+  tiles show (top tabs show none; hovering one opens the card).
 
 ## Conventions and constraints
 

@@ -3,6 +3,9 @@
 //! Incoming offers are saved into a folder ("Send files to…") or put on the clipboard (a
 //! copy on the client); the client streams their contents ([`rdp_companion_proto::transfer`]).
 //! The other way, what was copied here is served when the client pastes it.
+//!
+//! Transfer traffic rides a direct link to the client when one is up ([`rdp_direct`]):
+//! the RDP connection caps what the client can send here at 64 KiB per round trip.
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -10,6 +13,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use rdp_companion_proto::transfer::{self, DiskFiles, Inflow, Note, Outbox, Produced, Pump, Source};
 use rdp_companion_proto::{ClipFormat, Entry, Intent, Message};
+use rdp_direct::{DirectSlot, Peer, Prepared};
 use windows::Win32::System::Com::CoTaskMemFree;
 use windows::Win32::System::Environment::ExpandEnvironmentStringsW;
 use windows::Win32::UI::Shell::{
@@ -37,14 +41,18 @@ pub(crate) struct Transfers {
     inflows: Arc<Mutex<HashMap<u64, Arc<Inflow>>>>,
     /// Files being dragged onto the session.
     drags: Drags,
+    /// The direct link to the client, while it's up.
+    direct: DirectSlot,
 }
 
 impl Transfers {
     pub(crate) fn new(channel: Arc<Channel>, clipboard: Arc<Clipboard>) -> std::io::Result<Self> {
         let sender = Arc::clone(&channel);
+        let direct = DirectSlot::default();
+        let route = direct.clone();
         let pump = Pump::spawn(
             "transfers",
-            move |message| sender.send(&message),
+            move |message| route.try_send(&message) || sender.send(&message),
             |note| match note {
                 Note::Closed { id, error, throughput } => {
                     tracing::info!(id, ?error, %throughput, "transfer to the client ended");
@@ -59,14 +67,96 @@ impl Transfers {
             sources: Mutex::default(),
             inflows: Arc::default(),
             drags: Drags::default(),
+            direct,
         })
     }
 
     fn outbox(&self) -> Outbox {
         let channel = Arc::clone(&self.channel);
+        let direct = self.direct.clone();
         Arc::new(move |message| {
-            channel.send(&message);
+            if !direct.try_send(&message) {
+                channel.send(&message);
+            }
         })
+    }
+
+    /// The client offers a direct link: answer with this side's addresses, then wait for
+    /// it to connect (sending openers its way meanwhile).
+    pub(crate) fn direct_offer(self: &Arc<Self>, fingerprint: Vec<u8>, candidates: Vec<String>) {
+        let this = Arc::clone(self);
+        let spawned = std::thread::Builder::new().name("direct".into()).spawn(move || {
+            let unavailable = |reason: String| {
+                tracing::info!(%reason, "no direct link");
+                this.channel.send(&Message::DirectUnavailable { reason });
+            };
+            let peer = match rdp_direct::parse_fingerprint(&fingerprint) {
+                Ok(fingerprint) => Peer {
+                    fingerprint,
+                    candidates: rdp_direct::parse_candidates(&candidates),
+                },
+                Err(error) => return unavailable(error.to_string()),
+            };
+            let prepared = match Prepared::new(rdp_direct::STUN_SERVERS) {
+                Ok(prepared) => prepared,
+                Err(error) => return unavailable(format!("{error:#}")),
+            };
+            tracing::info!(here = ?prepared.candidates(), client = ?peer.candidates, "opening a direct link");
+            this.channel.send(&Message::DirectAnswer {
+                fingerprint: prepared.fingerprint().to_vec(),
+                candidates: prepared.candidates().iter().map(ToString::to_string).collect(),
+            });
+            let weak = Arc::downgrade(&this);
+            let on_message = {
+                let weak = weak.clone();
+                Box::new(move |message| {
+                    if let Some(this) = weak.upgrade() {
+                        this.direct_message(message);
+                    }
+                })
+            };
+            let on_closed = Box::new(move |reason: String| {
+                if let Some(this) = weak.upgrade() {
+                    this.direct_lost(&reason);
+                }
+            });
+            match rdp_direct::accept(prepared, peer, rdp_direct::CONNECT_TIMEOUT, on_message, on_closed) {
+                Ok(link) => {
+                    tracing::info!(remote = %link.remote(), "direct link to the client; transfers go over it");
+                    this.direct.set(Some(link));
+                }
+                Err(error) => {
+                    tracing::info!(error = %format!("{error:#}"), "no direct link; transfers stay on the RDP channel")
+                }
+            }
+        });
+        if spawned.is_err() {
+            self.channel.send(&Message::DirectUnavailable {
+                reason: "couldn't start".into(),
+            });
+        }
+    }
+
+    /// A message over the direct link (only transfer traffic rides it).
+    fn direct_message(&self, message: Message) {
+        match message {
+            Message::Data { id, .. } | Message::End { id, .. } | Message::Unreadable { id, .. } => {
+                self.incoming(id, message);
+            }
+            Message::Fetch { .. } | Message::Ack { .. } => self.outgoing(&message),
+            _ => {}
+        }
+    }
+
+    /// The direct link closed: what was in flight on it is lost, so sources forget it and
+    /// sinks ask again, over the RDP channel.
+    fn direct_lost(&self, reason: &str) {
+        self.direct.set(None);
+        self.pump.rewind();
+        for inflow in lock(&self.inflows).values() {
+            inflow.resume();
+        }
+        tracing::info!(%reason, "direct link closed; transfers carry on over the RDP channel");
     }
 
     /// The client offers files.
@@ -283,6 +373,7 @@ impl Transfers {
     /// The client is gone: everything in flight fails, and files it put on the
     /// clipboard can't be pasted any more.
     pub(crate) fn detach(&self) {
+        self.direct.close();
         for (_, inflow) in lock(&self.inflows).drain() {
             inflow.abort("the client disconnected");
         }

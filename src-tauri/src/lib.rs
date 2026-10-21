@@ -649,8 +649,8 @@ pub fn run() {
             engine.set_certificate_store(Some(certs.clone() as Arc<dyn rdp_engine::CertificateStore>));
             let core = Arc::new(Core::new(store, engine, app.handle().clone(), certs, bus));
             let weak = Arc::downgrade(&core);
-            core.companions.set_interval_source(Arc::new(move |id: &str| {
-                weak.upgrade().map_or(0, |c| c.stats_interval(id))
+            core.companions.set_prefs_source(Arc::new(move |id: &str| {
+                weak.upgrade().map(|c| c.companion_prefs(id)).unwrap_or_default()
             }));
             core.apply_settings();
 

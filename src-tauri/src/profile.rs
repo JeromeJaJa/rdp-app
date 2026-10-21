@@ -20,6 +20,7 @@ pub const OVERRIDABLE: &[&str] = &[
     "videoDecoder",
     "companion",
     "hostStatsInterval",
+    "directTransfers",
 ];
 
 /// A group's or connection's overrides (only overridable keys).

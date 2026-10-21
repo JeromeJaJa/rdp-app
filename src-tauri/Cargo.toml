@@ -17,6 +17,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 rdp-engine = { path = "../crates/rdp-engine" }
 rdp-companion-proto = { path = "../crates/rdp-companion-proto" }
+rdp-direct = { path = "../crates/rdp-direct" }
 tauri = { version = "2", features = [] }
 tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
