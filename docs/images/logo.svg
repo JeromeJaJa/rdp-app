@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#232a5c"/>
+      <stop offset="1" stop-color="#0b0d1c"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="0" y1="0" x2="20" y2="20" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#b4c0ff"/>
+      <stop offset="1" stop-color="#7b6bff"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="url(#tile)"/>
+  <rect x="0.75" y="0.75" width="126.5" height="126.5" rx="27.25" fill="none" stroke="#ffffff" stroke-opacity="0.12" stroke-width="1.5"/>
+  <!-- The title bar's mark: a window, and a session window in front of it. -->
+  <g transform="translate(26 27) scale(3.8)">
+    <rect x="1.5" y="3" width="13" height="10" rx="2.5" fill="none" stroke="url(#mark)" stroke-width="1.6"/>
+    <rect x="6" y="7" width="12.5" height="10" rx="2.5" fill="url(#mark)"/>
+  </g>
+</svg>

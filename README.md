@@ -1,162 +1,210 @@
-<img src="assets/icon.svg" width="64" height="64" alt="">
+<div align="center">
+
+<img src="docs/images/logo.svg" width="88" height="88" alt="">
 
 # RDP App
 
-A fast, minimal Windows Remote Desktop client for managing many connections at once.
+**A fast, minimal Remote Desktop client for Windows, built to run 50–100+ sessions at once.**
 
-- **Built for scale**: 50–100+ simultaneous sessions. Each session has its own thread, and sessions you aren't looking at are paused on the server side, so they cost almost nothing.
-- **H.264**: graphics pipeline with AVC420 and AVC444 (full 4:4:4 color, so small colored text stays crisp), decoded on the GPU (Media Foundation / DXVA) or in software. Only the regions that changed are converted, straight into shared memory.
-- **Tabs on top or left**, drag to reorder (in the grid too, also across groups), a live **grid view** of every session.
-- **Separate windows**, Chrome-style: drag a tab out to give it a window of its own, drag tabs between windows. Sessions stay connected throughout and are sized to the window they're in.
-- **Groups**: every connection belongs to a group, the built-in **All** group or one of yours. Each group can connect/disconnect as a whole and have its whole list **replaced** from a pasted list (matching connections keep their live sessions).
-- **Bulk add**: paste `host:user:pass` lines (also `host:port:user:pass`, `DOMAIN\user`, `user@domain`, `[ipv6]:port:…`).
-- **Import / export** everything or single groups, as JSON (groups, notes) or bulk text. Exports include passwords in plain text, so treat the file like the passwords themselves.
-- Connections only connect when you ask: double-click or Enter on a tab, **Connect all** / **Disconnect all**, per group too.
-- Audio playback (from the session on screen, or all; each connection can override it or be muted), microphone, drive / printer / smart card redirection, RD Gateway (engine and API only for now; hidden in the interface), clipboard sharing (text, images, and files copied either way: copy in Explorer on one side, paste on the other), dynamic resolution, auto-reconnect.
-- **Companion** (experimental, off by default): a small agent inside each remote session, installed over WinRM where
-  the host allows it. With it:
-  - **Fast copies**: copy files, text or anything else here and paste there (or the other way), streamed and
-    compressed instead of fetched a chunk at a time, so a high-latency link no longer caps a copy at a few MB/s and
-    text moves several times faster than the link's raw speed. Where it can, it goes over a direct, encrypted link
-    beside the session (set up like Tailscale: both sides connect out, no port is opened), since the remote desktop
-    connection itself caps uploads near 1 MB/s on a distant host.
-  - **Drag and drop** files between this PC and a session, both ways, behaving like a normal Windows drag (remote
-    folders highlight, the cursor shows what a drop would do).
-  - **Program controls**: launch, restart or close a program (Valor, say) on one connection, a group, or a
-    selection, from the context menu.
-  - **Send files** to one connection, a group, or a selection: right-click → Send files…, or drop files on a tab, a
-    group or a grid tile. Hosts that aren't connected are connected first.
-  - **Host stats**: one labelled stat on each sidebar row and grid tile (CPU by default; memory, network or disk,
-    your pick), and CPU, memory, disk and network with their recent history when you hover it or a tab. Sampled every 5 s and sent every 30 s
-    by default (a setting).
-- Server certificates are pinned on first use and you are asked if one ever changes.
-- A **local REST API** (with docs) so scripts and AI agents can do everything you can do in the window.
-- Passwords are encrypted with Windows DPAPI (tied to your Windows account) and never reach the UI.
+[![CI](https://github.com/JeromeJaJa/rdp-app/actions/workflows/ci.yml/badge.svg)](https://github.com/JeromeJaJa/rdp-app/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/JeromeJaJa/rdp-app?color=7b6bff)](https://github.com/JeromeJaJa/rdp-app/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+![Windows 10 | 11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6)
 
-## Using it
+[Download](#download) · [Features](#features) · [Getting started](#getting-started) · [How it works](docs/ARCHITECTURE.md)
+
+<br>
+
+<img src="docs/images/hero.jpg" alt="RDP App's grid view: fourteen live sessions in three groups, each showing its host's CPU load, with a file send to one host part-way through">
+
+</div>
+
+<br>
+
+Most Remote Desktop clients are built around one session at a time. RDP App is built around a whole fleet of them.
+Every session runs on its own thread, the ones you aren't looking at are paused on the server so they cost almost
+nothing, and a live grid shows them all at once. Everything else stays out of the way: one window, dark glass, a
+command palette, and keyboard shortcuts for all of it.
+
+## Features
+
+**Built for many sessions**
+
+- Run **50–100+ sessions** side by side. Hidden sessions stop sending frames until you look at them again.
+- A **live grid** of every session: watch them all, click one to open it, drag to reorder.
+- **Groups** that connect, disconnect, import, export or receive files as a whole.
+- **Bulk add** from a pasted list (`host:user:pass`, `host:port:user:pass`, `DOMAIN\user`, `user@domain`,
+  `[ipv6]:port:…`), or **replace** a group's list in one go; connections that stay keep their live sessions.
+
+**Sharp, fast graphics**
+
+- H.264 through the graphics pipeline, including **AVC444** (full 4:4:4 color, so small colored text stays crisp).
+- Decoded on the **GPU** (Media Foundation / DXVA), or in software. Also RemoteFX, ClearCodec and Planar.
+- Only the regions that changed are converted and copied to the screen, with no per-frame messages in between.
+
+**Tabs and windows your way**
+
+- Tabs on top or on the left, drag to reorder, `Ctrl+K` to jump anywhere.
+- **Tear tabs off** into windows of their own, Chrome-style, and drag them between windows. Sessions stay connected
+  and resize to fit the window they're in.
+- A session toolbar on the top edge sends Win, Ctrl+Alt+Del, Alt+Tab and friends, mutes, reconnects or goes
+  fullscreen.
+
+**Everything you expect from RDP**
+
+- Clipboard both ways: text, images, and files (copy in Explorer on one side, paste on the other).
+- Audio playback and microphone, drive, printer and smart card redirection, dynamic resolution, auto-reconnect.
+- Server certificates pinned on first use, with a warning if one ever changes.
+
+**The companion** (experimental, off by default): a small helper inside each remote session that adds what plain RDP
+can't do. [More below](#the-companion).
+
+- **Fast copies**: copy and paste files or text between here and there, streamed and compressed.
+- **Drag and drop files** between this PC and a session, both ways, like a normal Windows drag.
+- **Send files** to one host, a group, or a selection: drop them on a tab, a group or a grid tile.
+- **Host stats** on every row and tile: CPU, memory, network or disk, with recent history on hover.
+- **Program controls**: launch, restart or close a program across a selection of hosts.
+
+**Scriptable**
+
+- A **local REST API** (with interactive docs and an `llms.txt`) lets scripts and AI agents do everything you can
+  do in the window. [More below](#automation).
+
+## Download
+
+Grab the latest build from [**Releases**](https://github.com/JeromeJaJa/rdp-app/releases/latest). It runs on
+Windows 10 and 11 (x64).
+
+| File | What it is |
+| --- | --- |
+| `RDP-App_<version>_x64-setup.exe` | The installer. Per user, no admin needed, and installs WebView2 if it's missing. |
+| `RDP-App_<version>_x64-portable.zip` | No install: unzip and run `rdp-app.exe`. Keep `rdp-companion.exe` next to it. |
+| `RDP-App_<version>_x64.exe` | Just the app. |
+
+The builds aren't code-signed yet, so SmartScreen may warn the first time: choose **More info → Run anyway**.
+`SHA256SUMS.txt` on each release lists the files' checksums.
+
+## Getting started
+
+1. **Add connections.** **+ New** (or `Ctrl+N`) adds one; `Ctrl+Shift+N` pastes a whole list.
+2. **Connect.** Double-click a connection, or select it and press `Enter`. Right-click a group for **Connect all**.
+   Nothing connects until you ask.
+3. **See them all.** `Ctrl+G` switches to the grid.
+
+<details>
+<summary><b>All shortcuts</b></summary>
+<br>
 
 | Action | How |
 | --- | --- |
 | Jump to a connection or run a command | `Ctrl+K`, or **Search** in the title bar |
-| Add one / many | `Ctrl+N` / `Ctrl+Shift+N`, or **+ New** (top of the sidebar; title bar when tabs are on top) |
-| Connect a tab | Double-click it, or select and press `Enter` |
-| Group actions (connect, replace list, import/export, rename) | Right-click the group header |
-| Grid view | `Ctrl+G` or the grid toggle (bottom of the sidebar; title bar when tabs are on top) — click a tile to open it, drag to reorder |
-| Switch within a group | With tabs on the left, click the connection name in the title bar |
+| Add one / many | `Ctrl+N` / `Ctrl+Shift+N`, or **+ New** |
+| Connect | Double-click, or select and press `Enter` |
+| Pick several connections | `Ctrl`+click / `Shift`+click in the sidebar, then right-click one of them |
+| Group actions (connect, replace list, import / export, rename) | Right-click the group header |
+| Grid view | `Ctrl+G`, or the grid toggle |
 | Next / previous tab | `Ctrl+Tab` / `Ctrl+Shift+Tab`, `Ctrl+1…9`, or `Shift`+scroll over the top tabs |
-| Open a tab in its own window | Drag it out of the tab strip (or over the session), or right-click → **Open in new window** |
-| Move a tab between windows | Drag it onto the other window; its × (or `Ctrl+W`) sends it back to the main window. Closing a window does too |
-| Session toolbar (send keys, mute, reconnect, fullscreen) | Rest the pointer on the top edge of a session; its X hides it until you move away |
+| Open a tab in its own window | Drag it out of the tab strip, or right-click → **Open in new window** |
+| Move a tab back to the main window | Its ×, `Ctrl+W`, or close its window |
+| Session toolbar | Rest the pointer on the top edge of a session |
 | Send Win, Win+R, Alt+Tab, Task Manager… | Session toolbar → keyboard button |
-| Release keyboard from a session | Click outside it, or `Ctrl+Alt+Home` |
+| Release the keyboard from a session | Click outside it, or `Ctrl+Alt+Home` |
 
-While a session has focus, every key goes to it (app shortcuts resume when it loses focus). Windows itself keeps a few
-combinations, like Win, Alt+Tab and Ctrl+Alt+Del. Use the toolbar to send those.
+While a session has focus, every key goes to it, and the app's shortcuts come back when it loses focus. Windows keeps
+a few combinations for itself (Win, Alt+Tab, Ctrl+Alt+Del): send those from the session toolbar.
 
-Your library lives in `%APPDATA%\com.jeromejaja.rdpapp\library.json` and pinned certificates in `certs.json` next to it.
-Libraries from older versions are upgraded on first start (connections without a group move to **All**).
+</details>
 
-## Local REST API
+Your library lives in `%APPDATA%\com.jeromejaja.rdpapp\library.json`, with pinned certificates in `certs.json` next
+to it. **Import / export** (from the sidebar, or per group) moves it between machines as JSON or as a plain list.
 
-Settings → Automation shows the address, the token and the docs. The API listens on `127.0.0.1:47123` only and every
-request needs the token:
+## The companion
+
+Some things plain RDP can't do well. Uploads are the clearest case: Windows' RDP listener keeps its receive window
+at 64 KiB, so a copy to a distant host crawls whatever your bandwidth. The companion is a small program that runs
+inside the remote session and opens a channel back to the app, and that's what makes fast copies, drag and drop,
+sends, host stats and program controls possible.
+
+- **Off by default.** Turn it on in Settings, for all connections, a group, or a single one. The app installs it
+  over WinRM where the host allows that, and keeps it up to date.
+- **A direct link when it can.** File transfers and the companion's messages take a direct, encrypted QUIC link
+  beside the session, set up the way Tailscale does it: both sides reach out and meet in the middle (with a public
+  STUN server's help to find their addresses), so **no port is opened** anywhere. Each side accepts only the other's
+  certificate, swapped over the RDP session. If the link can't be made, or drops, everything carries on over RDP.
+- **It stays in its lane.** It runs as the signed-in user, drags only ever copy (never move), and program controls
+  only touch programs in that user's session.
+
+The companion is newer than the rest of the app and has seen fewer setups.
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#the-companion) has the details.
+
+## Automation
+
+The app runs a REST API for scripts and AI agents. It listens on `127.0.0.1:47123` only, and every request needs the
+token shown in **Settings → Automation**:
 
 ```sh
 curl -H "Authorization: Bearer <token>" http://127.0.0.1:47123/api/v1/state
 ```
 
-- `http://127.0.0.1:47123/docs`: interactive reference (try requests in the page)
-- `http://127.0.0.1:47123/llms.txt`: the same reference as plain text, meant to be handed to an agent
-- `http://127.0.0.1:47123/openapi.json`: OpenAPI 3 description
+It covers groups and connections (bulk add and group replace included), sessions (connect, wait, disconnect,
+reconnect), screenshots, keyboard, mouse and text input, certificates, settings, import / export, and a live stream
+of status changes.
 
-It covers groups and connections (including bulk add and group replace), sessions (connect with `?wait=true`,
-disconnect, reconnect), PNG screenshots, keyboard/mouse/text input, certificates, settings, import/export, driving the
-window, and a Server-Sent Events stream of status changes.
+- `http://127.0.0.1:47123/docs`: an interactive reference
+- `http://127.0.0.1:47123/llms.txt`: the same reference as plain text, to hand to an agent
+- `http://127.0.0.1:47123/openapi.json`: the OpenAPI 3 description
 
-## Development
+## Privacy and security
 
-Requirements: Rust (MSVC toolchain), [Bun](https://bun.sh), Visual Studio C++ build tools, and NASM (on `PATH`; without
-it the H.264 decoder quietly builds without its assembly and decodes much slower).
+- **Passwords are encrypted with Windows DPAPI**, tied to your Windows account, and never reach the interface.
+- **No accounts, no cloud, no telemetry.** The app talks to your hosts, and when the companion sets up a direct
+  link, to a public STUN server to learn its own address.
+- **The REST API is loopback-only** and needs a token.
+- **No system-wide keyboard hook and no injected input.** Special keys go through the session, and keystrokes are
+  never logged.
+- **Exports include passwords in plain text**, by design, so a backup restores everything. Treat an export file like
+  the passwords themselves.
+
+## Building from source
+
+You'll need Rust (MSVC toolchain), [Bun](https://bun.sh), the Visual Studio C++ build tools, and
+[NASM](https://www.nasm.us) on your `PATH` (without it the H.264 decoder quietly builds without its assembly and
+decodes much slower).
 
 ```sh
 bun install
-bun run tauri dev      # full app
-bun run dev            # UI only, in a browser, with a mock backend and fake sessions
-bun run build:release  # release build + installer (with the companion) in target/release/bundle/nsis/
+bun run tauri dev      # the full app
+bun run dev            # just the UI, in a browser, with a mock backend and fake sessions
+bun run build:release  # a release build, with the installer, in target/release/bundle/nsis/
 ```
 
-### CI and releases
+`cargo test --workspace` runs the Rust tests. `crates/rdp-testserver` runs local RDP servers with animated content,
+so you can load-test without real hosts; [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#testing-without-real-hosts)
+shows how.
 
-Every push to `main` and every pull request is checked on Windows (`.github/workflows/ci.yml`): UI typecheck and
-build, `cargo fmt`, clippy with warnings as errors, and the tests. To publish a release, bump `version` in
-`src-tauri/tauri.conf.json`, then push a matching tag (`git tag v0.1.0 && git push origin v0.1.0`). The release workflow
-builds the installer, a portable zip, and the bare exe, and attaches them to a GitHub release. Running the workflow by
-hand builds the same files as an artifact without publishing.
+## Documentation
 
-### Layout
+- [**How it works**](docs/ARCHITECTURE.md): the code layout, how frames reach the screen, the companion and its
+  direct link, testing, releases, and current limitations.
+- [**Contributing rules**](AGENTS.md): the invariants, performance rules and Windows gotchas to know before changing
+  the code, for people and coding agents alike.
 
-```
-src/                     React UI (Vite, TypeScript, zustand, dnd-kit)
-  engine/tauri/          session view, input translation, shared-memory frame painter
-  engine/mock/           fake sessions for UI work in a browser
-  lib/backend/           Backend contract (tauri.ts = Rust, mock.ts = in-browser)
-src-tauri/               Tauri shell
-  src/core.rs            everything the UI and the API can do (both go through here)
-  src/store/             encrypted library, groups, import/export
-  src/api/               REST API server, endpoint table, generated docs
-  src/certs.rs           pinned server certificates
-  src/frames.rs          WebView2 shared buffers
-  src/tearoff.rs         tabs torn off into windows of their own
-  src/companion_link.rs  attached companions: host stats, sends, fast copies, drags
-  src/file_drop.rs       files dropped in from other apps (the window's own OLE drop target)
-crates/rdp-engine/       the RDP engine (no UI dependencies)
-  src/session.rs         per-session thread: connect, reconnect, input, pause/resume, resize
-  src/connect.rs         transport (direct or RD Gateway), TLS, channels
-  src/gfx/               graphics pipeline client (surfaces, cache, region-limited color conversion)
-    avc444.rs            rebuilds 4:4:4 chroma from the two AVC444 / AVC444v2 streams
-    mf.rs                GPU H.264 decoder (Media Foundation + Direct3D 11)
-  src/audio.rs           playback and microphone
-  src/devices.rs         drive / printer / smart card redirection
-  src/surface.rs         shared-memory frame format polled by the renderer
-crates/rdp-testserver/   local RDP servers with animated content (RemoteFX, or H.264 with --h264 / --avc444)
-crates/rdp-companion/    the companion (runs in the remote session): stats, clipboard, drags, received files
-crates/rdp-companion-proto/  its wire protocol and the streamed file transfers both ends run
-crates/rdp-direct/       the direct link for transfers (UDP hole punching, QUIC, pinned certificates)
-crates/rdp-vfiles/       files from the other end offered to Windows apps as an OLE data object (paste, drag)
-crates/rdp-clipboard/    clipboard redirection (CLIPRDR), copying files through the companion when attached
-```
+## Status
 
-**How frames reach the screen:** each session decodes into a framebuffer in Rust. Changed rectangles are copied into a
-WebView2 shared buffer that the page maps as an `ArrayBuffer`, and a ring of rectangles is published in the buffer header.
-The page polls that header once per display frame and repaints only what changed. No per-frame IPC messages, no extra
-copies. Grid tiles get separate downscaled thumbnail buffers, refreshed at most every 150 ms.
+RDP App is young (0.x), and its core (sessions, graphics, clipboard, tabs and windows) is tested against real
+Windows hosts. A few parts are built but not yet tested against real hardware: audio, microphone, drive / printer /
+smart card redirection, RD Gateway, and AVC444 from a Windows server. The companion works on the hosts it has met,
+but those are few so far. See [current limitations](docs/ARCHITECTURE.md#current-limitations).
 
-### Testing without real hosts
+Issues and pull requests are welcome. Please read [AGENTS.md](AGENTS.md) first: performance is treated as a
+correctness requirement here.
 
-```sh
-cargo run -p rdp-testserver -- --count 50                  # 50 servers on 127.0.0.1:33890+ (user test / pass test)
-cargo run -p rdp-testserver -- --count 1 --h264 --fps 30   # H.264 over the graphics pipeline
-cargo run -p rdp-testserver -- --count 1 --mix             # H.264 mixed with ClearCodec / Planar regions
-cargo run -p rdp-testserver -- --count 1 --avc444          # AVC444 (--avc444v2 for the v2 layout), with a 1-px color test block
-cargo run -p rdp-engine --bin rdp-probe -- --file hosts.txt --count 50 --seconds 20
-```
+## Acknowledgements
 
-`rdp-probe` connects headlessly, prints events and frame rates, and saves a PNG of the first session. Put real hosts in
-`test-hosts.txt` (gitignored, one `host[:port]:user:pass` per line) to probe them. Set
-`RDP_LOG=rdp_engine::session=debug` to get per-session CPU accounting.
+Built on [IronRDP](https://github.com/Devolutions/IronRDP) and [Tauri](https://tauri.app), with
+[quinn](https://github.com/quinn-rs/quinn), [OpenH264](https://github.com/cisco/openh264), React and many other
+open-source projects.
 
-## Current limitations
+## License
 
-- Image quality is the host's choice. Windows sends photos/gradients as RemoteFX Progressive at its configured
-  quality (default "Medium", visibly soft). For sharper output set the host's Group Policy *Remote Desktop Session Host →
-  Remote Session Environment → "Configure image quality for RemoteFX Adaptive Graphics"* to High or Lossless, or enable
-  *"Prioritize H.264/AVC 444 graphics mode"*.
-- Windows hosts only send AVC444 when configured to (Group Policy "Prioritize H.264/AVC 444 graphics mode"); otherwise
-  they use AVC420 for video and lossless codecs for text, which is also handled. AVC444 has been verified against the
-  local test server, which packs frames by the MS-RDPEGFX equations, not yet against a Windows host.
-- With the decoder on Auto, the first 8 H.264 streams decode on the GPU and the rest in software (each GPU decoder
-  holds its own video memory pool).
-- Audio, microphone, drive/printer/smart card redirection and RD Gateway are built on IronRDP's implementations but
-  have not been tested against real Windows hosts and gateways yet (the local test server doesn't exercise them).
-
-Built on [IronRDP](https://github.com/Devolutions/IronRDP) (MIT/Apache-2.0) and [Tauri](https://tauri.app).
+[MIT](LICENSE)
