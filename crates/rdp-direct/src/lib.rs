@@ -560,7 +560,9 @@ mod tests {
             assert_eq!(message, data(i, LEN), "message {i}");
         }
         let mb_per_s = (u64::from(N) * LEN as u64) as f64 / 1e6 / started.elapsed().as_secs_f64();
-        assert!(mb_per_s > 100.0, "{mb_per_s:.0} MB/s over loopback");
+        // Hundreds of MB/s on a desktop, ~60 on a 2-core CI runner: the bar only catches a
+        // link that's throttled (one round trip per message, say), far below either.
+        assert!(mb_per_s > 20.0, "{mb_per_s:.0} MB/s over loopback");
     }
 
     #[test]
