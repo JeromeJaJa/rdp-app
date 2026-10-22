@@ -240,9 +240,10 @@ pattern-matching against it.
     is up (a drag that never saw the release held the mouse until the app quit:
     `rdp-vfiles/tests/drag_ends.rs`). Files dropped on a window bring it to the front
     (`file_drop::bring_to_front`, without Tauri's `set_focus`, which presses Alt).
-  The channel, WinRM install and auto-install are verified against a live host; **stats, fast
-  copies, sends and drags are unit/mock tested but not yet verified against a live host**. Still to
-  build: a no-WinRM delivery path. Release builds bundle `rdp-companion.exe` next to the app.
+  The channel, WinRM install, auto-install, stats, fast copies (over the direct link too), sends
+  and drags both ways have been used against a live host, but on **few setups so far** (NAT
+  traversal between unrelated networks in particular). Still to build: a no-WinRM delivery path.
+  Release builds bundle `rdp-companion.exe` next to the app.
   Enabled by the layered `companion` setting (off by default); `hostStatsInterval` (s) too: the
   companion samples every 5 s and sends the batch at that interval, so the hover card's trend lines
   have detail without a message every few seconds. `tabStats` picks the one stat sidebar rows and
