@@ -70,6 +70,7 @@ export const OVERRIDABLE = [
   "codec",
   "h264Quality",
   "videoDecoder",
+  "remoteWallpaper",
   "companion",
   "hostStatsInterval",
   "directTransfers",
@@ -164,6 +165,8 @@ export interface Settings {
   h264Quality: "balanced" | "sharp";
   /** H.264 decoder: "auto" = GPU for the first sessions, then software. */
   videoDecoder: "auto" | "hardware" | "software";
+  /** Show the remote desktop's wallpaper; off gives sessions a plain background (less to send). */
+  remoteWallpaper: boolean;
   /** Automatically reconnect after a network drop. */
   autoReconnect: boolean;
   /** Let a companion running on the remote attach for deeper integration (experimental). */
@@ -211,6 +214,7 @@ export const DEFAULT_SETTINGS: Settings = {
   codec: "auto",
   h264Quality: "sharp",
   videoDecoder: "auto",
+  remoteWallpaper: true,
   autoReconnect: true,
   companion: false,
   hostStatsInterval: 30,

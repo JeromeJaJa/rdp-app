@@ -186,6 +186,9 @@ pub struct ConnectParams {
     pub devices: DeviceRedirection,
     /// Register the companion channel, so a companion running on the remote can attach.
     pub companion: bool,
+    /// Show the remote desktop's wallpaper. Off asks the server for a plain background
+    /// (`DISABLE_WALLPAPER`) for this session only: less to encode, send and decode.
+    pub wallpaper: bool,
 }
 
 impl ConnectParams {
@@ -208,6 +211,7 @@ impl ConnectParams {
             microphone: false,
             devices: DeviceRedirection::default(),
             companion: false,
+            wallpaper: true,
         }
     }
 }

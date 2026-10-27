@@ -53,8 +53,8 @@ Conventions:
 - Connection settings are layered: the app settings (/settings), overridden by a group's "settings", overridden by a
   connection's "settings". Overridable keys: audio, microphone, clipboardSync, driveRedirection (none|all|custom),
   drivePaths (folders shared when custom), printerRedirection, smartcardRedirection, autoReconnect, codec,
-  h264Quality, videoDecoder, companion, hostStatsInterval. A "settings" object holds only the overrides; {}
-  inherits everything.
+  h264Quality, videoDecoder, remoteWallpaper, companion, hostStatsInterval, directTransfers. A "settings" object
+  holds only the overrides; {} inherits everything.
 - The companion (setting "companion") is a small agent in the remote session: it reports host load (/stats) and
   receives files (/files/send).
 - Connecting is asynchronous. Add ?wait=true to block until sessions are connected or failed (timeout ?timeout=30 s),
@@ -612,7 +612,7 @@ pub const ENDPOINTS: &[Endpoint] = &[
         path: "/api/v1/settings",
         tag: "Settings",
         summary: "Current settings",
-        description: "Keys: theme (dark|light|system), topTabs (active: tabs only for connecting/connected sessions | opened: any opened connection), connectOnSelect, maxConcurrentConnects (1-32), pauseHiddenSessions, codec (auto|h264|remotefx), h264Quality (balanced|sharp: 4:4:4 when the host offers it), videoDecoder (auto|hardware|software), autoReconnect, clipboardSync, audio (off|active|all), microphone, driveRedirection (none|all|custom), drivePaths, printerRedirection, smartcardRedirection, certificatePolicy (tofu|prompt|ignore), apiEnabled, apiPort, plus UI layout values.",
+        description: "Keys: theme (dark|light|system), topTabs (active: tabs only for connecting/connected sessions | opened: any opened connection), connectOnSelect, maxConcurrentConnects (1-32), pauseHiddenSessions, codec (auto|h264|remotefx), h264Quality (balanced|sharp: 4:4:4 when the host offers it), videoDecoder (auto|hardware|software), remoteWallpaper (false: plain background, applies on the next connect), autoReconnect, clipboardSync, audio (off|active|all), microphone, driveRedirection (none|all|custom), drivePaths, printerRedirection, smartcardRedirection, certificatePolicy (tofu|prompt|ignore), apiEnabled, apiPort, plus UI layout values.",
         params: &[],
         body: None,
         response: Some(

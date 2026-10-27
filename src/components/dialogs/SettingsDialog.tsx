@@ -254,6 +254,12 @@ function Graphics() {
           ]}
         />
       </Row>
+      <Row
+        title="Remote wallpaper"
+        desc={`Show each remote desktop's wallpaper. Off gives sessions a plain background, which is less for the host to send. The host's own wallpaper setting isn't changed. ${NOTE_NEW}`}
+      >
+        <Switch checked={s.remoteWallpaper} onChange={(remoteWallpaper) => updateSettings({ remoteWallpaper })} />
+      </Row>
       <h3 className="settings__heading">Performance</h3>
       <Row title="Pause hidden sessions" desc="Servers stop sending frames for sessions that aren't on screen. Saves bandwidth and CPU.">
         <Switch checked={s.pauseHiddenSessions} onChange={(pauseHiddenSessions) => updateSettings({ pauseHiddenSessions })} />

@@ -116,6 +116,7 @@ pub fn default_settings() -> Map<String, Value> {
         "codec": "auto",
         "h264Quality": "sharp",
         "videoDecoder": "auto",
+        "remoteWallpaper": true,
         "autoReconnect": true,
         "companion": false,
         "hostStatsInterval": 30,
@@ -1019,6 +1020,7 @@ impl Core {
             },
             microphone: bool_of("microphone", false),
             companion: bool_of("companion", false),
+            wallpaper: bool_of("remoteWallpaper", true),
             devices: DeviceRedirection {
                 drives,
                 printer: bool_of("printerRedirection", false),

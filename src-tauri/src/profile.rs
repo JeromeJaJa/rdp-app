@@ -18,6 +18,7 @@ pub const OVERRIDABLE: &[&str] = &[
     "codec",
     "h264Quality",
     "videoDecoder",
+    "remoteWallpaper",
     "companion",
     "hostStatsInterval",
     "directTransfers",

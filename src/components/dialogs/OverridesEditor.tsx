@@ -37,6 +37,7 @@ const CHOICES: { [K in OverridableKey]?: Choice<Settings[K]>[] } = {
   printerRedirection: ON_OFF,
   smartcardRedirection: ON_OFF,
   autoReconnect: ON_OFF,
+  remoteWallpaper: ON_OFF,
   codec: [
     { value: "auto", label: "Auto" },
     { value: "h264", label: "H.264" },
@@ -75,6 +76,7 @@ const SECTIONS: { title: string; rows: { key: OverridableKey; label: string }[] 
       { key: "codec", label: "Graphics codec" },
       { key: "h264Quality", label: "H.264 colour" },
       { key: "videoDecoder", label: "Video decoder" },
+      { key: "remoteWallpaper", label: "Remote wallpaper" },
     ],
   },
 ];

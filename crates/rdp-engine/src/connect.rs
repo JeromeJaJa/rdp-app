@@ -101,7 +101,14 @@ pub(crate) fn connector_config(params: &ConnectParams, viewport: Viewport) -> ir
         multitransport_flags: None,
         support_dyn_vc_gfx_protocol: params.codec != CodecPreference::RemoteFx,
         compression_type: Some(CompressionType::K64),
-        performance_flags: PerformanceFlags::ENABLE_FONT_SMOOTHING | PerformanceFlags::ENABLE_DESKTOP_COMPOSITION,
+        performance_flags: {
+            let mut flags = PerformanceFlags::ENABLE_FONT_SMOOTHING | PerformanceFlags::ENABLE_DESKTOP_COMPOSITION;
+            // Sent once at login: a change applies from the next connect.
+            if !params.wallpaper {
+                flags |= PerformanceFlags::DISABLE_WALLPAPER;
+            }
+            flags
+        },
         timezone_info: TimezoneInfo::default(),
         alternate_shell: String::new(),
         work_dir: String::new(),
@@ -377,6 +384,29 @@ fn client_name() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn wallpaper_setting_drives_the_performance_flag() {
+        let viewport = Viewport {
+            width: 1280,
+            height: 720,
+            scale: 100,
+        };
+        let shown = connector_config(&ConnectParams::new("h", 3389, "u", "p"), viewport);
+        assert!(!shown.performance_flags.contains(PerformanceFlags::DISABLE_WALLPAPER));
+        let plain = ConnectParams {
+            wallpaper: false,
+            ..ConnectParams::new("h", 3389, "u", "p")
+        };
+        let hidden = connector_config(&plain, viewport);
+        assert!(hidden.performance_flags.contains(PerformanceFlags::DISABLE_WALLPAPER));
+        // The rest of the experience stays as it was.
+        assert!(
+            hidden
+                .performance_flags
+                .contains(PerformanceFlags::ENABLE_FONT_SMOOTHING)
+        );
+    }
 
     #[test]
     fn splits_domain_forms() {
