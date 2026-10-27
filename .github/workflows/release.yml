@@ -33,6 +33,10 @@ jobs:
           if ($env:GITHUB_REF_TYPE -eq "tag" -and $env:GITHUB_REF_NAME -ne "v$version") {
             throw "Tag $env:GITHUB_REF_NAME doesn't match the app version $version (src-tauri/tauri.conf.json)"
           }
+          # The release notes come from CHANGELOG.md: fail now, not after the build, if it's missing.
+          if ($env:GITHUB_REF_TYPE -eq "tag" -and -not (Select-String -Path CHANGELOG.md -Pattern "## [$version]" -SimpleMatch -Quiet)) {
+            throw "CHANGELOG.md has no '## [$version]' section"
+          }
           "version=$version" >> $env:GITHUB_OUTPUT
 
       # The H.264 decoder's SIMD assembly needs NASM; without it the codec quietly builds
@@ -89,9 +93,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $v = "${{ steps.version.outputs.version }}"
+          # This version's section of CHANGELOG.md: from its heading to the next version's (or
+          # the link references at the end).
+          $log = Get-Content CHANGELOG.md -Raw
+          $m = [regex]::Match($log, "(?ms)^## \[$([regex]::Escape($v))\][^\r\n]*\r?\n(.*?)(?=^## \[|^\[\d)")
+          if (-not $m.Success) { throw "CHANGELOG.md has no '## [$v]' section" }
+          $changes = $m.Groups[1].Value.Trim()
           @"
           Windows x64: download **RDP-App_${v}_x64-setup.exe** and run it. It installs per user (no admin needed) and installs WebView2 if it's missing.
 
-          The builds aren't code-signed yet, so Windows SmartScreen may warn on first run: choose **More info → Run anyway**. ``SHA256SUMS.txt`` lists the files' checksums.
+          $changes
+
+          The builds aren't code-signed yet, so Windows SmartScreen may warn on first run: choose **More info → Run anyway**. ``SHA256SUMS.txt`` lists the installer's checksum.
           "@ | Set-Content notes.md
           gh release create $env:GITHUB_REF_NAME release-assets/* --title "RDP App $env:GITHUB_REF_NAME" --notes-file notes.md --generate-notes

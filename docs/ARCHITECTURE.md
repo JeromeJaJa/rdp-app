@@ -251,8 +251,10 @@ first).
 Every push to `main` and every pull request is checked on Windows (`.github/workflows/ci.yml`): the UI typecheck and
 build, `cargo fmt`, clippy with warnings as errors, and the tests.
 
-To publish a release, bump `version` in `src-tauri/tauri.conf.json` and push a matching tag
-(`git tag v0.2.0 && git push origin v0.2.0`). The release workflow builds the installer, checks it carries the
+To publish a release, bump the version (`src-tauri/tauri.conf.json`, `package.json` and the workspace `Cargo.toml`),
+add a `## [x.y.z]` section to `CHANGELOG.md`, and push a matching tag (`git tag v0.3.0 && git push origin v0.3.0`).
+The release fails early if the changelog has no section for the version, and that section becomes the release
+notes. The release workflow builds the installer, checks it carries the
 companion, and attaches it, with a checksum, to a GitHub release. Only the installer is published: it puts
 `rdp-companion.exe` next to the app, which a bare exe can't. Running the workflow by hand builds the same files as an
 artifact without publishing.
