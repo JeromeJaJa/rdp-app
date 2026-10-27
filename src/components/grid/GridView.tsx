@@ -2,11 +2,13 @@ import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "reac
 import { createPortal } from "react-dom";
 import { DndContext, DragOverlay, useDroppable } from "@dnd-kit/core";
 import { SortableContext, rectSortingStrategy } from "@dnd-kit/sortable";
-import { connectAll, updateSettings } from "../../state/actions";
-import { isLive, setState, useStore } from "../../state/store";
+import { MoreHorizontal } from "lucide-react";
+import { connectAll, disconnectAll, openMenu, updateSettings } from "../../state/actions";
+import { isLive, setState, useBulkActions, useStore } from "../../state/store";
 import { containerId, useTabsDnd } from "../tabs/useTabsDnd";
 import { Button, Segmented } from "../ui/ui";
-import { ConnectIcon } from "../common/SessionIcons";
+import { ConnectIcon, DisconnectIcon } from "../common/SessionIcons";
+import type { ConnectionId } from "../../lib/types";
 import { GridTile, GridTileOverlay, noteDragEnd } from "./GridTile";
 import { TileObserverContext, type TileObserver } from "./tileObserver";
 import "./grid.css";
@@ -53,6 +55,47 @@ function useTileObserver(root: React.RefObject<HTMLDivElement | null>): TileObse
   }, [root]);
 
   return obs;
+}
+
+/** A grid group's heading: its name, live/total count, and the same group controls as
+ *  the sidebar (connect all, disconnect all, and the full group menu). */
+function GridSectionHeader({ groupId, name, ids }: { groupId: string; name: string; ids: ConnectionId[] }) {
+  const live = useStore((s) => ids.reduce((n, id) => n + (isLive(s.sessions[id]?.status ?? "idle") ? 1 : 0), 0));
+  const { canConnect, canDisconnect } = useBulkActions(ids);
+  return (
+    <h2 className="grid-section__title">
+      {name}
+      <span className="grid-section__count">{live ? `${live}/${ids.length}` : ids.length}</span>
+      <span className="grid-section__actions">
+        {canConnect && (
+          <button className="tab__action" title="Connect all in group" aria-label="Connect all in group" onClick={() => connectAll(ids)}>
+            <ConnectIcon size={13} />
+          </button>
+        )}
+        {canDisconnect && (
+          <button
+            className="tab__action"
+            title="Disconnect all in group"
+            aria-label="Disconnect all in group"
+            onClick={() => disconnectAll(ids)}
+          >
+            <DisconnectIcon size={13} />
+          </button>
+        )}
+        <button
+          className="tab__action"
+          title="Group actions"
+          aria-label="Group actions"
+          onClick={(e) => {
+            const r = e.currentTarget.getBoundingClientRect();
+            openMenu({ x: r.left, y: r.bottom + 4, target: { kind: "group", id: groupId } });
+          }}
+        >
+          <MoreHorizontal size={14} />
+        </button>
+      </span>
+    </h2>
+  );
 }
 
 /** A section's grid; also the drop target for tiles dragged in from another group. */
@@ -153,10 +196,7 @@ function GridViewInner() {
               visibleSections.map((sec) => (
                 <section key={sec.groupId} className="grid-section">
                   {showHeaders && (
-                    <h2 className="grid-section__title">
-                      {groupName.get(sec.groupId)}
-                      <span className="grid-section__count">{sec.ids.length}</span>
-                    </h2>
+                    <GridSectionHeader groupId={sec.groupId} name={groupName.get(sec.groupId) ?? ""} ids={sec.ids} />
                   )}
                   <SortableContext items={sec.ids} strategy={rectSortingStrategy}>
                     <GridDropZone groupId={sec.groupId} tileWidth={tileWidth}>

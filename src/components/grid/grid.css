@@ -86,6 +86,24 @@
   color: var(--text-3);
   opacity: 0.8;
 }
+/* Group controls, pushed to the right of the heading. Always visible, a touch muted so
+   they don't compete with the tiles, and full-strength on hover. */
+.grid-section__actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  opacity: 0.7;
+  transition: opacity var(--t-fast) ease;
+}
+.grid-section:hover .grid-section__actions,
+.grid-section__actions:focus-within {
+  opacity: 1;
+}
+/* The uppercased heading would otherwise stretch the icons' letter-spacing. */
+.grid-section__actions .tab__action {
+  letter-spacing: normal;
+}
 
 .grid {
   display: grid;
