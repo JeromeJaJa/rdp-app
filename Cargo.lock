@@ -4778,7 +4778,7 @@ dependencies = [
 
 [[package]]
 name = "rdp-app"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -4812,7 +4812,7 @@ dependencies = [
 
 [[package]]
 name = "rdp-clipboard"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "ironrdp-cliprdr",
  "ironrdp-core",
@@ -4825,7 +4825,7 @@ dependencies = [
 
 [[package]]
 name = "rdp-companion"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "rdp-companion-proto",
@@ -4839,7 +4839,7 @@ dependencies = [
 
 [[package]]
 name = "rdp-companion-proto"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "rmp-serde",
  "serde",
@@ -4850,7 +4850,7 @@ dependencies = [
 
 [[package]]
 name = "rdp-direct"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "if-addrs",
@@ -4865,7 +4865,7 @@ dependencies = [
 
 [[package]]
 name = "rdp-engine"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -4905,7 +4905,7 @@ dependencies = [
 
 [[package]]
 name = "rdp-testserver"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4927,7 +4927,7 @@ dependencies = [
 
 [[package]]
 name = "rdp-vfiles"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "rdp-companion-proto",
  "tracing",

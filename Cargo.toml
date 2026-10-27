@@ -5,7 +5,7 @@ exclude = ["third_party/ironrdp-graphics", "third_party/ironrdp-rdpdr-native"]
 
 [workspace.package]
 edition = "2024"
-version = "0.2.0"
+version = "0.3.0"
 license = "MIT"
 
 [workspace.dependencies]
