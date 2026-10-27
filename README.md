@@ -183,6 +183,7 @@ shows how.
   direct link, testing, releases, and current limitations.
 - [**Contributing rules**](AGENTS.md): the invariants, performance rules and Windows gotchas to know before changing
   the code, for people and coding agents alike.
+- [**Changelog**](CHANGELOG.md): what changed in each release.
 
 ## Status
 
