@@ -192,7 +192,7 @@ function SortableTab({ id, variant, onClose }: { id: ConnectionId; variant: Vari
         }
         clearPicked(id);
         select(id, { connect: false });
-        openMenu({ x: e.clientX, y: e.clientY, target: { kind: "connection", id } });
+        openMenu({ x: e.clientX, y: e.clientY, target: { kind: "connection", id, tab: variant === "top" } });
       }}
     />
   );

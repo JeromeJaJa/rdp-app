@@ -227,6 +227,38 @@ export function closeTab(id: ConnectionId) {
   disconnect([id]);
 }
 
+/** Closes the tabs after `id` in its window's strip, and disconnects their sessions. */
+export function closeTabsToRight(id: ConnectionId) {
+  const me = windowLabel();
+  const tabs = windowTabs(getState(), me);
+  const idx = tabs.indexOf(id);
+  if (idx < 0) return;
+  const right = tabs.slice(idx + 1);
+  if (!right.length) return;
+  const gone = new Set(right);
+  if (me === "main") {
+    const mainTabs = getState().mainTabs.filter((t) => !gone.has(t));
+    setState({ mainTabs });
+    persistMainTabs(mainTabs);
+  } else {
+    setState({
+      windows: getState().windows.map((w) => (w.label === me ? { ...w, tabs: w.tabs.filter((t) => !gone.has(t)) } : w)),
+    });
+  }
+  // The selected tab was among them: the one right-clicked takes over.
+  const selected = getState().selectedId;
+  if (selected && gone.has(selected)) {
+    setState({ selectedId: id });
+    try {
+      localStorage.setItem(SELECTED_KEY, id);
+    } catch {
+      /* ignore */
+    }
+  }
+  bg(be().closeTabs(right), "close tabs");
+  disconnect(right);
+}
+
 /**
  * A detached window shows one of its own tabs: a tab that just arrived, or the
  * selected one if it is still here, or the first.

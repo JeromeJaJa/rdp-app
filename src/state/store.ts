@@ -67,7 +67,8 @@ export type DialogState =
   | null;
 
 export type MenuTarget =
-  | { kind: "connection"; id: ConnectionId }
+  /** `tab`: opened from a tab in a window's tab strip (offers tab-strip actions). */
+  | { kind: "connection"; id: ConnectionId; tab?: boolean }
   | { kind: "group"; id: GroupId }
   /** Several connections picked in the sidebar. */
   | { kind: "connections"; ids: ConnectionId[] };

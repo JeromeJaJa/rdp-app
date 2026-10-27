@@ -28,6 +28,7 @@ import {
   Power,
   RotateCw,
   Send,
+  ArrowRightToLine,
   SlidersHorizontal,
   Trash2,
   Undo2,
@@ -36,6 +37,7 @@ import {
 } from "lucide-react";
 import {
   closeMenu,
+  closeTabsToRight,
   confirm,
   connect,
   connectAll,
@@ -214,8 +216,15 @@ function WindowItems({ id }: { id: string }) {
   );
 }
 
-function ConnectionMenu({ id }: { id: string }) {
+function ConnectionMenu({ id, tab }: { id: string; tab?: boolean }) {
   const conn = useStore((s) => s.connById[id]);
+  // Opened from a tab strip: how many tabs sit to its right in this window.
+  const rightCount = useStore((s) => {
+    if (!tab) return 0;
+    const tabs = windowTabs(s, windowLabel());
+    const i = tabs.indexOf(id);
+    return i < 0 ? 0 : tabs.length - i - 1;
+  });
   const status = useStore((s) => s.sessions[id]?.status ?? "idle");
   const groups = useStore((s) => s.groups);
   const muted = useStore((s) => resolveSetting(s, id, "audio") === "off");
@@ -233,6 +242,16 @@ function ConnectionMenu({ id }: { id: string }) {
         <Item icon={<RotateCw size={14} />} label="Reconnect" onSelect={() => reconnect(id)} />
       )}
       <Sep />
+      {rightCount > 0 && (
+        <>
+          <Item
+            icon={<ArrowRightToLine size={14} />}
+            label="Close tabs to the right"
+            onSelect={() => closeTabsToRight(id)}
+          />
+          <Sep />
+        </>
+      )}
       <WindowItems id={id} />
       <AppItems ids={[id]} />
       <Item icon={<Send size={14} />} label="Send files…" onSelect={() => openSendDialog([id])} />
@@ -447,7 +466,7 @@ function MenuPanel({ menu }: { menu: MenuState }) {
     >
       <LevelScope>
         {menu.target.kind === "connection" ? (
-          <ConnectionMenu id={menu.target.id} />
+          <ConnectionMenu id={menu.target.id} tab={menu.target.tab} />
         ) : menu.target.kind === "group" ? (
           <GroupMenu id={menu.target.id} />
         ) : (
