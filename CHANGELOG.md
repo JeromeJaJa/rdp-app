@@ -14,7 +14,7 @@ What changed in each release, newest first. The format follows
 - **Remote wallpaper setting** (Settings → Graphics, overridable per group and connection). Turn it off to give
   sessions a plain background, which is less for each host to send. It's on by default, and the host's own wallpaper
   setting is never changed. Applies from the next connect.
-- A README with a screenshot, a [how it works](docs/ARCHITECTURE.md) guide, and an MIT license.
+- A README with a screenshot, a [how it works](https://github.com/JeromeJaJa/rdp-app/blob/main/docs/ARCHITECTURE.md) guide, and an MIT license.
 
 ### Changed
 
