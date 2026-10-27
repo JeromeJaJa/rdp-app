@@ -72,17 +72,12 @@ can't do. [More below](#the-companion).
 
 ## Download
 
-Grab the latest build from [**Releases**](https://github.com/JeromeJaJa/rdp-app/releases/latest). It runs on
-Windows 10 and 11 (x64).
-
-| File | What it is |
-| --- | --- |
-| `RDP-App_<version>_x64-setup.exe` | The installer. Per user, no admin needed, and installs WebView2 if it's missing. |
-| `RDP-App_<version>_x64-portable.zip` | No install: unzip and run `rdp-app.exe`. Keep `rdp-companion.exe` next to it. |
-| `RDP-App_<version>_x64.exe` | Just the app. |
+Grab `RDP-App_<version>_x64-setup.exe` from the latest [**Release**](https://github.com/JeromeJaJa/rdp-app/releases/latest)
+and run it. It runs on Windows 10 and 11 (x64), installs per user (no admin needed) to
+`%LOCALAPPDATA%\RDP App`, and installs WebView2 if it's missing.
 
 The builds aren't code-signed yet, so SmartScreen may warn the first time: choose **More info → Run anyway**.
-`SHA256SUMS.txt` on each release lists the files' checksums.
+`SHA256SUMS.txt` on each release lists the installer's checksum.
 
 ## Getting started
 

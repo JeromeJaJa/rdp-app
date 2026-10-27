@@ -252,9 +252,10 @@ Every push to `main` and every pull request is checked on Windows (`.github/work
 build, `cargo fmt`, clippy with warnings as errors, and the tests.
 
 To publish a release, bump `version` in `src-tauri/tauri.conf.json` and push a matching tag
-(`git tag v0.2.0 && git push origin v0.2.0`). The release workflow builds the installer, a portable zip and the bare
-exe, checks the installer carries the companion, and attaches them all, with checksums, to a GitHub release. Running
-the workflow by hand builds the same files as an artifact without publishing.
+(`git tag v0.2.0 && git push origin v0.2.0`). The release workflow builds the installer, checks it carries the
+companion, and attaches it, with a checksum, to a GitHub release. Only the installer is published: it puts
+`rdp-companion.exe` next to the app, which a bare exe can't. Running the workflow by hand builds the same files as an
+artifact without publishing.
 
 IronRDP is pinned to a git revision rather than a crates.io release, for graphics fixes the releases don't have yet.
 Crates that need local fixes are vendored in `third_party/` and wired in with `[patch]`.

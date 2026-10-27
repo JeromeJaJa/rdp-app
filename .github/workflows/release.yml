@@ -68,11 +68,9 @@ jobs:
           $out = (New-Item -ItemType Directory -Force release-assets).FullName
           $setup = Get-ChildItem target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
           if (-not $setup) { throw "installer not found" }
+          # Only the installer: it puts rdp-companion.exe next to the app. A bare exe on its own
+          # runs fine but can't install the companion, which looked like a broken feature.
           Copy-Item $setup.FullName "$out/RDP-App_${v}_x64-setup.exe"
-          Copy-Item target/release/rdp-app.exe "$out/RDP-App_${v}_x64.exe"
-          $portable = (New-Item -ItemType Directory -Force portable).FullName
-          Copy-Item target/release/rdp-app.exe, target/release/rdp-companion.exe $portable
-          Compress-Archive -Path "$portable/*" -DestinationPath "$out/RDP-App_${v}_x64-portable.zip"
           $sums = Get-ChildItem $out | ForEach-Object {
             "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)"
           }
@@ -92,11 +90,7 @@ jobs:
         run: |
           $v = "${{ steps.version.outputs.version }}"
           @"
-          Windows x64. Pick one:
-
-          - **RDP-App_${v}_x64-setup.exe**: the installer (per user, no admin needed; installs WebView2 if it's missing).
-          - **RDP-App_${v}_x64-portable.zip**: no install. Unzip and run ``rdp-app.exe``; keep ``rdp-companion.exe`` next to it for the companion.
-          - **RDP-App_${v}_x64.exe**: just the app executable.
+          Windows x64: download **RDP-App_${v}_x64-setup.exe** and run it. It installs per user (no admin needed) and installs WebView2 if it's missing.
 
           The builds aren't code-signed yet, so Windows SmartScreen may warn on first run: choose **More info → Run anyway**. ``SHA256SUMS.txt`` lists the files' checksums.
           "@ | Set-Content notes.md
