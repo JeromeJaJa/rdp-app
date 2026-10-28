@@ -156,10 +156,16 @@ pub fn trust_host(host: &str) -> anyhow::Result<()> {
          if ($hosts -notcontains '*' -and $hosts -notcontains '{host}') {{ \
            Set-Item WSMan:\\localhost\\Client\\TrustedHosts -Value '{host}' -Concatenate -Force }}"
     );
+    // Handed over encoded (UTF-16LE, base64), so no shell on the way expands its `$`
+    // variables or splits its quotes.
+    let encoded = {
+        use base64::Engine as _;
+        let utf16: Vec<u8> = inner.encode_utf16().flat_map(u16::to_le_bytes).collect();
+        base64::engine::general_purpose::STANDARD.encode(utf16)
+    };
     let script = format!(
         "$p = Start-Process powershell -Verb RunAs -PassThru -Wait -WindowStyle Hidden \
-         -ArgumentList @('-NoProfile','-NonInteractive','-Command',\"{}\"); exit $p.ExitCode",
-        inner.replace('"', "`\"")
+         -ArgumentList @('-NoProfile','-NonInteractive','-EncodedCommand','{encoded}'); exit $p.ExitCode"
     );
     let status = powershell()
         .args(["-NoProfile", "-NonInteractive", "-Command", &script])
