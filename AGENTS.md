@@ -155,14 +155,14 @@ pattern-matching against it.
 
 - IronRDP is pinned to a **git rev** in the root `Cargo.toml` (`[workspace.dependencies]`), not a
   crates.io release — the releases lag important EGFX/AVC420 fixes. Bumping the rev means bumping
-  it in every `ironrdp-*` line and in each vendored crate's `Cargo.toml`.
-- **Vendored crates live in `third_party/` and are wired via `[patch]`** in the root `Cargo.toml`,
-  and excluded from the workspace `members`. We vendor only when a local fix isn't upstream yet:
-  - `ironrdp-graphics` — SRL/RemoteFX Progressive decode tweaks for real Windows servers.
-  - `ironrdp-rdpdr-native` — lets a redirected drive be rooted at any folder on a local volume,
-    not only a volume root (`C:\`). See `third_party/README.md` for the exact diffs.
-  To vendor another: copy the crate from the IronRDP checkout, point its deps at the git rev, add a
-  `[patch]` entry and a `members`/`exclude` line, and document the change in `third_party/README.md`.
+  it in every `ironrdp-*` line (and in each vendored crate's `Cargo.toml`, if there are any).
+  Before vendoring a fix, check IronRDP master and its issues: it moves fast, and the three
+  crates we used to vendor (SRL decoding, folder roots for drives, chunked static channel PDUs)
+  were all fixed upstream within weeks.
+- **Vendoring, when a fix isn't upstream yet** (none are vendored now): copy the crate from the
+  IronRDP checkout into `third_party/`, point its deps at the git rev, add a `[patch]` entry in the
+  root `Cargo.toml` and an `exclude` line, and document the change in `third_party/README.md`.
+  Drop the copy as soon as the rev includes the fix upstream.
 - **Dynamic virtual channels (DVC).** The client registers channels/listeners on
   `DrdynvcClient` in `connect.rs`. A server-initiated channel (audio input, the companion) uses a
   `DvcChannelListener` whose `create()` returns a processor; the processor's `process()` return

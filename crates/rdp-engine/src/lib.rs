@@ -10,7 +10,6 @@
 //! [`SurfaceProvider`] for pixel memory and an event callback.
 
 mod audio;
-mod autodetect;
 pub mod certs;
 mod clipboard;
 mod companion;
