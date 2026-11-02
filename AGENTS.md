@@ -230,6 +230,11 @@ pattern-matching against it.
   - **Program controls** (`AppControl`, `rdp-companion/src/apps.rs`): launch, restart or close a
     program in the session by path (environment variables expand on the remote); closing posts
     WM_CLOSE to its windows and ends it after 5 s. The UI's programs are `src/lib/remoteApps.ts`.
+  - **Commands** (`Run`/`RunDone`, `rdp-companion/src/run.rs`, `POST /run`): a PowerShell script (written
+    to a temp file and run with `-File`), a `cmd /c` line, or a program, as the signed-in user. Hidden runs
+    capture output (1 MiB a stream) in a job object, so a timeout ends what they started; visible runs open
+    on the desktop and capture nothing. Never log the command (it can hold a password). Layered setting
+    `remoteCommands`, off by default: it turns the API token into a remote shell.
   - **Drag in**: the companion shows a near-invisible window under the pointer, the client presses
     the button there through the session, and the window's `DoDragDrop` follows the client's
     moves. **Drag out**: the companion puts a drop target under the remote pointer when the client

@@ -105,6 +105,7 @@ impl Transfers {
             Message::DragCancel { id } => self.drag_cancel(id),
             Message::DragOutProbe { id, x, y } => self.drag_out_probe(id, x, y),
             Message::AppControl { id, action, path } => self.app_control(id, action, path),
+            Message::Run { id, spec } => self.run(id, spec),
             // Not sent to the companion.
             _ => {}
         }
@@ -130,6 +131,33 @@ impl Transfers {
                 id,
                 error: Some("couldn't start".into()),
                 was_running: false,
+            });
+        }
+    }
+
+    /// The client wants a command run here (off the message thread: it may run a while).
+    /// The command itself isn't logged: it can hold a password.
+    fn run(&self, id: u64, spec: rdp_companion_proto::RunSpec) {
+        let channel = Arc::clone(&self.channel);
+        let spawned = std::thread::Builder::new().name("run".into()).spawn(move || {
+            let result = crate::run::run(&spec);
+            match &result {
+                Ok(r) => tracing::info!(
+                    shell = ?spec.shell,
+                    visible = spec.visible,
+                    pid = r.pid,
+                    exit_code = ?r.exit_code,
+                    timed_out = r.timed_out,
+                    "ran a command"
+                ),
+                Err(error) => tracing::info!(%error, "couldn't run a command"),
+            }
+            channel.send(&Message::RunDone { id, result });
+        });
+        if spawned.is_err() {
+            self.channel.send(&Message::RunDone {
+                id,
+                result: Err("couldn't start".into()),
             });
         }
     }

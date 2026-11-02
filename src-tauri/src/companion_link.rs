@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 use rdp_companion_proto::transfer::{self, CHUNK, DiskFiles, Inflow, Listing, Note, Outbox, Produced, Pump, Source};
-use rdp_companion_proto::{AppAction, ClipFormat, Entry, HostStats, Intent, Message};
+use rdp_companion_proto::{AppAction, ClipFormat, Entry, HostStats, Intent, Message, RunResult, RunSpec};
 use rdp_direct::{DirectSlot, Peer, Prepared};
 use rdp_engine::{CompanionHandler, CompanionHost, CompanionLink, Engine, InputEvent};
 use serde::Serialize;
@@ -597,6 +597,7 @@ impl CompanionHost for Companions {
             drag: Mutex::default(),
             drag_out: Mutex::default(),
             app_waiters: Mutex::default(),
+            run_waiters: Mutex::default(),
             direct,
             preparing: Mutex::default(),
             watches_clipboard,
@@ -647,6 +648,11 @@ impl Companions {
             Message::AppControlDone { id, error, was_running } => {
                 if let Some(waiter) = attached.app_waiters.lock().remove(&id) {
                     let _ = waiter.send((error, was_running));
+                }
+            }
+            Message::RunDone { id, result } => {
+                if let Some(waiter) = attached.run_waiters.lock().remove(&id) {
+                    let _ = waiter.send(result);
                 }
             }
             #[cfg(windows)]
@@ -781,6 +787,29 @@ impl Companions {
         }
     }
 
+    /// Has `session`'s companion run a command there; answers when it ends (or has
+    /// started, if not waited for).
+    pub async fn run(&self, session: &str, spec: RunSpec) -> Result<RunResult, String> {
+        let attached = self.get(session).ok_or("the companion isn't attached")?;
+        let id = self.next_id();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        attached.run_waiters.lock().insert(id, tx);
+        // The companion gives up waiting at the timeout; allow for getting its answer.
+        let patience = 30 + if spec.wait { u64::from(spec.timeout_secs) } else { 0 };
+        if !attached.send(&Message::Run { id, spec }) {
+            attached.run_waiters.lock().remove(&id);
+            return Err("the companion went away".into());
+        }
+        match tokio::time::timeout(Duration::from_secs(patience), rx).await {
+            Ok(Ok(result)) => result,
+            Ok(Err(_)) => Err("the companion's answer was lost (the command may have run)".into()),
+            Err(_) => {
+                attached.run_waiters.lock().remove(&id);
+                Err("the companion didn't answer".into())
+            }
+        }
+    }
+
     /// Starts a direct link for this companion's transfers: gathers this side's addresses
     /// (asking a STUN server for the public one) and offers them; the companion answers
     /// with its own ([`Self::direct_answer`]).
@@ -816,6 +845,8 @@ impl Companions {
         for (_, waiter) in attached.queries.lock().drain() {
             let _ = waiter.send(None);
         }
+        // A command's answer may have been on the link; don't wait out its timeout for it.
+        attached.run_waiters.lock().clear();
         let secs = self.interval_for(&attached.session);
         attached.send(&Message::StatsInterval { secs });
     }
@@ -906,6 +937,8 @@ impl Companions {
 
 /// Hears how an app control went: (error, whether the program was running before).
 type AppWaiter = tokio::sync::oneshot::Sender<(Option<String>, bool)>;
+/// Hears how a command went.
+type RunWaiter = tokio::sync::oneshot::Sender<Result<RunResult, String>>;
 
 /// One attached companion.
 struct Attached {
@@ -925,6 +958,8 @@ struct Attached {
     drag_out: Mutex<Option<(u64, (u16, u16))>>,
     /// App controls waiting for the companion's answer.
     app_waiters: Mutex<HashMap<u64, AppWaiter>>,
+    /// Commands waiting for the companion's answer.
+    run_waiters: Mutex<HashMap<u64, RunWaiter>>,
     /// The direct link for transfers, while it's up.
     direct: DirectSlot,
     /// This side of a direct link being set up, until the companion answers.
@@ -993,6 +1028,7 @@ impl Attached {
         }
         self.queries.lock().clear();
         self.app_waiters.lock().clear();
+        self.run_waiters.lock().clear();
     }
 }
 

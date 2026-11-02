@@ -53,10 +53,11 @@ Conventions:
 - Connection settings are layered: the app settings (/settings), overridden by a group's "settings", overridden by a
   connection's "settings". Overridable keys: audio, microphone, clipboardSync, driveRedirection (none|all|custom),
   drivePaths (folders shared when custom), printerRedirection, smartcardRedirection, autoReconnect, codec,
-  h264Quality, videoDecoder, remoteWallpaper, companion, hostStatsInterval, directTransfers. A "settings" object
-  holds only the overrides; {} inherits everything.
-- The companion (setting "companion") is a small agent in the remote session: it reports host load (/stats) and
-  receives files (/files/send).
+  h264Quality, videoDecoder, remoteWallpaper, companion, hostStatsInterval, directTransfers, remoteCommands. A
+  "settings" object holds only the overrides; {} inherits everything.
+- The companion (setting "companion") is a small agent in the remote session: it reports host load (/stats),
+  receives files (/files/send) and, with setting "remoteCommands" on, runs commands (/run). Prefer /run to typing
+  into a session: it doesn't need the session on screen, and it returns output and exit codes.
 - Connecting is asynchronous. Add ?wait=true to block until sessions are connected or failed (timeout ?timeout=30 s),
   or follow GET /api/v1/events (Server-Sent Events).
 - Coordinates for mouse input are remote desktop pixels; GET /sessions/{id} reports the current width/height.
@@ -544,6 +545,21 @@ pub const ENDPOINTS: &[Endpoint] = &[
             r#"{"ids": ["9f1c…", "2b7a…"], "paths": ["C:\Tools\setup.exe", "C:\Tools\config"], "folder": "Desktop"}"#,
         ),
         response: Some(r#"{"transfers": [2, 4]}"#),
+        auth: true,
+    },
+    Endpoint {
+        method: "POST",
+        path: "/api/v1/run",
+        tag: "Companion",
+        summary: "Run a command on connections",
+        description: "Runs command on each connection's host, in the remote session as the signed-in user, through its companion (settings companion and remoteCommands must both be on; remoteCommands is off by default). Connections that aren't connected are connected first; all run at once. shell: powershell (default; a script, so several lines are fine; its exit code is what it exits with, or the last program's) | cmd (a cmd /c line) | program (a program and its arguments, %VARS% expanded). visible: false (default) runs it hidden and captures stdout/stderr (up to 1 MiB each; truncated says if it was cut; PowerShell's is UTF-8, other output is read as UTF-8 or the OEM code page); true shows it on the remote desktop (a console window, an installer's window) and captures nothing. wait: true (default) answers when it ends, with exitCode; false answers once it has started, with its pid. timeoutSecs (default 300, max 86400): a hidden command still running then is ended, with everything it started; a visible one is left running. timedOut says which. Nothing can be answered at a hidden prompt (stdin is empty). The response holds one result per id; error is set when it couldn't run there.",
+        params: &[],
+        body: Some(
+            r#"{"ids": ["9f1c…", "2b7a…"], "command": "Get-ChildItem $env:APPDATA -Name", "shell": "powershell", "visible": false, "wait": true, "timeoutSecs": 300}"#,
+        ),
+        response: Some(
+            r#"{"results": [{"id":"9f1c…","pid":4242,"exitCode":0,"stdout":"valor3\r\n","stderr":"","truncated":false,"timedOut":false}, {"id":"2b7a…","pid":null,"exitCode":null,"stdout":"","stderr":"","truncated":false,"timedOut":false,"error":"turn on remote commands for this connection"}]}"#,
+        ),
         auth: true,
     },
     Endpoint {

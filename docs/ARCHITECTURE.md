@@ -149,7 +149,7 @@ move between windows.
 
 The companion (`crates/rdp-companion`) is a small Windows program that runs inside the remote session, as the
 signed-in user. It opens a dynamic virtual channel (`RdpApp::Companion`) back to the client, and does what plain RDP
-can't: fast copies, drag and drop, sends, host stats and program controls. It's off by default (the layered
+can't: fast copies, drag and drop, sends, host stats, program controls and commands. It's off by default (the layered
 `companion` setting).
 
 **Installing.** RDP can't run code on the remote, so the first install takes a side channel: where the host has
@@ -209,7 +209,7 @@ Once the companion is attached, the clipboard goes through it instead of CLIPRDR
   watches the clipboard is attached, rdpclip's own announcements are ignored, so a copy isn't offered twice. If the
   companion can't serve a paste, CLIPRDR does.
 
-### Drags, stats and program controls
+### Drags, stats, program controls and commands
 
 - **Drag in**: the companion shows a near-invisible window under the pointer, the client presses the mouse button
   there through the session, and that window's `DoDragDrop` follows the client's moves.
@@ -221,6 +221,11 @@ Once the companion is attached, the clipboard goes through it instead of CLIPRDR
 - **Program controls** (`rdp-companion/src/apps.rs`): launch, restart or close a program by path, with environment
   variables expanded on the remote. Closing posts `WM_CLOSE` to the program's windows and ends it after 5 s. Only
   processes in the user's own session are touched. The menu's programs are listed in `src/lib/remoteApps.ts`.
+- **Commands** (`rdp-companion/src/run.rs`, the API's `POST /run`): run a PowerShell script, a `cmd` line or a program
+  in the session, as the signed-in user. Hidden, its output is captured (up to 1 MiB a stream) and it runs in a job
+  object, so a timeout ends everything it started. Visible, it opens on the desktop (an installer's window) and
+  nothing is captured. PowerShell commands go through a script file, so nothing needs quoting. The command itself is
+  never logged. Off by default (the layered `remoteCommands` setting): it makes the API token a remote shell.
 
 ## Testing without real hosts
 

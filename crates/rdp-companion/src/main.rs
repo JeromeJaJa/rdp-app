@@ -62,6 +62,8 @@ mod drag;
 #[cfg(windows)]
 mod dragout;
 #[cfg(windows)]
+mod run;
+#[cfg(windows)]
 mod stats;
 #[cfg(windows)]
 mod transfers;

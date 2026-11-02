@@ -22,6 +22,7 @@ pub const OVERRIDABLE: &[&str] = &[
     "companion",
     "hostStatsInterval",
     "directTransfers",
+    "remoteCommands",
 ];
 
 /// A group's or connection's overrides (only overridable keys).

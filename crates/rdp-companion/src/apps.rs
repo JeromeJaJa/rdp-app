@@ -43,8 +43,9 @@ pub(crate) fn control(action: AppAction, path: &str) -> Result<bool, String> {
     Ok(was_running)
 }
 
-fn expand(path: &str) -> String {
-    let source = HSTRING::from(path);
+/// `text` with its environment variables (`%LOCALAPPDATA%`) expanded.
+pub(crate) fn expand(text: &str) -> String {
+    let source = HSTRING::from(text);
     // SAFETY: sizing call, then expanding into a buffer of that size.
     unsafe {
         let len = ExpandEnvironmentStringsW(&source, None) as usize;

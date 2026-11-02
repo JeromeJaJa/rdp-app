@@ -128,6 +128,9 @@ sends, host stats and program controls possible.
   certificate, swapped over the RDP session. If the link can't be made, or drops, everything carries on over RDP.
 - **It stays in its lane.** It runs as the signed-in user, drags only ever copy (never move), and program controls
   only touch programs in that user's session.
+- **Commands for scripts and agents**, when you allow them (the `remoteCommands` setting, off by default): the
+  local API's `POST /run` runs a PowerShell script, a `cmd` line or a program on many hosts at once and returns
+  each one's output and exit code, or opens an installer on the remote desktop. No WinRM needed.
 
 The companion is newer than the rest of the app and has seen fewer setups.
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#the-companion) has the details.

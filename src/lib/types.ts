@@ -74,6 +74,7 @@ export const OVERRIDABLE = [
   "companion",
   "hostStatsInterval",
   "directTransfers",
+  "remoteCommands",
 ] as const;
 export type OverridableKey = (typeof OVERRIDABLE)[number];
 /** Only the overridden settings; anything absent is inherited. */
@@ -175,6 +176,8 @@ export interface Settings {
   hostStatsInterval: number;
   /** Companion transfers go over a direct, encrypted link beside the session when one can be made. */
   directTransfers: boolean;
+  /** The REST API may run commands on the host through its companion (POST /run). */
+  remoteCommands: boolean;
   /** Which of its host's load sidebar rows and grid tiles show ("CPU 12%"), or nothing. */
   tabStats: TabStats;
   /** Share the clipboard (text, images, files) with remote sessions. */
@@ -219,6 +222,7 @@ export const DEFAULT_SETTINGS: Settings = {
   companion: false,
   hostStatsInterval: 30,
   directTransfers: true,
+  remoteCommands: false,
   tabStats: "cpu",
   clipboardSync: true,
   audio: "active",

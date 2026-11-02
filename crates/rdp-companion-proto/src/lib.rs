@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 pub const CHANNEL_NAME: &str = "RdpApp::Companion";
 
 /// Bumped on any breaking change to [`Message`]. Both sides send it in the handshake.
-pub const PROTOCOL_VERSION: u32 = 8;
+pub const PROTOCOL_VERSION: u32 = 9;
 
 /// A frame larger than this is treated as a desync and ends the channel, rather than
 /// buffering without bound.
@@ -87,6 +87,54 @@ pub enum AppAction {
     Restart,
     /// Ask its windows to close; end it if it's still running a few seconds later.
     Close,
+}
+
+/// How [`Message::Run`] runs its command.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Shell {
+    /// A Windows PowerShell script.
+    #[default]
+    PowerShell,
+    /// A `cmd.exe /c` command line.
+    Cmd,
+    /// No shell: the command line is a program and its arguments (environment variables
+    /// such as `%TEMP%` expanded on the remote).
+    Program,
+}
+
+/// A command for the companion to run in the session ([`Message::Run`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RunSpec {
+    pub command: String,
+    pub shell: Shell,
+    /// Show it on the session's desktop (a console, an installer's window) rather than
+    /// run it hidden. Its output isn't captured then.
+    pub visible: bool,
+    /// Answer when it ends, rather than as soon as it has started.
+    pub wait: bool,
+    /// How long to wait for it. A hidden command still running then is ended, with what
+    /// it started; a visible one is left to whoever is at the desktop.
+    pub timeout_secs: u32,
+}
+
+/// Most of each output stream [`RunResult`] carries; the rest is dropped.
+pub const RUN_OUTPUT_LIMIT: usize = 1024 * 1024;
+
+/// How a [`RunSpec`] went ([`Message::RunDone`]).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RunResult {
+    /// The process it started.
+    pub pid: u32,
+    /// Its exit code, once it has ended (not when it wasn't waited for, or timed out).
+    pub exit_code: Option<i32>,
+    /// What it wrote, when it ran hidden and was waited for.
+    pub stdout: String,
+    pub stderr: String,
+    /// Output went past [`RUN_OUTPUT_LIMIT`] and was cut there.
+    pub truncated: bool,
+    /// It was still running when the wait ran out.
+    pub timed_out: bool,
 }
 
 /// What the receiving side does with offered files.
@@ -309,6 +357,18 @@ pub enum Message {
         id: u64,
         error: Option<String>,
         was_running: bool,
+    },
+
+    /// Client → companion: run a command in the session, as the signed-in user. Answered
+    /// with [`Message::RunDone`].
+    Run {
+        id: u64,
+        spec: RunSpec,
+    },
+    /// Companion → client: how [`Message::Run`] `id` went, or why it couldn't start.
+    RunDone {
+        id: u64,
+        result: Result<RunResult, String>,
     },
 
     /// Client → companion: files from this PC are being dragged onto the session at
@@ -542,6 +602,29 @@ mod tests {
                 id: 8,
                 action: AppAction::Restart,
                 path: "%LOCALAPPDATA%\\Programs\\app\\app.exe".into(),
+            },
+            Message::Run {
+                id: 10,
+                spec: RunSpec {
+                    command: "Get-ChildItem $env:APPDATA".into(),
+                    shell: Shell::PowerShell,
+                    visible: false,
+                    wait: true,
+                    timeout_secs: 300,
+                },
+            },
+            Message::RunDone {
+                id: 10,
+                result: Ok(RunResult {
+                    pid: 4242,
+                    exit_code: Some(0),
+                    stdout: "valor3\r\n".into(),
+                    ..Default::default()
+                }),
+            },
+            Message::RunDone {
+                id: 12,
+                result: Err("couldn't start".into()),
             },
             Message::Close { id: 2, error: None },
             Message::Bye,

@@ -4,6 +4,16 @@ What changed in each release, newest first. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/) (pre-1.0, so a minor version can change behavior).
 
+## [Unreleased]
+
+### Added
+
+- **Run commands on hosts from the API** (`POST /api/v1/run`). Runs a PowerShell script, a `cmd` line or a program
+  on many hosts at once through the companion, as the signed-in user, and returns each one's output and exit code.
+  It can also open a program on the remote desktop, such as an installer, so its window shows. Off by default:
+  turn on **Remote commands** (Settings → Connections, overridable per group and connection). Anyone with the API
+  token can then run anything on those hosts.
+
 ## [0.3.0] - 2026-10-27
 
 ### Added

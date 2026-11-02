@@ -177,6 +177,12 @@ function Connections() {
         <Switch checked={s.directTransfers} onChange={(directTransfers) => updateSettings({ directTransfers })} />
       </Row>
       <Row
+        title="Remote commands"
+        desc="Lets scripts and agents using the local API run commands on hosts through the companion, as the signed-in user: installs, cleanups, checks, with their output and exit codes. Anyone with the API token can then run anything on those hosts, so turn it on only where you need it."
+      >
+        <Switch checked={s.remoteCommands} onChange={(remoteCommands) => updateSettings({ remoteCommands })} />
+      </Row>
+      <Row
         title="Host stats"
         desc="How often each host's companion reports its CPU, memory, disk and network load (shown on its tab). Sampling is a few system calls; nothing runs in between."
       >

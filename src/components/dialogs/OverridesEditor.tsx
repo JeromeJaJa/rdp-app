@@ -22,6 +22,7 @@ const CHOICES: { [K in OverridableKey]?: Choice<Settings[K]>[] } = {
   clipboardSync: ON_OFF,
   companion: ON_OFF,
   directTransfers: ON_OFF,
+  remoteCommands: ON_OFF,
   hostStatsInterval: [
     { value: 0, label: "Off" },
     { value: 15, label: "Every 15 seconds" },
@@ -72,6 +73,7 @@ const SECTIONS: { title: string; rows: { key: OverridableKey; label: string }[] 
       { key: "autoReconnect", label: "Auto-reconnect" },
       { key: "companion", label: "Companion (experimental)" },
       { key: "directTransfers", label: "Direct transfers" },
+      { key: "remoteCommands", label: "Remote commands" },
       { key: "hostStatsInterval", label: "Host stats" },
       { key: "codec", label: "Graphics codec" },
       { key: "h264Quality", label: "H.264 colour" },

@@ -181,6 +181,7 @@ fn router(core: AppState, port: u16) -> Router {
         .route("/sessions/{id}/stats", get(session_stats))
         .route("/stats", get(all_stats))
         .route("/files/send", post(send_files))
+        .route("/run", post(run_command))
         .route("/transfers", get(list_transfers))
         .route("/transfers/{id}/cancel", post(cancel_transfer))
         .route("/certificates", get(list_certificates))
@@ -908,6 +909,50 @@ async fn send_files(State(core): State<AppState>, Json(body): Json<SendBody>) ->
         .map_err(|e| bad(e.to_string()))?
         .map_err(|e| bad(format!("{e:#}")))?;
     Ok(Json(json!({ "transfers": transfers })))
+}
+
+/// Longest a command may be waited for: a day.
+const RUN_TIMEOUT_MAX: u32 = 24 * 60 * 60;
+
+fn default_run_timeout() -> u32 {
+    300
+}
+
+fn yes() -> bool {
+    true
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RunBody {
+    ids: Vec<String>,
+    command: String,
+    #[serde(default)]
+    shell: rdp_companion_proto::Shell,
+    #[serde(default)]
+    visible: bool,
+    #[serde(default = "yes")]
+    wait: bool,
+    #[serde(default = "default_run_timeout")]
+    timeout_secs: u32,
+}
+
+async fn run_command(State(core): State<AppState>, Json(body): Json<RunBody>) -> ApiResult<Json<Value>> {
+    if body.ids.is_empty() || body.command.trim().is_empty() {
+        return Err(bad("ids and command are required"));
+    }
+    if !(1..=RUN_TIMEOUT_MAX).contains(&body.timeout_secs) {
+        return Err(bad(format!("timeoutSecs must be 1 to {RUN_TIMEOUT_MAX}")));
+    }
+    let spec = rdp_companion_proto::RunSpec {
+        command: body.command,
+        shell: body.shell,
+        visible: body.visible,
+        wait: body.wait,
+        timeout_secs: body.timeout_secs,
+    };
+    let results = core.run_command(body.ids, spec).await;
+    Ok(Json(json!({ "results": results })))
 }
 
 async fn list_transfers(State(core): State<AppState>) -> Json<Value> {

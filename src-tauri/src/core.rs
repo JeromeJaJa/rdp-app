@@ -121,6 +121,7 @@ pub fn default_settings() -> Map<String, Value> {
         "companion": false,
         "hostStatsInterval": 30,
         "directTransfers": true,
+        "remoteCommands": false,
         "tabStats": "cpu",
         "clipboardSync": true,
         "audio": "active",
@@ -216,6 +217,44 @@ pub struct AppOutcome {
     pub id: String,
     pub error: Option<String>,
     pub was_running: bool,
+}
+
+/// What a command did on one connection (see [`rdp_companion_proto::RunResult`]), or why
+/// it couldn't run (`error`).
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunOutcome {
+    pub id: String,
+    pub pid: Option<u32>,
+    pub exit_code: Option<i32>,
+    pub stdout: String,
+    pub stderr: String,
+    pub truncated: bool,
+    pub timed_out: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+impl RunOutcome {
+    fn new(id: String, result: Result<rdp_companion_proto::RunResult, String>) -> Self {
+        match result {
+            Ok(r) => Self {
+                id,
+                pid: Some(r.pid),
+                exit_code: r.exit_code,
+                stdout: r.stdout,
+                stderr: r.stderr,
+                truncated: r.truncated,
+                timed_out: r.timed_out,
+                error: None,
+            },
+            Err(error) => Self {
+                id,
+                error: Some(error),
+                ..Default::default()
+            },
+        }
+    }
 }
 
 #[derive(Default)]
@@ -627,6 +666,56 @@ impl Core {
         path: &str,
     ) -> Result<bool, String> {
         self.connection(id).map_err(|e| e.to_string())?;
+        self.companion_ready(id).await?;
+        self.companions.control_app(id, action, path).await
+    }
+
+    /// Runs a command on each connection's host, through its companion, connecting first
+    /// where needed. One outcome per connection.
+    pub async fn run_command(
+        self: &Arc<Self>,
+        ids: Vec<String>,
+        spec: rdp_companion_proto::RunSpec,
+    ) -> Vec<RunOutcome> {
+        let tasks: Vec<_> = ids
+            .into_iter()
+            .map(|id| {
+                let (core, spec) = (Arc::clone(self), spec.clone());
+                tauri::async_runtime::spawn(async move {
+                    let result = core.run_command_on(&id, spec).await;
+                    RunOutcome::new(id, result)
+                })
+            })
+            .collect();
+        let mut out = Vec::with_capacity(tasks.len());
+        for task in tasks {
+            if let Ok(outcome) = task.await {
+                out.push(outcome);
+            }
+        }
+        out
+    }
+
+    async fn run_command_on(
+        self: &Arc<Self>,
+        id: &str,
+        spec: rdp_companion_proto::RunSpec,
+    ) -> Result<rdp_companion_proto::RunResult, String> {
+        self.connection(id).map_err(|e| e.to_string())?;
+        if self
+            .effective_settings(id)
+            .get("remoteCommands")
+            .and_then(Value::as_bool)
+            != Some(true)
+        {
+            return Err("turn on remote commands for this connection".into());
+        }
+        self.companion_ready(id).await?;
+        self.companions.run(id, spec).await
+    }
+
+    /// Waits for a connection's companion to attach, connecting it first if it isn't.
+    async fn companion_ready(self: &Arc<Self>, id: &str) -> Result<(), String> {
         if self.effective_settings(id).get("companion").and_then(Value::as_bool) != Some(true) {
             return Err("turn on the companion for this connection".into());
         }
@@ -643,7 +732,7 @@ impl Core {
                 tokio::time::sleep(Duration::from_millis(400)).await;
             }
         }
-        self.companions.control_app(id, action, path).await
+        Ok(())
     }
 
     /// Installs the companion on a connection's host over WinRM (experimental). Blocking.
