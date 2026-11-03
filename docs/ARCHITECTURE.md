@@ -79,7 +79,6 @@ crates/rdp-companion-proto/  its wire protocol, and the streamed file transfers 
 crates/rdp-direct/           the direct link (UDP hole punching, QUIC, pinned certificates)
 crates/rdp-vfiles/           files from the other end offered to Windows apps as an OLE data object (paste, drag)
 crates/rdp-testserver/       local RDP servers with animated content, for testing and load
-third_party/                 vendored IronRDP crates with local fixes (see third_party/README.md)
 ```
 
 ## Sessions
@@ -260,7 +259,8 @@ companion, and attaches it, with a checksum, to a GitHub release. Only the insta
 artifact without publishing.
 
 IronRDP is pinned to a git revision rather than a crates.io release, for graphics fixes the releases don't have yet.
-Crates that need local fixes are vendored in `third_party/` and wired in with `[patch]`.
+A crate that needs a local fix not yet upstream is vendored in `third_party/` and wired in with `[patch]`; none is
+at the moment.
 
 ## Current limitations
 

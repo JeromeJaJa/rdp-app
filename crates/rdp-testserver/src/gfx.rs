@@ -8,7 +8,8 @@ use ironrdp_egfx::encode::{EncodeFrame, H264Encoder as _, OpenH264Encoder};
 use ironrdp_egfx::pdu::{Avc420Region, CapabilitiesAdvertisePdu, CapabilitySet, Encoding};
 use ironrdp_egfx::server::{GraphicsPipelineHandler, GraphicsPipelineServer};
 use ironrdp_server::{
-    DesktopSize, EgfxServerMessage, GfxDvcBridge, GfxServerFactory, GfxServerHandle, ServerEvent, ServerEventSender,
+    DesktopSize, EgfxServerMessage, GfxContext, GfxDvcBridge, GfxServerFactory, GfxServerHandle, ServerEvent,
+    ServerEventSender,
 };
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -47,11 +48,11 @@ impl ServerEventSender for Factory {
 }
 
 impl GfxServerFactory for Factory {
-    fn build_gfx_handler(&self) -> Box<dyn GraphicsPipelineHandler> {
+    fn build_gfx_handler(&self, _: GfxContext) -> Box<dyn GraphicsPipelineHandler> {
         Box::new(Handler)
     }
 
-    fn build_server_with_handle(&self) -> Option<(GfxDvcBridge, GfxServerHandle)> {
+    fn build_server_with_handle(&self, _: GfxContext) -> Option<(GfxDvcBridge, GfxServerHandle)> {
         let server: GfxServerHandle = Arc::new(Mutex::new(GraphicsPipelineServer::new(Box::new(Handler))));
         *self.slots.server.lock().unwrap() = Some(Arc::clone(&server));
         Some((GfxDvcBridge::new(Arc::clone(&server)), server))

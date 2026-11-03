@@ -79,8 +79,14 @@ pub(crate) fn connector_config(params: &ConnectParams, viewport: Viewport) -> ir
         ime_file_name: String::new(),
         dig_product_id: String::new(),
         desktop_size: DesktopSize { width, height },
+        desktop_physical_size: None,
+        desktop_orientation: None,
         monitor_layout: None,
+        monitor_extended_layout: None,
         desktop_scale_factor: viewport.scale.clamp(100, 500),
+        device_scale_factor: None,
+        relative_mouse_input: false,
+        rdp_version: ironrdp_pdu::gcc::RdpVersion::V5_PLUS,
         bitmap: Some(ironrdp_connector::BitmapConfig {
             color_depth: 32,
             lossy_compression: true,
@@ -344,7 +350,9 @@ pub(crate) async fn connect(
         None,
     )
     .await
-    .context("authentication and session setup")?;
+    .context("authentication and session setup")?
+    .into_connected()
+    .context("server redirection (connection broker) isn't supported")?;
 
     Ok(Connected { result, framed, socket })
 }

@@ -851,7 +851,6 @@ async fn active(
     } = result;
 
     let (mut reader, writer): (Reader, Writer) = ironrdp_tokio::split_tokio_framed(framed);
-    let mut bandwidth = crate::autodetect::BandwidthProbe::new(user_channel_id, message_channel_id);
     let mut live = Live {
         stage: ActiveStageBuilder {
             static_channels,
@@ -1038,11 +1037,15 @@ async fn active(
                 pdu = reader.read_pdu() => {
                     let (action, payload) = pdu.context("read from server")?;
                     perf.bytes_in += payload.len() as u64;
-                    if let Some(reply) = bandwidth.on_frame(action, &payload) {
-                        live.send(&reply).await?;
-                    }
+                    // The arrival time lets IronRDP answer the server's continuous bandwidth
+                    // measurements; without results Windows assumes a poor link and RemoteFX
+                    // Progressive never sends its refinement passes.
+                    let received_at = reader.last_read_at();
                     let t0 = Instant::now();
-                    let outputs = live.stage.process(&mut live.image, action, &payload).context("process server data")?;
+                    let outputs = live
+                        .stage
+                        .process(&mut live.image, action, &payload, received_at)
+                        .context("process server data")?;
                     perf.process_us += t0.elapsed().as_micros() as u64;
                     perf.pdus += 1;
                     for out in outputs {
