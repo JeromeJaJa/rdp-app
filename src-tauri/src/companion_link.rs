@@ -1117,9 +1117,14 @@ impl rdp_clipboard::Companion for ClipboardHook {
         true
     }
 
-    fn remote_format(&self, format: ClipFormat) -> Option<Vec<u8>> {
-        let companions = self.companions.upgrade()?;
-        let attached = companions.get(&self.session)?;
+    fn remote_format(&self, format: ClipFormat) -> rdp_clipboard::RemoteFormat {
+        use rdp_clipboard::RemoteFormat;
+        let Some(companions) = self.companions.upgrade() else {
+            return RemoteFormat::UseChannel;
+        };
+        let Some(attached) = companions.get(&self.session) else {
+            return RemoteFormat::UseChannel;
+        };
         let id = companions.next_id();
         let entries: Arc<[Entry]> = vec![Entry {
             path: "clipboard".into(),
@@ -1153,12 +1158,19 @@ impl rdp_clipboard::Companion for ClipboardHook {
                     wire = %inflow.throughput(),
                     "pasted the remote's copy through the companion"
                 );
-                Some(data)
+                RemoteFormat::Data(data)
+            }
+            // The remote's clipboard holds this PC's own copy now: the copy offered here is
+            // gone, and the clipboard channel can't have it either.
+            Err(error) if error.contains(rdp_companion_proto::OWN_COPY) => {
+                inflow.finish(Some(error.clone()));
+                tracing::info!(format = format.id, "the remote's copy is gone; nothing to paste");
+                RemoteFormat::Gone
             }
             Err(error) => {
                 inflow.finish(Some(error.clone()));
                 tracing::info!(format = format.id, %error, "pasting over the clipboard channel instead");
-                None
+                RemoteFormat::UseChannel
             }
         }
     }

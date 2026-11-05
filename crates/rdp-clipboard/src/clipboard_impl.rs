@@ -21,12 +21,14 @@ use crate::os_clipboard::OwnedOsClipboard;
 use crate::remote_files::{FILE_LIST_FORMAT_NAME, OleClipboard, Remote, SharedProxy, is_file_format};
 use crate::remote_format_registry::RemoteClipboardFormatRegistry;
 use crate::utils::render_format;
-use crate::{BackendEvent, WM_CLIPRDR_BACKEND_EVENT, WinCliprdrError, WinCliprdrResult};
+use crate::{BackendEvent, RemoteFormat, WM_CLIPRDR_BACKEND_EVENT, WinCliprdrError, WinCliprdrResult};
 
-/// How long a paste waits for the remote's data. Windows needs it before
-/// `WM_RENDERFORMAT` returns, so the UI thread is blocked meanwhile; large text or
-/// images over a slow link can take a while.
-const RENDER_FORMAT_TIMEOUT_SECS: u64 = 45;
+/// How long a paste waits for the remote's data over the clipboard channel. Windows needs
+/// it before `WM_RENDERFORMAT` returns, so this monitor's thread and the program pasting
+/// wait meanwhile. Large copies go through the companion, which streams them; one that
+/// hasn't come after this long almost always never will (the remote's clipboard is busy or
+/// the copy is gone), and the program pasting shouldn't hang on it.
+const RENDER_FORMAT_TIMEOUT_SECS: u64 = 10;
 /// While waiting, how often a paste checks that its session is still there.
 const RENDER_FORMAT_POLL: Duration = Duration::from_millis(100);
 const IDT_CLIPBOARD_RETRY: usize = 1;
@@ -55,6 +57,11 @@ pub(crate) struct WinClipboardImpl {
     alive: Arc<core::sync::atomic::AtomicUsize>,
     /// The monitor is being torn down.
     closing: Arc<core::sync::atomic::AtomicBool>,
+    /// The session is on screen: copies made here (or on another session's remote) are
+    /// offered to its remote as they happen. Otherwise they wait ([`Self::stale`]).
+    focused: bool,
+    /// A copy was made while the session wasn't on screen: offer the latest when it is.
+    stale: bool,
     // Number of attempts spent to process current clipboard message
     attempt: u32,
     // Message to retry
@@ -90,6 +97,8 @@ impl WinClipboardImpl {
             companion,
             alive: direct.alive,
             closing,
+            focused: true,
+            stale: false,
             attempt: 0,
             retry_message: None,
             available_formats_on_remote: Vec::new(),
@@ -142,6 +151,8 @@ impl WinClipboardImpl {
 
     fn on_clipboard_update(&mut self) -> WinCliprdrResult<Option<ClipboardMessage>> {
         let mut clipboard = OwnedOsClipboard::new(self.window)?;
+        // What follows offers the current copy (or fails for good): nothing waits any more.
+        self.stale = false;
         if !self.ready && clipboard.dropped_files().is_some() {
             // Finish the channel's setup with an empty list; the files are offered once
             // it's ready (BackendEvent::Ready runs this again).
@@ -221,17 +232,20 @@ impl WinClipboardImpl {
                 id: remote_format.value(),
                 name: self.remote_format_registry.remote_name(remote_format),
             };
-            if format.is_memory()
-                && let Some(data) = companion.remote_format(format)
-            {
-                return Ok(Some(FormatDataResponse::new_data(data)));
+            if format.is_memory() {
+                match companion.remote_format(format) {
+                    RemoteFormat::Data(data) => return Ok(Some(FormatDataResponse::new_data(data))),
+                    // The copy is gone from the remote: the channel would only wait for nothing.
+                    RemoteFormat::Gone => return Ok(None),
+                    RemoteFormat::UseChannel => {}
+                }
             }
         }
 
         // We need to receive data from the remote clipboard immediately, because Windows
         // expects us to set clipboard data before returning from `WM_RENDERFORMAT` handler.
-        //
-        // Sadly, this will block the GUI thread, while data is being received
+        // This thread waits meanwhile: each monitor has one of its own
+        // (`ClipboardMonitor`), so that's never the app's UI thread.
         while self.paste_rx.try_recv().is_ok() {} // a late reply to an earlier paste
         let started = std::time::Instant::now();
         self.message_proxy
@@ -253,6 +267,16 @@ impl WinClipboardImpl {
             "remote clipboard data received (paste)"
         );
         Ok(Some(response))
+    }
+
+    /// The clipboard holds this session's remote copy, as made available here by this
+    /// window or by its OLE file thread.
+    fn owns_clipboard(&self) -> bool {
+        // SAFETY: `GetClipboardOwner` is always safe to call.
+        let owner = unsafe { GetClipboardOwner() };
+        owner
+            .as_ref()
+            .is_ok_and(|&owner| owner == self.window || self.remote.inbox.owns(owner))
     }
 
     /// Whether a session is there to answer (and the monitor isn't being torn down).
@@ -384,7 +408,34 @@ impl WinClipboardImpl {
             }
             BackendEvent::CompanionCopy(formats) => self.on_remote_format_list(formats, true),
 
-            BackendEvent::ClipboardUpdated | BackendEvent::RemoteRequestsFormatList => self.on_clipboard_update(),
+            // Offered at once only while the session is on screen. With dozens of sessions,
+            // offering every copy to all of them sends it to every host, whose clipboards then
+            // change and read it back, keeping this PC's clipboard busy. A session coming on
+            // screen gets the latest copy then.
+            BackendEvent::ClipboardUpdated => {
+                if self.focused {
+                    self.on_clipboard_update()
+                } else {
+                    self.stale = true;
+                    Ok(None)
+                }
+            }
+            // The channel's setup asks for the list: always answered.
+            BackendEvent::RemoteRequestsFormatList => self.on_clipboard_update(),
+            BackendEvent::Focus(focused) => {
+                self.focused = *focused;
+                if self.focused && self.stale {
+                    // A copy this session's remote made since is its own, not to be offered back.
+                    if self.owns_clipboard() {
+                        self.stale = false;
+                        Ok(None)
+                    } else {
+                        self.on_clipboard_update()
+                    }
+                } else {
+                    Ok(None)
+                }
+            }
             BackendEvent::RenderFormat(format) => self.on_render_format(*format),
             BackendEvent::RenderAllFormats => self.on_render_all_formats(),
 
@@ -395,8 +446,16 @@ impl WinClipboardImpl {
             BackendEvent::Ready => {
                 let deferred = !self.ready;
                 self.ready = true;
-                // Files on the clipboard at connect were held back during setup: offer them now.
-                if deferred { self.on_clipboard_update() } else { Ok(None) }
+                // Files on the clipboard at connect were held back during setup: offer them now
+                // (or when the session comes on screen).
+                if !deferred {
+                    Ok(None)
+                } else if self.focused {
+                    self.on_clipboard_update()
+                } else {
+                    self.stale = true;
+                    Ok(None)
+                }
             }
         };
 
@@ -511,15 +570,10 @@ pub(crate) unsafe extern "system" fn clipboard_subproc(
     match msg {
         // Sent by the OS when OS clipboard content is changed
         WM_CLIPBOARDUPDATE => {
-            // SAFETY: `GetClipboardOwner` is always safe to call.
-            let clipboard_owner = unsafe { GetClipboardOwner() };
-            // Our own change (this session's remote copy being made available locally, by
-            // this window or by its OLE file thread) must not echo back. Anything else,
-            // including another session's copy, is offered to this session's remote.
-            let own = clipboard_owner
-                .as_ref()
-                .is_ok_and(|&owner| owner == hwnd || ctx.remote.inbox.owns(owner));
-            if !own {
+            // Our own change (this session's remote copy being made available locally) must
+            // not echo back. Anything else, including another session's copy, is offered to
+            // this session's remote.
+            if !ctx.owns_clipboard() {
                 ctx.handle_event(BackendEvent::ClipboardUpdated);
             }
         }

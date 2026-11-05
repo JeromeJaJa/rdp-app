@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 
 use ironrdp_cliprdr::backend::{ClipboardMessage, ClipboardMessageProxy};
 use ironrdp_cliprdr::pdu::{ClipboardFormat, ClipboardFormatId};
-use rdp_clipboard::{Companion, WinClipboard};
+use rdp_clipboard::{Companion, RemoteFormat, WinClipboard};
 use rdp_companion_proto::ClipFormat;
 use rdp_companion_proto::transfer::Inflow;
 use windows::Win32::System::DataExchange::{
@@ -57,8 +57,12 @@ impl Companion for Announcing {
         false
     }
 
-    fn remote_format(&self, format: ClipFormat) -> Option<Vec<u8>> {
-        (format.id == CF_UNICODETEXT).then(|| utf16("from the companion"))
+    fn remote_format(&self, format: ClipFormat) -> RemoteFormat {
+        if format.id == CF_UNICODETEXT {
+            RemoteFormat::Data(utf16("from the companion"))
+        } else {
+            RemoteFormat::UseChannel
+        }
     }
 
     fn announces_copies(&self) -> bool {

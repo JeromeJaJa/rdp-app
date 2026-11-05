@@ -753,6 +753,10 @@ impl Tearoff {
                 .collect();
             (active, state.thumbnails.clone())
         };
+        // Copies are offered at once to the sessions on screen, and to the others when they
+        // come on screen.
+        #[cfg(windows)]
+        crate::clipboard::set_on_screen(&active);
         self.engine.set_visibility(active, thumbnails);
     }
 

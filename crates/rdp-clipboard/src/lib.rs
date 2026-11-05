@@ -15,7 +15,10 @@
 //!   also unbounded now, so a busy UI thread never stalls the session's network loop);
 //! - file transfer capabilities are advertised;
 //! - dropping the monitor destroys its window and state (upstream leaked both);
-//! - with a companion attached, copies go through it instead (see [`Companion`]).
+//! - with a companion attached, copies go through it instead (see [`Companion`]);
+//! - each monitor can run on a thread of its own ([`ClipboardMonitor`]), so a slow paste
+//!   stalls only it, and copies wait for a session that isn't on screen
+//!   ([`ClipboardMonitor::set_focused`]).
 #![cfg(windows)]
 #![warn(unsafe_op_in_unsafe_fn)]
 
@@ -70,6 +73,8 @@ pub enum WinCliprdrError {
     Alloc,
     DataReceiveTimeout,
     RenderFormat,
+    /// The monitor's thread couldn't be started.
+    Thread,
     WinAPI(Error),
 }
 
@@ -90,6 +95,7 @@ impl core::fmt::Display for WinCliprdrError {
             WinCliprdrError::Alloc => write!(f, "failed to allocate global memory"),
             WinCliprdrError::DataReceiveTimeout => write!(f, "failed to receive data from remote clipboard"),
             WinCliprdrError::RenderFormat => write!(f, "failed to render clipboard format"),
+            WinCliprdrError::Thread => write!(f, "failed to start the clipboard monitor's thread"),
             WinCliprdrError::WinAPI(_error) => write!(f, "WinAPI error"),
         }
     }
@@ -110,6 +116,7 @@ impl core::error::Error for WinCliprdrError {
             WinCliprdrError::Alloc => None,
             WinCliprdrError::DataReceiveTimeout => None,
             WinCliprdrError::RenderFormat => None,
+            WinCliprdrError::Thread => None,
             WinCliprdrError::WinAPI(error) => Some(error),
         }
     }
@@ -148,15 +155,28 @@ pub trait Companion: Send + Sync {
     fn offer_formats(&self, formats: Vec<rdp_companion_proto::ClipFormat>) -> bool;
 
     /// Something here is pasting `format` of what the remote copied: read it through the
-    /// companion. `None` (use the clipboard channel) if none is attached or it can't. Blocks
-    /// until the data is in: it's needed before `WM_RENDERFORMAT` returns.
-    fn remote_format(&self, format: rdp_companion_proto::ClipFormat) -> Option<Vec<u8>>;
+    /// companion. Blocks until the data is in: it's needed before `WM_RENDERFORMAT` returns.
+    fn remote_format(&self, format: rdp_companion_proto::ClipFormat) -> RemoteFormat;
 
     /// The companion announces what the remote copies ([`Announcer`]), so the clipboard
     /// channel's announcements are ignored (a copy isn't offered twice).
     fn announces_copies(&self) -> bool {
         false
     }
+}
+
+/// What reading the remote's copy through the companion gave ([`Companion::remote_format`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RemoteFormat {
+    /// The bytes.
+    Data(Vec<u8>),
+    /// The companion can't serve it (none attached, a format it can't read, its clipboard
+    /// busy…): ask over the clipboard channel.
+    UseChannel,
+    /// Nothing can: the remote clipboard no longer holds that copy (it holds this PC's own
+    /// copy now, [`rdp_companion_proto::OWN_COPY`]). Asking the clipboard channel would only
+    /// wait for nothing, so the paste gets no data at once.
+    Gone,
 }
 
 /// Offers what the remote copied, as its companion announced it, on this PC's clipboard:
@@ -194,17 +214,22 @@ impl Announcer {
                     .with_name(ClipboardFormatName::new(remote_files::FILE_LIST_FORMAT_NAME)),
             );
         }
-        if self.tx.send(BackendEvent::CompanionCopy(list)).is_ok() {
-            // SAFETY: posting to the monitor's window from any thread.
-            let _ = unsafe {
-                windows::Win32::UI::WindowsAndMessaging::PostMessageW(
-                    Some(self.window),
-                    WM_CLIPRDR_BACKEND_EVENT,
-                    WPARAM(0),
-                    LPARAM(0),
-                )
-            };
-        }
+        post(&self.tx, self.window, BackendEvent::CompanionCopy(list));
+    }
+}
+
+/// Hands `event` to the monitor owning `window`, on that window's thread (any thread may call).
+fn post(tx: &mpsc_sync::Sender<BackendEvent>, window: HWND, event: BackendEvent) {
+    if tx.send(event).is_ok() {
+        // SAFETY: posting to the monitor's window from any thread.
+        let _ = unsafe {
+            windows::Win32::UI::WindowsAndMessaging::PostMessageW(
+                Some(window),
+                WM_CLIPRDR_BACKEND_EVENT,
+                WPARAM(0),
+                LPARAM(0),
+            )
+        };
     }
 }
 
@@ -265,6 +290,8 @@ pub(crate) enum BackendEvent {
     CompanionCopy(Vec<ClipboardFormat>),
     FormatDataRequest(FormatDataRequest),
     RemoteRequestsFormatList,
+    /// The session came on screen (true) or left it.
+    Focus(bool),
 }
 
 /// Where a CLIPRDR backend (on the session thread) delivers directly, bypassing the UI
@@ -296,9 +323,9 @@ impl core::fmt::Debug for Direct {
 /// [`WinClipboard`] instance holds ownership of the actual clipboard backend processing logic
 /// and should be kept alive during the whole lifetime of the application.
 ///
-/// This type is not thread safe, it should be used only in the main thread with a windows event
-/// loop. (GUI thread). However, backend factory returned by [`WinClipboard::backend_factory`]
-/// can be safely used in other threads.
+/// This type is not thread safe: it must stay on the thread that made it, and that thread must
+/// run a message loop. [`ClipboardMonitor`] gives it a thread of its own. The backend factory
+/// returned by [`WinClipboard::backend_factory`] can be safely used in other threads.
 pub struct WinClipboard {
     window: HWND,
     backend_tx: mpsc_sync::Sender<BackendEvent>,
@@ -427,6 +454,13 @@ impl WinClipboard {
         })
     }
 
+    /// Whether this session is on screen (the default). While it isn't, copies made on this
+    /// PC (or on another session's remote) aren't offered to its remote; the latest is offered
+    /// when it comes back. The clipboard channel's own setup is answered either way.
+    pub fn set_focused(&self, focused: bool) {
+        post(&self.backend_tx, self.window, BackendEvent::Focus(focused));
+    }
+
     /// Offers what the remote copied, as its companion announces it (from any thread).
     pub fn announcer(&self) -> Announcer {
         Announcer {
@@ -455,7 +489,7 @@ impl Drop for WinClipboard {
         }
 
         // The session is over, so what it copied can't be fetched any more: destroying the
-        // window must not wait to render it (WM_RENDERALLFORMATS, on the UI thread).
+        // window must not wait to render it (WM_RENDERALLFORMATS, on this thread).
         self.closing.store(true, core::sync::atomic::Ordering::SeqCst);
 
         // The subclass frees its state on WM_DESTROY.
@@ -463,6 +497,147 @@ impl Drop for WinClipboard {
         // SAFETY: the window was created on this thread in `new` and is destroyed only here.
         if let Err(err) = unsafe { DestroyWindow(self.window) } {
             error!("Failed to destroy clipboard window: {}", err)
+        }
+    }
+}
+
+/// A [`WinClipboard`] on a thread of its own, running that thread's message loop.
+///
+/// Windows serves a paste of delay-rendered data (what a remote copied, offered here) by
+/// sending `WM_RENDERFORMAT` to the clipboard owner's window and waiting for it to return,
+/// and the data has to come from the remote first. On its own thread, that wait stalls only
+/// this monitor and the program pasting: never the app's UI, nor another session's
+/// clipboard. Dropping it ends the thread (and the window with it).
+pub struct ClipboardMonitor {
+    thread_id: u32,
+    window: HWND,
+    backend_tx: mpsc_sync::Sender<BackendEvent>,
+    closing: Arc<core::sync::atomic::AtomicBool>,
+}
+
+// SAFETY: only used to post messages to the monitor's window and thread, which any thread
+// may do; the window itself is touched only on the monitor's thread.
+unsafe impl Send for ClipboardMonitor {}
+// SAFETY: as above.
+unsafe impl Sync for ClipboardMonitor {}
+
+/// What the monitor's thread hands back once its window exists.
+struct Started {
+    thread_id: u32,
+    window: HWND,
+    backend_tx: mpsc_sync::Sender<BackendEvent>,
+    closing: Arc<core::sync::atomic::AtomicBool>,
+    factory: Box<dyn CliprdrBackendFactory + Send>,
+}
+
+// SAFETY: the window handle is only posted to (see `ClipboardMonitor`).
+unsafe impl Send for Started {}
+
+impl ClipboardMonitor {
+    /// Starts a monitor on a new thread named `name`, on screen or not (`focused`, see
+    /// [`ClipboardMonitor::set_focused`]). Returns it and the factory for its session's
+    /// clipboard channel.
+    pub fn spawn(
+        name: &str,
+        message_proxy: impl ClipboardMessageProxy + 'static,
+        companion: Option<Arc<dyn Companion>>,
+        focused: bool,
+    ) -> WinCliprdrResult<(Self, Box<dyn CliprdrBackendFactory + Send>)> {
+        Self::spawn_with(name, || {}, message_proxy, companion, focused)
+    }
+
+    /// As [`ClipboardMonitor::spawn`], running `init` on the new thread first (tests put the
+    /// thread on their own desktop, whose clipboard is theirs).
+    pub fn spawn_with(
+        name: &str,
+        init: impl FnOnce() + Send + 'static,
+        message_proxy: impl ClipboardMessageProxy + 'static,
+        companion: Option<Arc<dyn Companion>>,
+        focused: bool,
+    ) -> WinCliprdrResult<(Self, Box<dyn CliprdrBackendFactory + Send>)> {
+        let (tx, rx) = mpsc_sync::sync_channel::<WinCliprdrResult<Started>>(1);
+        std::thread::Builder::new()
+            .name(name.to_owned())
+            .spawn(move || {
+                init();
+                let monitor = match WinClipboard::new(message_proxy, companion) {
+                    Ok(monitor) => monitor,
+                    Err(error) => {
+                        let _ = tx.send(Err(error));
+                        return;
+                    }
+                };
+                // Queued ahead of anything the clipboard sends this window.
+                monitor.set_focused(focused);
+                let started = Started {
+                    // SAFETY: plain query.
+                    thread_id: unsafe { windows::Win32::System::Threading::GetCurrentThreadId() },
+                    window: monitor.window,
+                    backend_tx: monitor.backend_tx.clone(),
+                    closing: Arc::clone(&monitor.closing),
+                    factory: monitor.backend_factory(),
+                };
+                if tx.send(Ok(started)).is_err() {
+                    return;
+                }
+                run_message_loop();
+                // Destroys the window, on the thread that made it.
+                drop(monitor);
+            })
+            .map_err(|_| WinCliprdrError::Thread)?;
+        let started = rx.recv().map_err(|_| WinCliprdrError::Thread)??;
+        Ok((
+            Self {
+                thread_id: started.thread_id,
+                window: started.window,
+                backend_tx: started.backend_tx,
+                closing: started.closing,
+            },
+            started.factory,
+        ))
+    }
+
+    /// See [`WinClipboard::set_focused`]. Any thread.
+    pub fn set_focused(&self, focused: bool) {
+        post(&self.backend_tx, self.window, BackendEvent::Focus(focused));
+    }
+
+    /// Offers what the remote copied, as its companion announces it. Any thread.
+    pub fn announcer(&self) -> Announcer {
+        Announcer {
+            tx: self.backend_tx.clone(),
+            window: self.window,
+        }
+    }
+}
+
+impl Drop for ClipboardMonitor {
+    fn drop(&mut self) {
+        // A paste waiting for the remote gives up at once (it checks this), so the thread
+        // gets to the quit message.
+        self.closing.store(true, core::sync::atomic::Ordering::SeqCst);
+        // SAFETY: posting to the monitor's thread; it ends its message loop on WM_QUIT.
+        let _ = unsafe {
+            windows::Win32::UI::WindowsAndMessaging::PostThreadMessageW(
+                self.thread_id,
+                windows::Win32::UI::WindowsAndMessaging::WM_QUIT,
+                WPARAM(0),
+                LPARAM(0),
+            )
+        };
+    }
+}
+
+/// This thread's message loop, until `WM_QUIT`.
+fn run_message_loop() {
+    use windows::Win32::UI::WindowsAndMessaging::{DispatchMessageW, GetMessageW, MSG, TranslateMessage};
+    let mut msg = MSG::default();
+    // SAFETY: a standard message loop on this thread; GetMessageW returns 0 on WM_QUIT and
+    // -1 on error, both of which end it.
+    unsafe {
+        while GetMessageW(&mut msg, None, 0, 0).0 > 0 {
+            let _ = TranslateMessage(&msg);
+            DispatchMessageW(&msg);
         }
     }
 }

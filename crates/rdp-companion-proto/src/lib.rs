@@ -35,6 +35,12 @@ pub const MAX_FRAME: usize = 16 * 1024 * 1024;
 /// on this PC) and must not be mirrored back.
 pub const CLIPBOARD_MARKER: &str = "RdpApp.Companion";
 
+/// Why a read of the remote's copy fails when the remote clipboard holds the client's own
+/// copy (marked with [`CLIPBOARD_MARKER`]): what the client offered as the remote's copy has
+/// since been replaced there, so nothing (not even the clipboard channel) can serve it.
+/// The client looks for this text in the error, so it must not change.
+pub const OWN_COPY: &str = "the clipboard holds the client's own copy";
+
 const LEN_BYTES: usize = 4;
 
 /// One file or folder in a transfer.

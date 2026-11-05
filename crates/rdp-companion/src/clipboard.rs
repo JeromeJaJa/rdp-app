@@ -442,7 +442,7 @@ pub(crate) fn read_format(format: &ClipFormat) -> Result<Vec<u8>, String> {
     // locked bytes are copied out before unlocking.
     let data = unsafe {
         if IsClipboardFormatAvailable(marker).is_ok() {
-            Err("the clipboard holds the client's own copy".to_owned())
+            Err(rdp_companion_proto::OWN_COPY.to_owned())
         } else {
             GetClipboardData(id)
                 .ok()

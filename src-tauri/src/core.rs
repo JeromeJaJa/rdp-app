@@ -948,10 +948,8 @@ impl Core {
         let clipboard = s.get("clipboardSync").and_then(Value::as_bool).unwrap_or(true);
         #[cfg(windows)]
         self.engine.set_clipboard_host(clipboard.then(|| {
-            Arc::new(crate::clipboard::NativeClipboard::new(
-                self.app.clone(),
-                Arc::clone(&self.companions),
-            )) as Arc<dyn rdp_engine::ClipboardHost>
+            Arc::new(crate::clipboard::NativeClipboard::new(Arc::clone(&self.companions)))
+                as Arc<dyn rdp_engine::ClipboardHost>
         }));
         self.companions.refresh_intervals();
         #[cfg(not(windows))]
