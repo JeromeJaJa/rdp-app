@@ -185,6 +185,18 @@ pattern-matching against it.
 - **Clipboard** (`crates/rdp-clipboard`): CLIPRDR file streaming over OLE `IDataObject`/`IStream`
   on an STA thread, with a direct paste channel. Large transfers are the slow part on a single TCP
   stream — the companion is the real fix.
+  - **Each session's monitor has a thread of its own** (`ClipboardMonitor`, named
+    `clipboard-<session>`), never the UI thread. Windows serves a paste of a remote's copy by sending
+    the owner's window `WM_RENDERFORMAT` and waiting while it fetches from the remote; on the UI
+    thread a slow or dead remote froze the whole app (68 sessions plus Windows clipboard history,
+    which reads every copy at once, did it for tens of seconds at a time).
+  - **Copies go at once only to sessions on screen** (`clipboard::set_on_screen`, fed by
+    `tearoff::apply_visibility`); the rest get the latest when they come on screen. Offering every
+    copy to every session put it on dozens of hosts, whose clipboards changed and read it back. The
+    channel's own setup (`RemoteRequestsFormatList`) is answered either way.
+  - **A gone copy fails at once**: when the companion says the remote clipboard holds our own copy
+    (`rdp_companion_proto::OWN_COPY`, `RemoteFormat::Gone`), the channel can't have it either, so
+    the paste gets nothing instead of waiting. The channel fallback waits at most 10 s.
 - **Companion** (`crates/rdp-companion*`, `rdp-engine/src/companion.rs`, `src-tauri/src/companion.rs`
   for installing, `src-tauri/src/companion_link.rs` for everything once attached): a remote-side
   binary opens a DVC back to the client for what pure RDP can't do: host stats, fast copies,

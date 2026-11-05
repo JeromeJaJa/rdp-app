@@ -206,7 +206,16 @@ Once the companion is attached, the clipboard goes through it instead of CLIPRDR
   A paste here asks it for the format, and it streams it straight away. Files paste as real paths (`CF_HDROP`).
 - Each side marks what it puts on the clipboard, so neither echoes the other's copy back. While a companion that
   watches the clipboard is attached, rdpclip's own announcements are ignored, so a copy isn't offered twice. If the
-  companion can't serve a paste, CLIPRDR does.
+  companion can't serve a paste, CLIPRDR does, unless the copy is gone from the remote (its clipboard holds this
+  PC's own copy now): then the paste gets nothing at once.
+
+With or without a companion, two rules keep many sessions from tangling up the clipboard:
+
+- **Each session's clipboard monitor has a thread of its own.** A program pasting a remote's copy waits while that
+  monitor fetches it, and only that monitor waits: never the app's window, nor another session.
+- **Copies go at once only to the sessions on screen.** A session that isn't gets the latest copy when it comes on
+  screen. Offering each copy to dozens of sessions put it on dozens of hosts at once, whose clipboards then read it
+  back.
 
 ### Drags, stats and program controls
 

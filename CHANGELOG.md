@@ -4,6 +4,21 @@ What changed in each release, newest first. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/) (pre-1.0, so a minor version can change behavior).
 
+## [Unreleased]
+
+### Fixed
+
+- **The app no longer freezes with many sessions open.** Pasting a copy made on a remote waited for that remote on
+  the app's own window, so a slow or dead one (often set off by Windows clipboard history, which reads every copy)
+  froze everything for seconds at a time, sometimes 30 s or more. Each session's clipboard now waits on a thread of
+  its own.
+- **Copies no longer ripple through every session.** A copy is offered at once only to the sessions on screen; the
+  others get the latest copy when you switch to them. With dozens of sessions, every copy used to reach every host.
+- A paste of a copy that's no longer on its remote returns at once instead of waiting, and a paste over the
+  clipboard channel gives up after 10 s instead of 45.
+- Redirected drives keep working after reading a file over 1600 bytes, and RemoteFX images from Windows servers
+  decode without errors (IronRDP update).
+
 ## [0.3.0] - 2026-10-27
 
 ### Added
