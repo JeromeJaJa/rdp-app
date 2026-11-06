@@ -1,17 +1,18 @@
 name: CI
 
+# Not on every push: work lands on main freely, and the checks run where they gate something.
+# - Releases: the release workflow runs these first, and builds nothing if they fail.
+# - Pull requests (contributions).
+# - By hand: Actions → CI → Run workflow.
 on:
-  push:
-    branches: [main]
-    paths-ignore: ["**.md", "assets/**", "LICENSE"]
   pull_request:
     paths-ignore: ["**.md", "assets/**", "LICENSE"]
   workflow_dispatch:
+  workflow_call:
 
-# A newer push to a pull request supersedes its run in progress. Runs on main always finish, so
-# each one leaves a warm cache behind (a cancelled job saves nothing).
+# A newer push to a pull request supersedes its run in progress.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.ref }}-${{ github.workflow }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:

@@ -1,8 +1,8 @@
 # Changelog
 
-What changed in each release, newest first. The format follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
-[Semantic Versioning](https://semver.org/) (pre-1.0, so a minor version can change behavior).
+What changed in each release, newest first. From 0.3.1 on, each release's list is generated from its
+commits (`bun scripts/release-notes.mjs`); versions follow [Semantic Versioning](https://semver.org/)
+(pre-1.0, so a minor version can change behavior).
 
 ## [Unreleased]
 

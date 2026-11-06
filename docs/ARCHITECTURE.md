@@ -256,16 +256,25 @@ first).
 
 ## CI and releases
 
-Every push to `main` and every pull request is checked on Windows (`.github/workflows/ci.yml`): the UI typecheck and
-build, `cargo fmt`, clippy with warnings as errors, and the tests.
+Work lands on `main` without CI; the checks (`.github/workflows/ci.yml`: the UI typecheck and build, `cargo fmt`,
+clippy with warnings as errors, and the tests, on Windows) run where they gate something: as the first job of every
+release, on pull requests, and by hand (Actions → CI → Run workflow).
 
-To publish a release, bump the version (`src-tauri/tauri.conf.json`, `package.json` and the workspace `Cargo.toml`),
-add a `## [x.y.z]` section to `CHANGELOG.md`, and push a matching tag (`git tag v0.3.0 && git push origin v0.3.0`).
-The release fails early if the changelog has no section for the version, and that section becomes the release
-notes. The release workflow builds the installer, checks it carries the
-companion, and attaches it, with a checksum, to a GitHub release. Only the installer is published: it puts
-`rdp-companion.exe` next to the app, which a bare exe can't. Running the workflow by hand builds the same files as an
-artifact without publishing.
+Releases are cut on purpose, batching whatever landed since the last one:
+
+1. Bump the version in `src-tauri/tauri.conf.json`, `package.json` and the workspace `Cargo.toml` (then `cargo check`,
+   so `Cargo.lock` follows).
+2. `bun scripts/release-notes.mjs --changelog x.y.z` adds the release's section to `CHANGELOG.md`: its commits since
+   the previous tag, grouped by conventional-commit type. (Without arguments it just prints them.)
+3. Commit (`chore(release): x.y.z`), tag `vx.y.z`, and push both.
+
+The tag runs the release workflow: the checks, then the build (nothing is built if they fail). It builds the
+installer, checks it carries the companion, and publishes it with a checksum, its notes being the same commit list.
+Only the installer is published: it puts `rdp-companion.exe` next to the app, which a bare exe can't. Running the
+workflow by hand builds the same files as an artifact without publishing.
+
+Without CI on `main`, the checks start from a cold build cache (GitHub only shares caches from the default branch), so
+a release's checks take longer than they would on a warm cache.
 
 IronRDP is pinned to a git revision rather than a crates.io release, for graphics fixes the releases don't have yet.
 A crate that needs a local fix not yet upstream is vendored in `third_party/` and wired in with `[patch]`; none is

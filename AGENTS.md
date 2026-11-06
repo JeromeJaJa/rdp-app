@@ -265,7 +265,11 @@ pattern-matching against it.
 
 - **Commits are conventional and scoped per change.** `feat(...)`, `fix(...)`, `style(...)`, etc.
   Keep pure-formatting changes in their own `style:` commit. Commit per feature/fix, not in one
-  lump. Don't push unless asked.
+  lump. Don't push unless asked. Commit subjects are the release notes (`scripts/release-notes.mjs`
+  groups them by type), so write them for the people using the app.
+- **Releases are cut when asked, not per push.** CI doesn't run on pushes to `main`; it runs as a
+  release's first job, on pull requests, and by hand. The steps are in `docs/ARCHITECTURE.md`
+  ("CI and releases").
 - **This repo will be open-sourced.** Keep secrets, real hostnames, tokens, screen captures of real
   sessions, and personal data out of the code and out of git history. Real test hosts go in
   `test-hosts.txt` (gitignored) and are never printed.

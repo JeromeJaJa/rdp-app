@@ -2,6 +2,8 @@ name: Release
 
 # Push a tag matching the app version to publish a release:
 #   git tag v0.1.0 && git push origin v0.1.0
+# It runs the CI checks first, then builds; nothing is built or published if they fail.
+# Its notes list the commits since the previous release (scripts/release-notes.mjs).
 # Run it by hand (Actions → Release → Run workflow) to build the same files as a
 # downloadable artifact without publishing anything.
 on:
@@ -16,8 +18,13 @@ permissions:
   contents: write
 
 jobs:
+  checks:
+    name: Checks
+    uses: ./.github/workflows/ci.yml
+
   windows:
     name: Build (Windows x64)
+    needs: checks
     runs-on: windows-latest
     timeout-minutes: 90
     defaults:
@@ -25,6 +32,9 @@ jobs:
         shell: pwsh
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The whole history and its tags: the notes list the commits since the last release.
+          fetch-depth: 0
 
       - name: Version
         id: version
@@ -32,10 +42,6 @@ jobs:
           $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
           if ($env:GITHUB_REF_TYPE -eq "tag" -and $env:GITHUB_REF_NAME -ne "v$version") {
             throw "Tag $env:GITHUB_REF_NAME doesn't match the app version $version (src-tauri/tauri.conf.json)"
-          }
-          # The release notes come from CHANGELOG.md: fail now, not after the build, if it's missing.
-          if ($env:GITHUB_REF_TYPE -eq "tag" -and -not (Select-String -Path CHANGELOG.md -Pattern "## [$version]" -SimpleMatch -Quiet)) {
-            throw "CHANGELOG.md has no '## [$version]' section"
           }
           "version=$version" >> $env:GITHUB_OUTPUT
 
@@ -93,12 +99,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $v = "${{ steps.version.outputs.version }}"
-          # This version's section of CHANGELOG.md: from its heading to the next version's (or
-          # the link references at the end).
-          $log = Get-Content CHANGELOG.md -Raw
-          $m = [regex]::Match($log, "(?ms)^## \[$([regex]::Escape($v))\][^\r\n]*\r?\n(.*?)(?=^## \[|^\[\d)")
-          if (-not $m.Success) { throw "CHANGELOG.md has no '## [$v]' section" }
-          $changes = $m.Groups[1].Value.Trim()
+          # What changed: the commits since the previous release, grouped by kind.
+          $changes = (bun scripts/release-notes.mjs $env:GITHUB_REF_NAME) -join "`n"
+          if ($LASTEXITCODE -ne 0) { throw "couldn't list the changes" }
           @"
           Windows x64: download **RDP-App_${v}_x64-setup.exe** and run it. It installs per user (no admin needed) and installs WebView2 if it's missing.
 
@@ -106,4 +109,4 @@ jobs:
 
           The builds aren't code-signed yet, so Windows SmartScreen may warn on first run: choose **More info → Run anyway**. ``SHA256SUMS.txt`` lists the installer's checksum.
           "@ | Set-Content notes.md
-          gh release create $env:GITHUB_REF_NAME release-assets/* --title "RDP App $env:GITHUB_REF_NAME" --notes-file notes.md --generate-notes
+          gh release create $env:GITHUB_REF_NAME release-assets/* --title "RDP App $env:GITHUB_REF_NAME" --notes-file notes.md
