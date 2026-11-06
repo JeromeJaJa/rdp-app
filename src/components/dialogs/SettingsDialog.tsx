@@ -72,7 +72,8 @@ function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) 
   );
 }
 
-/** Two-step button: the first click arms it, the second confirms (resets after a few seconds). */
+/** Two-step button: the first click arms it, the second confirms (resets after a few seconds).
+ *  A Ctrl+click confirms at once. */
 function ConfirmButton({ label, confirmLabel, onConfirm }: { label: string; confirmLabel: string; onConfirm: () => void }) {
   const [armed, setArmed] = useState(false);
   useEffect(() => {
@@ -84,8 +85,8 @@ function ConfirmButton({ label, confirmLabel, onConfirm }: { label: string; conf
     <Button
       size="sm"
       variant={armed ? "danger" : "ghost"}
-      onClick={() => {
-        if (armed) {
+      onClick={(e) => {
+        if (armed || e.ctrlKey || e.metaKey) {
           setArmed(false);
           onConfirm();
         } else setArmed(true);

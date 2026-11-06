@@ -45,6 +45,7 @@ export function Dialogs() {
           className="dialog--confirm"
           footer={
             <>
+              <span className="dialog__footer-note">Ctrl+click skips this</span>
               <div className="dialog__footer-spacer" />
               <Button variant="ghost" onClick={closeDialog}>
                 Cancel

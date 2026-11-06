@@ -44,6 +44,7 @@ import {
   controlApp,
   createGroup,
   deleteConnections,
+  deleteGroup,
   disconnect,
   disconnectAll,
   duplicateConnection,
@@ -55,6 +56,7 @@ import {
   openSendDialog,
   reconnect,
   showTabWindow,
+  skipsConfirmation,
   startRenameGroup,
   toggleConnectionMute,
 } from "../../state/actions";
@@ -351,7 +353,10 @@ function GroupMenu({ id }: { id: string }) {
             icon={<Trash2 size={14} />}
             label="Delete group…"
             danger
-            onSelect={() => openDialog({ kind: "deleteGroup", groupId: id })}
+            // Ctrl+click: delete it, moving its connections to All (deleting them too asks).
+            onSelect={() =>
+              skipsConfirmation() ? void deleteGroup(id, "move") : openDialog({ kind: "deleteGroup", groupId: id })
+            }
           />
         </>
       )}

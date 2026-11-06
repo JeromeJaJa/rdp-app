@@ -774,7 +774,33 @@ export function closeMenu() {
   if (getState().menu) setState({ menu: null });
 }
 
+/** Ctrl (Cmd on a Mac) was held on the click being handled: it skips confirmations. Set by
+ *  a capture listener, which runs before the click reaches any handler, and cleared after. */
+let confirmSkipped = false;
+if (typeof window !== "undefined") {
+  window.addEventListener(
+    "click",
+    (e) => {
+      confirmSkipped = e.ctrlKey || e.metaKey;
+      if (confirmSkipped) window.setTimeout(() => (confirmSkipped = false), 0);
+    },
+    true,
+  );
+}
+
+/** The click being handled skips confirmations (Ctrl+click). */
+export function skipsConfirmation(): boolean {
+  return confirmSkipped;
+}
+
+/** Asks before doing something that can't be undone; a Ctrl+click on what asked does it at once. */
 export function confirm(opts: Omit<Extract<DialogState, { kind: "confirm" }>, "kind">) {
+  if (skipsConfirmation()) {
+    // As the dialog's confirm button would: close what's open (the dialog that asked), then act.
+    closeDialog();
+    opts.onConfirm();
+    return;
+  }
   openDialog({ kind: "confirm", ...opts });
 }
 
