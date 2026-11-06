@@ -1,5 +1,7 @@
-// Updates (main window): checks the release feed, downloads in the background, and applies an
-// update when the user restarts into it. A restart drops every session, so it's never automatic.
+// Updates (main window). Checks only find out whether a newer version is out; nothing is
+// downloaded until the user updates, and then the newest one is fetched (several releases may
+// have come out since the check). Updating restarts the app, which drops every session, so
+// it's never automatic.
 import { be, confirm, errorText, openDialog, toast } from "./actions";
 import { getState, isLive, setState, type UpdateState } from "./store";
 
@@ -11,6 +13,8 @@ const CHECK_EVERY_MS = 6 * 60 * 60 * 1000;
 const LAST_VERSION_KEY = "rdp-app:last-version";
 
 const setUpdate = (patch: Partial<UpdateState>) => setState((s) => ({ update: { ...s.update, ...patch } }));
+/** Versions already announced this run (a check every few hours shouldn't repeat itself). */
+const announced = new Set<string>();
 
 /** At start: learns this version, mentions an update just applied, and schedules checks. */
 export async function initUpdates() {
@@ -37,19 +41,18 @@ export async function initUpdates() {
   }
 
   window.setTimeout(() => {
-    if (getState().settings.autoUpdate) void checkForUpdates();
+    if (getState().settings.autoCheckUpdates) void checkForUpdates();
   }, FIRST_CHECK_MS);
   window.setInterval(() => {
-    if (getState().settings.autoUpdate) void checkForUpdates();
+    if (getState().settings.autoCheckUpdates) void checkForUpdates();
   }, CHECK_EVERY_MS);
 }
 
-/** Asks the release feed for a newer version and, if there is one, downloads it. `manual`:
- *  the user asked (Settings → About), so the outcome is said either way. */
+/** Asks the release feed whether a newer version is out (nothing is downloaded). `manual`: the
+ *  user asked (Settings → About), so the outcome is said either way. */
 export async function checkForUpdates(opts: { manual?: boolean } = {}) {
   const { status } = getState().update;
-  // Already have one (downloading, or ready to apply): nothing to ask.
-  if (status === "checking" || status === "downloading" || status === "ready") return;
+  if (status === "checking" || status === "downloading" || status === "installing") return;
   setUpdate({ status: "checking", error: undefined });
   try {
     const found = await be().checkForUpdate();
@@ -60,47 +63,54 @@ export async function checkForUpdates(opts: { manual?: boolean } = {}) {
       return;
     }
     setUpdate({ status: "available", checkedAt, version: found.version, notes: found.notes });
-    await downloadUpdate();
+    if (opts.manual || !announced.has(found.version)) {
+      announced.add(found.version);
+      toast("info", `RDP App ${found.version} is available`, "Update when it suits you.", {
+        label: "What's new",
+        run: () => openDialog({ kind: "changelog" }),
+      });
+    }
   } catch (e) {
     setUpdate({ status: "error", error: errorText(e), checkedAt: Date.now() });
     if (opts.manual) toast("error", "Couldn't check for updates", errorText(e));
   }
 }
 
-/** Downloads the update found by the last check; says when it's ready to apply. */
-export async function downloadUpdate() {
-  const { version } = getState().update;
-  setUpdate({ status: "downloading", progress: 0 });
-  try {
-    await be().downloadUpdate((done, total) => {
-      if (total) setUpdate({ progress: Math.min(1, done / total) });
-    });
-    setUpdate({ status: "ready", progress: 1 });
-    toast("info", `RDP App ${version} is ready`, "Restart to update when it suits you.", {
-      label: "What's new",
-      run: () => openDialog({ kind: "changelog" }),
-    });
-  } catch (e) {
-    setUpdate({ status: "error", error: errorText(e) });
-  }
-}
-
-/** Restarts into the downloaded update, asking first if that drops live sessions. */
-export function restartToUpdate() {
+/** Updates now: asks first if that drops live sessions, then fetches the newest version,
+ *  installs it and restarts into it. */
+export function updateNow() {
   const s = getState();
   const live = Object.values(s.sessions).filter((x) => isLive(x.status)).length;
-  const install = () =>
-    be()
-      .installUpdate()
-      .catch((e) => toast("error", "Couldn't install the update", errorText(e)));
   if (!live) {
-    void install();
+    void downloadAndInstall();
     return;
   }
   confirm({
-    title: `Restart to update to ${s.update.version}?`,
-    message: `${live} session${live === 1 ? "" : "s"} will disconnect. The app restarts on the new version.`,
-    confirmLabel: "Restart and update",
-    onConfirm: () => void install(),
+    title: `Update to ${s.update.version} and restart?`,
+    message: `${live} session${live === 1 ? "" : "s"} will disconnect. The app downloads the update, then restarts on it.`,
+    confirmLabel: "Update and restart",
+    onConfirm: () => void downloadAndInstall(),
   });
+}
+
+async function downloadAndInstall() {
+  setUpdate({ status: "downloading", progress: 0, error: undefined });
+  try {
+    // Ask again first: a newer release may be out since the last check.
+    const newest = await be().checkForUpdate();
+    if (!newest) {
+      setUpdate({ status: "current", checkedAt: Date.now(), version: undefined, notes: undefined });
+      toast("success", "You're up to date", `RDP App ${getState().appVersion} is the latest version.`);
+      return;
+    }
+    setUpdate({ version: newest.version, notes: newest.notes, checkedAt: Date.now() });
+    await be().downloadUpdate((done, total) => {
+      if (total) setUpdate({ progress: Math.min(1, done / total) });
+    });
+    setUpdate({ status: "installing", progress: 1 });
+    await be().installUpdate();
+  } catch (e) {
+    setUpdate({ status: "error", error: errorText(e) });
+    toast("error", "Couldn't update", errorText(e));
+  }
 }

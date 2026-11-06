@@ -9,21 +9,28 @@ import { NewConnectionButton } from "../common/GlobalActions";
 import { WindowControls } from "./WindowControls";
 import "./titlebar.css";
 
-/** An update on its way or ready to apply (main window): opens What's new. */
+/** A newer version is out, or being installed (main window): opens What's new. */
 function UpdatePill() {
   const status = useStore((s) => s.update.status);
   const version = useStore((s) => s.update.version);
   const progress = useStore((s) => s.update.progress ?? 0);
-  if (status !== "downloading" && status !== "ready") return null;
-  const ready = status === "ready";
+  if (status !== "available" && status !== "downloading" && status !== "installing") return null;
+  const label =
+    status === "available" ? "Update" : status === "downloading" ? `${Math.round(progress * 100)}%` : "Installing";
+  const tip =
+    status === "available"
+      ? `Version ${version} is available`
+      : status === "downloading"
+        ? `Downloading version ${version}`
+        : `Installing version ${version}`;
   return (
     <button
-      className={`tb-update ${ready ? "is-ready" : ""}`}
-      data-tip={ready ? `Version ${version} is ready: restart to update` : `Downloading version ${version}`}
+      className={`tb-update ${status === "available" ? "is-ready" : ""}`}
+      data-tip={tip}
       onClick={() => openDialog({ kind: "changelog" })}
     >
       <ArrowUpCircle size={13} />
-      <span>{ready ? "Update" : `${Math.round(progress * 100)}%`}</span>
+      <span>{label}</span>
     </button>
   );
 }

@@ -76,10 +76,10 @@ Grab `RDP-App_<version>_x64-setup.exe` from the latest [**Release**](https://git
 and run it. It runs on Windows 10 and 11 (x64), installs per user (no admin needed) to
 `%LOCALAPPDATA%\RDP App`, and installs WebView2 if it's missing.
 
-After that it **updates itself**: it checks for new versions every few hours and downloads them in the background,
-and an **Update** button appears in the title bar when one is ready. Restarting into it is always your call, since it
-disconnects your sessions. **Settings → About** shows your version, what's new, and lets you check by hand or turn
-automatic updates off.
+After that it **updates itself**: it checks for new versions every few hours, and an **Update** button appears in the
+title bar when one is out. Updating is always your call, since it restarts the app and disconnects your sessions:
+it then downloads the newest version, installs it, and restarts. **Settings → About** shows your version and what's
+new, and lets you check by hand or turn the automatic checks off.
 
 The builds aren't code-signed yet, so SmartScreen may warn the first time: choose **More info → Run anyway**.
 `SHA256SUMS.txt` on each release lists the installer's checksum.

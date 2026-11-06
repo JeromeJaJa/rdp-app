@@ -997,10 +997,12 @@ export class MockBackend implements Backend {
     return pkg.version;
   }
 
-  /** `localStorage["rdp-app:mock-update"] = "9.9.9"` offers that version (for UI work). */
+  /** `localStorage["rdp-app:mock-update"] = "9.9.9"` offers that version, and "error" makes the
+   *  check fail (for UI work). */
   async checkForUpdate(): Promise<UpdateInfo | null> {
     await new Promise((r) => setTimeout(r, 500));
     const version = localStorage.getItem("rdp-app:mock-update");
+    if (version === "error") throw new Error("couldn't reach github.com");
     if (!version || version === pkg.version) return null;
     return {
       version,

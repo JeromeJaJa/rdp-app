@@ -402,7 +402,8 @@ export class TauriBackend implements Backend {
   }
 
   async checkForUpdate(): Promise<UpdateInfo | null> {
-    const update = await check();
+    // A stalled check would leave "Checking…" up and hold back every later one.
+    const update = await check({ timeout: 30_000 });
     this.update = update;
     return update ? { version: update.version, notes: update.body ?? "", date: update.date ?? null } : null;
   }

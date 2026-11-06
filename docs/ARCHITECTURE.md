@@ -274,8 +274,9 @@ Only the installer is published: it puts `rdp-companion.exe` next to the app, wh
 workflow by hand builds the same files as an artifact without publishing.
 
 **Updates.** Installed apps update themselves with Tauri's updater (`src/state/updates.ts`): every few hours they
-read `latest.json` from the latest release (`releases/latest/download/latest.json`), download a newer installer in
-the background, and apply it when the user restarts (never on their own: a restart drops every session). The release
+read `latest.json` from the latest release (`releases/latest/download/latest.json`) and offer a newer version.
+Nothing downloads until the user updates: then the feed is read again (releases may have come out since), and the
+newest installer is downloaded, installed and restarted into. That's never automatic: a restart drops every session. The release
 workflow writes `latest.json` (the version, the commit list as notes, and the installer's URL and signature) and
 signs the installer, building with `src-tauri/tauri.updater.conf.json` on top of the release config. An app only
 installs an update signed by the private key whose public half is in `tauri.conf.json` (`plugins.updater.pubkey`).

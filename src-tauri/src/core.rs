@@ -110,7 +110,7 @@ pub fn default_settings() -> Map<String, Value> {
         "sidebarWidth": 248,
         "gridTileWidth": 320,
         "gridCollapsed": [],
-        "autoUpdate": true,
+        "autoCheckUpdates": true,
         "gridFilter": "all",
         "connectOnSelect": false,
         "maxConcurrentConnects": 6,

@@ -132,9 +132,10 @@ export interface Toast {
 
 /** Where updating stands (main window). */
 export interface UpdateState {
-  /** idle: not checked yet; current: this is the latest; available: found, not downloaded;
-   *  downloading; ready: downloaded, applied on restart; error: the last check or download failed. */
-  status: "idle" | "checking" | "current" | "available" | "downloading" | "ready" | "error";
+  /** idle: not checked yet; current: this is the latest; available: a newer one is out;
+   *  downloading / installing: the user is updating (the app restarts at the end); error: the
+   *  last check or update failed. */
+  status: "idle" | "checking" | "current" | "available" | "downloading" | "installing" | "error";
   /** The newer version, and what changed in it (Markdown). */
   version?: string;
   notes?: string;

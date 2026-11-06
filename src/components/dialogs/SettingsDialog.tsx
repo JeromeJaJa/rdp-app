@@ -21,7 +21,7 @@ import {
 import type { ApiInfo, TrustedCertificate } from "../../lib/types";
 import { useShallow } from "zustand/react/shallow";
 import { be, errorText, openDialog, toast, updateSettings } from "../../state/actions";
-import { checkForUpdates, restartToUpdate } from "../../state/updates";
+import { checkForUpdates, updateNow } from "../../state/updates";
 import { useStore, type SettingsSection } from "../../state/store";
 import { Button, Segmented, Select, Spinner, Switch, TextInput } from "../ui/ui";
 import { Dialog } from "./Dialog";
@@ -114,22 +114,24 @@ function ago(at: number): string {
 
 function About() {
   const version = useStore((st) => st.appVersion);
-  const auto = useStore((st) => st.settings.autoUpdate);
+  const auto = useStore((st) => st.settings.autoCheckUpdates);
   const update = useStore(useShallow((st) => st.update));
+  const pct = Math.round((update.progress ?? 0) * 100);
   const status =
     update.status === "checking"
       ? "Checking…"
-      : update.status === "downloading"
-        ? `Downloading ${update.version}: ${Math.round((update.progress ?? 0) * 100)}%`
-        : update.status === "ready"
-          ? `${update.version} is downloaded: restart to update.`
-          : update.status === "available"
-            ? `${update.version} is available.`
+      : update.status === "available"
+        ? `${update.version} is available.`
+        : update.status === "downloading"
+          ? `Downloading ${update.version}: ${pct}%`
+          : update.status === "installing"
+            ? `Installing ${update.version}: the app restarts in a moment.`
             : update.status === "error"
-              ? `Couldn't check: ${update.error}`
+              ? `${update.version ? "Couldn't update" : "Couldn't check"}: ${update.error}`
               : update.status === "current"
                 ? `Up to date${update.checkedAt ? ` (checked ${ago(update.checkedAt)})` : ""}.`
                 : "Not checked yet.";
+  const updating = update.status === "available" || update.status === "downloading" || update.status === "installing";
   return (
     <>
       <h3 className="settings__heading">RDP App</h3>
@@ -139,25 +141,21 @@ function About() {
         </Button>
       </Row>
       <Row title="Updates" desc={status}>
-        {update.status === "ready" ? (
-          <Button size="sm" variant="primary" onClick={restartToUpdate}>
-            Restart to update
+        {updating ? (
+          <Button size="sm" variant="primary" onClick={updateNow} disabled={update.status !== "available"}>
+            Update and restart
           </Button>
         ) : (
-          <Button
-            size="sm"
-            disabled={update.status === "checking" || update.status === "downloading"}
-            onClick={() => void checkForUpdates({ manual: true })}
-          >
+          <Button size="sm" disabled={update.status === "checking"} onClick={() => void checkForUpdates({ manual: true })}>
             Check now
           </Button>
         )}
       </Row>
       <Row
-        title="Update automatically"
-        desc="Checks every few hours and downloads new versions in the background. Restarting into one is always up to you (it disconnects your sessions)."
+        title="Check for updates automatically"
+        desc="Checks every few hours and lets you know when a new version is out. Nothing downloads until you update, which restarts the app (and disconnects your sessions)."
       >
-        <Switch checked={auto} onChange={(autoUpdate) => updateSettings({ autoUpdate })} />
+        <Switch checked={auto} onChange={(autoCheckUpdates) => updateSettings({ autoCheckUpdates })} />
       </Row>
     </>
   );

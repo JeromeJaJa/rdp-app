@@ -154,9 +154,8 @@ export interface Settings {
   gridTileWidth: number;
   /** Groups folded in the grid view (their ids), apart from the sidebar's folding. */
   gridCollapsed: string[];
-  /** Check for updates every few hours and download them in the background (restarting is
-   *  always the user's call). */
-  autoUpdate: boolean;
+  /** Check for updates every few hours (nothing downloads until the user updates). */
+  autoCheckUpdates: boolean;
   gridFilter: "all" | "connected";
   /** When true, selecting a tab of an idle connection connects it immediately. */
   connectOnSelect: boolean;
@@ -213,7 +212,7 @@ export const DEFAULT_SETTINGS: Settings = {
   sidebarWidth: 248,
   gridTileWidth: 320,
   gridCollapsed: [],
-  autoUpdate: true,
+  autoCheckUpdates: true,
   gridFilter: "all",
   connectOnSelect: false,
   maxConcurrentConnects: 6,

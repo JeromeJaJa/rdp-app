@@ -3,7 +3,7 @@ import { useShallow } from "zustand/react/shallow";
 import changelog from "../../../CHANGELOG.md?raw";
 import { closeDialog } from "../../state/actions";
 import { useStore } from "../../state/store";
-import { checkForUpdates, restartToUpdate } from "../../state/updates";
+import { updateNow } from "../../state/updates";
 import { Markdown } from "../common/Markdown";
 import { Button, Spinner } from "../ui/ui";
 import { Dialog } from "./Dialog";
@@ -19,7 +19,8 @@ export function ChangelogDialog() {
     const first = changelog.search(/^## \[/m);
     return first < 0 ? changelog : changelog.slice(first);
   }, []);
-  const offered = !!update.version && ["available", "downloading", "ready"].includes(update.status);
+  const offered = !!update.version && ["available", "downloading", "installing"].includes(update.status);
+  const busy = update.status === "downloading" || update.status === "installing";
 
   return (
     <Dialog
@@ -30,13 +31,17 @@ export function ChangelogDialog() {
         <>
           <span className="dialog__footer-note">{version ? `You're on ${version}` : ""}</span>
           <div className="dialog__footer-spacer" />
-          {update.status === "ready" ? (
+          {offered ? (
             <>
-              <Button variant="ghost" onClick={closeDialog}>
+              <Button variant="ghost" onClick={closeDialog} disabled={busy}>
                 Later
               </Button>
-              <Button variant="primary" data-autofocus onClick={restartToUpdate}>
-                Restart to update
+              <Button variant="primary" data-autofocus onClick={updateNow} disabled={busy}>
+                {update.status === "downloading"
+                  ? `Downloading ${Math.round((update.progress ?? 0) * 100)}%`
+                  : update.status === "installing"
+                    ? "Installing…"
+                    : "Update and restart"}
               </Button>
             </>
           ) : (
@@ -52,16 +57,16 @@ export function ChangelogDialog() {
           <div className="changelog__update-head">
             <span className="changelog__update-title">Version {update.version}</span>
             <span className="changelog__update-state">
-              {update.status === "ready" ? (
-                "Downloaded: restart to update"
-              ) : update.status === "downloading" ? (
+              {update.status === "downloading" ? (
                 <>
                   <Spinner size={11} /> Downloading {Math.round((update.progress ?? 0) * 100)}%
                 </>
+              ) : update.status === "installing" ? (
+                <>
+                  <Spinner size={11} /> Installing: the app restarts in a moment
+                </>
               ) : (
-                <Button size="sm" onClick={() => void checkForUpdates({ manual: true })}>
-                  Download
-                </Button>
+                "Available"
               )}
             </span>
           </div>
