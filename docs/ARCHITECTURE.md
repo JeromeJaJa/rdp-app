@@ -273,6 +273,16 @@ installer, checks it carries the companion, and publishes it with a checksum, it
 Only the installer is published: it puts `rdp-companion.exe` next to the app, which a bare exe can't. Running the
 workflow by hand builds the same files as an artifact without publishing.
 
+**Updates.** Installed apps update themselves with Tauri's updater (`src/state/updates.ts`): every few hours they
+read `latest.json` from the latest release (`releases/latest/download/latest.json`), download a newer installer in
+the background, and apply it when the user restarts (never on their own: a restart drops every session). The release
+workflow writes `latest.json` (the version, the commit list as notes, and the installer's URL and signature) and
+signs the installer, building with `src-tauri/tauri.updater.conf.json` on top of the release config. An app only
+installs an update signed by the private key whose public half is in `tauri.conf.json` (`plugins.updater.pubkey`).
+That key is the `TAURI_SIGNING_PRIVATE_KEY` repository secret (no password); its owner keeps a copy outside the repo.
+**If it's lost, installed apps can't be updated any more** (they'd need a manual reinstall of a build with a new
+key). The app ships `CHANGELOG.md` and shows it under What's new (Settings → About).
+
 Without CI on `main`, the checks start from a cold build cache (GitHub only shares caches from the default branch), so
 a release's checks take longer than they would on a warm cache.
 

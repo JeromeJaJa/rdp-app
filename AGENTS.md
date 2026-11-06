@@ -269,7 +269,12 @@ pattern-matching against it.
   groups them by type), so write them for the people using the app.
 - **Releases are cut when asked, not per push.** CI doesn't run on pushes to `main`; it runs as a
   release's first job, on pull requests, and by hand. The steps are in `docs/ARCHITECTURE.md`
-  ("CI and releases").
+  ("CI and releases"). Installed apps update themselves from releases, so a release reaches every
+  user within hours: only cut one that's been checked.
+- **The updater's signing key never goes in the repo.** Releases are signed with the
+  `TAURI_SIGNING_PRIVATE_KEY` secret; `tauri.conf.json` holds only the public key. Don't change
+  `plugins.updater.pubkey` unless the key is being rotated on purpose: every installed app trusts only
+  that key, and a mismatch strands them on their current version.
 - **This repo will be open-sourced.** Keep secrets, real hostnames, tokens, screen captures of real
   sessions, and personal data out of the code and out of git history. Real test hosts go in
   `test-hosts.txt` (gitignored) and are never printed.
