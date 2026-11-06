@@ -4,20 +4,31 @@ What changed in each release, newest first. From 0.3.1 on, each release's list i
 commits (`bun scripts/release-notes.mjs`); versions follow [Semantic Versioning](https://semver.org/)
 (pre-1.0, so a minor version can change behavior).
 
-## [Unreleased]
+## [0.4.0] - 2026-11-06
 
-### Fixed
+### Features
 
-- **The app no longer freezes with many sessions open.** Pasting a copy made on a remote waited for that remote on
-  the app's own window, so a slow or dead one (often set off by Windows clipboard history, which reads every copy)
-  froze everything for seconds at a time, sometimes 30 s or more. Each session's clipboard now waits on a thread of
-  its own.
-- **Copies no longer ripple through every session.** A copy is offered at once only to the sessions on screen; the
-  others get the latest copy when you switch to them. With dozens of sessions, every copy used to reach every host.
-- A paste of a copy that's no longer on its remote returns at once instead of waiting, and a paste over the
-  clipboard channel gives up after 10 s instead of 45.
-- Redirected drives keep working after reading a file over 1600 bytes, and RemoteFX images from Windows servers
-  decode without errors (IronRDP update).
+- **grid:** fold groups, and full buttons for a group's controls [`fa08044`](https://github.com/JeromeJaJa/rdp-app/commit/fa08044)
+- **ui:** Ctrl+click skips confirmations [`bbe044c`](https://github.com/JeromeJaJa/rdp-app/commit/bbe044c)
+- **updates:** the app updates itself, and shows its version and what's new [`3d8856f`](https://github.com/JeromeJaJa/rdp-app/commit/3d8856f)
+- **updates:** download only when updating, so it's always the newest [`0861ceb`](https://github.com/JeromeJaJa/rdp-app/commit/0861ceb)
+- **updates:** hovering the Update pill shows what changed [`8b42a17`](https://github.com/JeromeJaJa/rdp-app/commit/8b42a17)
+
+### Fixes
+
+- **deps:** update IronRDP, so drive redirection survives replies over 1600 bytes [`c4d379c`](https://github.com/JeromeJaJa/rdp-app/commit/c4d379c)
+- **clipboard:** many sessions no longer freeze the app [`97665d9`](https://github.com/JeromeJaJa/rdp-app/commit/97665d9)
+- **grid:** a connecting tile keeps its status on hover [`1d811c2`](https://github.com/JeromeJaJa/rdp-app/commit/1d811c2)
+- **companion:** program controls and sends give up at once when the install failed [`fa3da51`](https://github.com/JeromeJaJa/rdp-app/commit/fa3da51)
+
+### Other changes
+
+- **changelog:** an absolute link, so it works in release notes too [`0224c24`](https://github.com/JeromeJaJa/rdp-app/commit/0224c24)
+- the clipboard's threading and on-screen offers, and an Unreleased changelog [`c3747b3`](https://github.com/JeromeJaJa/rdp-app/commit/c3747b3)
+- check on releases and pull requests, not every push; notes from commits [`3a0d88d`](https://github.com/JeromeJaJa/rdp-app/commit/3a0d88d)
+- **release:** sign the installer and publish the update feed [`dedf821`](https://github.com/JeromeJaJa/rdp-app/commit/dedf821)
+- self-updating, and the release signing key [`c4587dd`](https://github.com/JeromeJaJa/rdp-app/commit/c4587dd)
+- **release:** each change in the notes ends with its commit, not in parentheses [`77fbf80`](https://github.com/JeromeJaJa/rdp-app/commit/77fbf80)
 
 ## [0.3.0] - 2026-10-27
 
@@ -78,6 +89,7 @@ The first release.
 - A local REST API for scripts and agents.
 - Passwords encrypted with Windows DPAPI.
 
+[0.4.0]: https://github.com/JeromeJaJa/rdp-app/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/JeromeJaJa/rdp-app/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/JeromeJaJa/rdp-app/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/JeromeJaJa/rdp-app/releases/tag/v0.1.0
