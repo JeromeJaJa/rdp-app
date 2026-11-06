@@ -65,7 +65,7 @@ const commits = git("log", "--no-merges", "--reverse", `--format=%h${SEP}%s`, ra
 const line = (c) => {
   const ref = repo ? `[\`${c.hash}\`](${repo}/commit/${c.hash})` : `\`${c.hash}\``;
   const scope = c.scope ? `**${c.scope}:** ` : "";
-  return `- ${c.breaking ? "**Breaking:** " : ""}${scope}${c.text} (${ref})`;
+  return `- ${c.breaking ? "**Breaking:** " : ""}${scope}${c.text} ${ref}`;
 };
 
 const sections = [];
