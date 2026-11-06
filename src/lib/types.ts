@@ -152,6 +152,8 @@ export interface Settings {
   sidebarWidth: number;
   /** Grid tile width in CSS px. */
   gridTileWidth: number;
+  /** Groups folded in the grid view (their ids), apart from the sidebar's folding. */
+  gridCollapsed: string[];
   gridFilter: "all" | "connected";
   /** When true, selecting a tab of an idle connection connects it immediately. */
   connectOnSelect: boolean;
@@ -207,6 +209,7 @@ export const DEFAULT_SETTINGS: Settings = {
   topTabs: "active",
   sidebarWidth: 248,
   gridTileWidth: 320,
+  gridCollapsed: [],
   gridFilter: "all",
   connectOnSelect: false,
   maxConcurrentConnects: 6,

@@ -68,16 +68,48 @@
 .grid-section + .grid-section {
   margin-top: 26px;
 }
-.grid-section__title {
+.grid-section:has(.grid-section__head.is-folded) + .grid-section {
+  margin-top: 14px;
+}
+/* A group's heading row: the foldable title on the left, its controls on the right. */
+.grid-section__head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   margin: 0 0 12px 2px;
+  min-height: 26px;
+}
+.grid-section__head.is-folded {
+  margin-bottom: 0;
+}
+.grid-section__title {
+  margin: 0;
+  font: inherit;
+}
+.grid-section__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 6px 3px 2px;
+  border-radius: var(--r-sm, 6px);
   font-size: 11.5px;
   font-weight: 600;
   letter-spacing: 0.02em;
   text-transform: uppercase;
   color: var(--text-3);
+  transition: color var(--t-fast) ease, background-color var(--t-fast) ease;
+}
+.grid-section__toggle:hover {
+  color: var(--text-2, var(--text));
+  background: var(--hover, color-mix(in srgb, var(--text) 5%, transparent));
+}
+.grid-section__chevron {
+  flex: none;
+  transform: rotate(90deg);
+  transition: transform var(--t-fast) var(--ease-out);
+}
+.is-folded .grid-section__chevron {
+  transform: none;
 }
 .grid-section__count {
   font-family: var(--font-mono);
@@ -86,25 +118,13 @@
   color: var(--text-3);
   opacity: 0.8;
 }
-/* Group controls, pushed to the right of the heading. Always visible, a touch muted so
-   they don't compete with the tiles, and full-strength on hover. */
+/* Group controls, pushed to the right of the heading: full buttons, like the toolbar's. */
 .grid-section__actions {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 6px;
   margin-left: auto;
-  opacity: 0.7;
-  transition: opacity var(--t-fast) ease;
 }
-.grid-section:hover .grid-section__actions,
-.grid-section__actions:focus-within {
-  opacity: 1;
-}
-/* The uppercased heading would otherwise stretch the icons' letter-spacing. */
-.grid-section__actions .tab__action {
-  letter-spacing: normal;
-}
-
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(var(--tile), 100%), 1fr));

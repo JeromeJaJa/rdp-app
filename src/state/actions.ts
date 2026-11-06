@@ -1124,6 +1124,12 @@ export function renameGroup(id: GroupId, name: string) {
   saveGroups(getState().groups.map((x) => (x.id === id ? { ...x, name: trimmed } : x)));
 }
 
+/** Folds or unfolds a group in the grid view (the sidebar folds separately). */
+export function toggleGridGroup(id: GroupId) {
+  const folded = getState().settings.gridCollapsed;
+  updateSettings({ gridCollapsed: folded.includes(id) ? folded.filter((g) => g !== id) : [...folded, id] });
+}
+
 export function toggleGroupCollapsed(id: GroupId) {
   saveGroups(getState().groups.map((g) => (g.id === id ? { ...g, collapsed: !g.collapsed } : g)));
 }

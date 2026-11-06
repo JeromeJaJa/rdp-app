@@ -29,6 +29,15 @@
   height: 32px;
   padding: 0 13px;
 }
+/* Icon only: square, the height of the size it's used with. */
+.btn--icon.btn--sm {
+  width: 26px;
+  padding: 0;
+}
+.btn--icon.btn--md {
+  width: 32px;
+  padding: 0;
+}
 .btn--lg {
   height: 38px;
   padding: 0 18px;
