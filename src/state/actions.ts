@@ -1254,6 +1254,11 @@ export function activityDone(a: Activity): boolean {
  * Launches, restarts or closes `app` on each connection's host. One row in the transfers
  * panel follows it ("Launching Valor · 37/100"), turning into the outcome as hosts answer.
  */
+/** The longest a program control waits for one host: the backend's own limits (150 s for the
+ *  companion to attach, connecting and installing it if needed, then 45 s for its answer)
+ *  plus a margin. */
+const APP_CONTROL_LIMIT_MS = 210_000;
+
 export async function controlApp(ids: ConnectionId[], app: RemoteApp, action: AppAction) {
   if (!ids.length) return;
   const [doing, done, verb] = APP_VERB[action];
@@ -1280,14 +1285,22 @@ export async function controlApp(ids: ConnectionId[], app: RemoteApp, action: Ap
         : { ...a, ok: [...a.ok, host], idle: outcome.idle ? [...a.idle, host] : a.idle };
       return { activities: { ...s.activities, [id]: next } };
     });
-  // One request per host, so the row counts them off as they answer.
+  // One request per host, so the row counts them off as they answer. Each gives up after
+  // APP_CONTROL_LIMIT_MS whatever happens, so the row always ends.
   await Promise.all(
     ids.map(async (host) => {
+      let timer = 0;
+      const timedOut = new Promise<never>((_, reject) => {
+        timer = window.setTimeout(() => reject(new Error("no answer from the host")), APP_CONTROL_LIMIT_MS);
+      });
       try {
-        const [result] = await be().controlApp([host], action, app.path);
-        settle(host, { error: result?.error, idle: action === "close" && !result?.wasRunning });
+        const [result] = await Promise.race([be().controlApp([host], action, app.path), timedOut]);
+        if (!result) settle(host, { error: "no answer from the host" });
+        else settle(host, { error: result.error, idle: action === "close" && !result.wasRunning });
       } catch (e) {
         settle(host, { error: errorText(e) });
+      } finally {
+        window.clearTimeout(timer);
       }
     }),
   );

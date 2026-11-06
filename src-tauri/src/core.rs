@@ -230,6 +230,41 @@ struct CompanionState {
     updated: std::collections::HashSet<String>,
     /// Sessions we installed the companion on this connection.
     installed: std::collections::HashSet<String>,
+    /// Sessions whose companion install failed this connection, and why: what waits for
+    /// their companion (a program control, a send) gives up at once with that reason.
+    failed: std::collections::HashMap<String, String>,
+}
+
+/// Why waiting for a companion is pointless after its install ended `outcome`, if it is.
+fn install_failure(outcome: &anyhow::Result<crate::companion::Outcome>) -> Option<String> {
+    use crate::companion::Outcome;
+    match outcome {
+        Ok(Outcome::Installed) => None,
+        Ok(Outcome::NeedsTrust) => {
+            Some("the companion isn't installed yet: this PC has to trust the host first (Set up the companion)".into())
+        }
+        Ok(Outcome::WinrmUnavailable) => Some(
+            "the companion isn't installed: this PC can't reach WinRM on that host (port 5985 is blocked, or WinRM is off)"
+                .into(),
+        ),
+        Err(e) => {
+            let detail = format!("{e:#}");
+            let detail = detail.lines().next().unwrap_or("").trim();
+            Some(format!(
+                "the companion couldn't be installed: {}",
+                detail.chars().take(160).collect::<String>()
+            ))
+        }
+    }
+}
+
+/// "the companion …" → "The companion …", for messages shown on their own.
+fn sentence(text: &str) -> String {
+    let mut chars = text.chars();
+    chars
+        .next()
+        .map(|c| c.to_uppercase().chain(chars).collect())
+        .unwrap_or_default()
 }
 
 impl Core {
@@ -263,7 +298,11 @@ impl Core {
     pub fn on_engine_event(self: &Arc<Self>, event: &EngineEvent) {
         match event {
             EngineEvent::CompanionConnected { id, build, .. } => {
-                self.companion.lock().attached.insert(id.clone());
+                {
+                    let mut c = self.companion.lock();
+                    c.attached.insert(id.clone());
+                    c.failed.remove(id);
+                }
                 self.maybe_update_companion(id.clone(), build);
             }
             EngineEvent::CompanionDisconnected { id } => {
@@ -293,6 +332,7 @@ impl Core {
                     c.installing.remove(id);
                     c.updated.remove(id);
                     c.installed.remove(id);
+                    c.failed.remove(id);
                 }
                 _ => {}
             },
@@ -330,7 +370,14 @@ impl Core {
                 let id = id.clone();
                 tauri::async_runtime::spawn_blocking(move || core.install_companion(&id)).await
             };
-            core.companion.lock().installing.remove(&id);
+            {
+                let mut c = core.companion.lock();
+                c.installing.remove(&id);
+                match outcome.as_ref().ok().and_then(install_failure) {
+                    Some(reason) => c.failed.insert(id.clone(), reason),
+                    None => c.failed.remove(&id),
+                };
+            }
             match outcome {
                 Ok(Ok(crate::companion::Outcome::Installed)) => {
                     // The attach event will follow.
@@ -578,6 +625,11 @@ impl Core {
                         }
                         return;
                     }
+                    let failed = core.companion.lock().failed.get(&id).cloned();
+                    if let Some(reason) = failed {
+                        core.companions.fail(transfer, &sentence(&reason));
+                        return;
+                    }
                     if tokio::time::Instant::now() >= deadline || !core.engine.running().contains(&id) {
                         core.companions
                             .fail(transfer, "The companion didn't attach (is it installed on that host?)");
@@ -635,9 +687,14 @@ impl Core {
             if !self.engine.running().iter().any(|r| r == id) {
                 self.connect(&[id.to_owned()]);
             }
-            // Connecting can include installing the companion; give it a while.
+            // Connecting can include installing the companion; give it a while, unless its
+            // install already failed.
             let deadline = tokio::time::Instant::now() + Duration::from_secs(150);
             while !self.companions.is_attached(id) {
+                let failed = self.companion.lock().failed.get(id).cloned();
+                if let Some(reason) = failed {
+                    return Err(reason);
+                }
                 if tokio::time::Instant::now() >= deadline || !self.engine.running().iter().any(|r| r == id) {
                     return Err("the companion didn't attach (is it installed on that host?)".into());
                 }
@@ -1234,6 +1291,31 @@ fn local_drives() -> Vec<std::path::PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_failed_install_says_why_and_a_good_one_says_nothing() {
+        use crate::companion::Outcome;
+        assert_eq!(install_failure(&Ok(Outcome::Installed)), None);
+        assert!(
+            install_failure(&Ok(Outcome::WinrmUnavailable))
+                .unwrap()
+                .contains("port 5985")
+        );
+        assert!(
+            install_failure(&Ok(Outcome::NeedsTrust))
+                .unwrap()
+                .contains("trust the host")
+        );
+        let failed = install_failure(&Err(anyhow::anyhow!("companion binary not found\nmore detail"))).unwrap();
+        assert_eq!(
+            failed,
+            "the companion couldn't be installed: companion binary not found"
+        );
+        assert_eq!(
+            sentence(&failed),
+            "The companion couldn't be installed: companion binary not found"
+        );
+    }
 
     fn check(v: Value) -> anyhow::Result<()> {
         validate_settings(v.as_object().unwrap())
