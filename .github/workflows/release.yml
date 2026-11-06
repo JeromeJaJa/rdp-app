@@ -65,9 +65,18 @@ jobs:
         run: bun install --frozen-lockfile
 
       # Builds the companion, then the app and its installer with the companion bundled
-      # next to the exe (src-tauri/tauri.release.conf.json).
+      # next to the exe (src-tauri/tauri.release.conf.json), signed for the updater
+      # (src-tauri/tauri.updater.conf.json: the .sig installed apps check updates against).
       - name: Build
-        run: bun run build:release
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        run: |
+          if (-not $env:TAURI_SIGNING_PRIVATE_KEY) { throw "the TAURI_SIGNING_PRIVATE_KEY secret isn't set" }
+          cargo build --release --locked -p rdp-companion
+          if ($LASTEXITCODE -ne 0) { throw "companion build failed" }
+          bunx tauri build --config src-tauri/tauri.release.conf.json --config src-tauri/tauri.updater.conf.json
+          if ($LASTEXITCODE -ne 0) { throw "app build failed" }
 
       - name: Package
         run: |
@@ -76,11 +85,33 @@ jobs:
             throw "the installer doesn't include rdp-companion.exe"
           }
           $out = (New-Item -ItemType Directory -Force release-assets).FullName
-          $setup = Get-ChildItem target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
-          if (-not $setup) { throw "installer not found" }
+          # This version's installer: the folder can hold older ones (from a cached build).
+          $setup = Get-ChildItem "target/release/bundle/nsis/*_${v}_x64-setup.exe" | Select-Object -First 1
+          if (-not $setup) { throw "installer for $v not found" }
           # Only the installer: it puts rdp-companion.exe next to the app. A bare exe on its own
           # runs fine but can't install the companion, which looked like a broken feature.
-          Copy-Item $setup.FullName "$out/RDP-App_${v}_x64-setup.exe"
+          $installer = "RDP-App_${v}_x64-setup.exe"
+          Copy-Item $setup.FullName "$out/$installer"
+
+          # What changed: the commits since the previous release, grouped by kind. The release's
+          # notes, and what installed apps show before updating.
+          (bun scripts/release-notes.mjs $env:GITHUB_REF_NAME) -join "`n" | Set-Content changes.md
+          if ($LASTEXITCODE -ne 0) { throw "couldn't list the changes" }
+
+          # The update feed installed apps read (releases/latest/download/latest.json): this
+          # version, its notes, and the installer with its signature.
+          $sig = Get-Item "$($setup.FullName).sig" -ErrorAction SilentlyContinue
+          if (-not $sig) { throw "the installer isn't signed for the updater (no .sig)" }
+          $platform = @{
+            signature = (Get-Content $sig.FullName -Raw).Trim()
+            url = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/v$v/$installer"
+          }
+          [ordered]@{
+            version = $v
+            notes = (Get-Content changes.md -Raw).Trim()
+            pub_date = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+            platforms = [ordered]@{ "windows-x86_64-nsis" = $platform; "windows-x86_64" = $platform }
+          } | ConvertTo-Json -Depth 5 | Set-Content "$out/latest.json" -Encoding utf8NoBOM
           $sums = Get-ChildItem $out | ForEach-Object {
             "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)"
           }
@@ -99,11 +130,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $v = "${{ steps.version.outputs.version }}"
-          # What changed: the commits since the previous release, grouped by kind.
-          $changes = (bun scripts/release-notes.mjs $env:GITHUB_REF_NAME) -join "`n"
-          if ($LASTEXITCODE -ne 0) { throw "couldn't list the changes" }
+          $changes = Get-Content changes.md -Raw
           @"
-          Windows x64: download **RDP-App_${v}_x64-setup.exe** and run it. It installs per user (no admin needed) and installs WebView2 if it's missing.
+          Windows x64: download **RDP-App_${v}_x64-setup.exe** and run it. It installs per user (no admin needed) and installs WebView2 if it's missing. Installed apps update themselves from here (Settings → About).
 
           $changes
 
