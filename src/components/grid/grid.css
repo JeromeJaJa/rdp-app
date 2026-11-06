@@ -216,7 +216,8 @@
   opacity: 1;
   transform: none;
 }
-.tile:hover .tile__placeholder .tile__state {
+/* The state makes way for the Connect button; while connecting there's no button, so it stays. */
+.tile:hover .tile__placeholder:has(.tile__connect) .tile__state {
   opacity: 0;
   transform: translateY(-4px);
 }
