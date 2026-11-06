@@ -42,7 +42,14 @@ export const VITALS_HISTORY = 120;
 
 export type View = "session" | "grid";
 
-export type SettingsSection = "general" | "connections" | "graphics" | "devices" | "security" | "automation";
+export type SettingsSection =
+  | "general"
+  | "connections"
+  | "graphics"
+  | "devices"
+  | "security"
+  | "automation"
+  | "about";
 
 export type DialogState =
   | { kind: "add"; mode: "single" | "bulk"; groupId?: GroupId }
@@ -54,6 +61,8 @@ export type DialogState =
   | { kind: "gateway"; groupId: GroupId }
   | { kind: "groupSettings"; groupId: GroupId }
   | { kind: "deleteGroup"; groupId: GroupId }
+  /** What's new: an available update's notes, and the changelog of this version and earlier. */
+  | { kind: "changelog" }
   /** Send files and folders to connections (`paths` already chosen, e.g. dropped). */
   | { kind: "send"; ids: ConnectionId[]; paths?: string[] }
   | {
@@ -121,8 +130,26 @@ export interface Toast {
   sticky?: boolean;
 }
 
+/** Where updating stands (main window). */
+export interface UpdateState {
+  /** idle: not checked yet; current: this is the latest; available: found, not downloaded;
+   *  downloading; ready: downloaded, applied on restart; error: the last check or download failed. */
+  status: "idle" | "checking" | "current" | "available" | "downloading" | "ready" | "error";
+  /** The newer version, and what changed in it (Markdown). */
+  version?: string;
+  notes?: string;
+  /** Download progress, 0–1 (when the size is known). */
+  progress?: number;
+  error?: string;
+  /** When the feed was last asked (ms since the epoch). */
+  checkedAt?: number;
+}
+
 export interface AppState {
   ready: boolean;
+  /** This app's version. */
+  appVersion: string;
+  update: UpdateState;
   order: ConnectionId[];
   connById: Record<ConnectionId, Connection>;
   groups: Group[];
@@ -181,6 +208,8 @@ export const useStore = create<AppState>(() => ({
   stats: {},
   transfers: {},
   activities: {},
+  appVersion: "",
+  update: { status: "idle" },
   droppedPaths: null,
 
   selectedId: null,

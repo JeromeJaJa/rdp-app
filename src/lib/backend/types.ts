@@ -20,6 +20,7 @@ import type {
   SessionEvent,
   Settings,
   TrustedCertificate,
+  UpdateInfo,
   CompanionStatus,
   ContinueDrag,
   FileDrag,
@@ -162,6 +163,16 @@ export interface Backend {
   reportUiState(state: UiState): void;
   /** Opens an http(s) link in the default browser. */
   openExternal(url: string): Promise<void>;
+
+  // ── Updates ───────────────────────────────────────────────────────────
+  /** This app's version (semver). */
+  appVersion(): Promise<string>;
+  /** Asks the release feed for a newer version: null when this one is the latest. */
+  checkForUpdate(): Promise<UpdateInfo | null>;
+  /** Downloads the update the last check found, reporting bytes as they come. */
+  downloadUpdate(onProgress: (done: number, total: number | null) => void): Promise<void>;
+  /** Installs the downloaded update and restarts the app into it. */
+  installUpdate(): Promise<void>;
 
   // ── Windows and tabs ────────────────────────────────────────────────────
   /** The main window's open tabs, and which tabs live in which detached window. */

@@ -2,6 +2,7 @@ import { closeDialog } from "../../state/actions";
 import { useStore } from "../../state/store";
 import { Button } from "../ui/ui";
 import { AddDialog } from "./AddDialog";
+import { ChangelogDialog } from "./ChangelogDialog";
 import { DeleteGroupDialog } from "./DeleteGroupDialog";
 import { Dialog } from "./Dialog";
 import { EditDialog } from "./EditDialog";
@@ -35,6 +36,8 @@ export function Dialogs() {
       return <GroupSettingsDialog key={dialog.groupId} groupId={dialog.groupId} />;
     case "deleteGroup":
       return <DeleteGroupDialog groupId={dialog.groupId} />;
+    case "changelog":
+      return <ChangelogDialog />;
     case "send":
       return <SendDialog ids={dialog.ids} paths={dialog.paths} />;
     case "confirm":

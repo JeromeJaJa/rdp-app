@@ -610,6 +610,10 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_dialog::init())
+        // Updates: checked, downloaded and installed from the UI (the release's latest.json on
+        // GitHub, signed with the key whose public half is in tauri.conf.json).
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .on_window_event(|window, event| match event {
             // Closing the main window quits, taking any detached windows with it.
             tauri::WindowEvent::CloseRequested { .. } if window.label() == frames::MAIN_WINDOW => {

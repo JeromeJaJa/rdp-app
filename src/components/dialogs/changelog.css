@@ -1,0 +1,31 @@
+/* What's new: an available update on top, then the release history. */
+.dialog--changelog .dialog__body {
+  max-height: min(64vh, 640px);
+  overflow-y: auto;
+}
+.changelog__update {
+  margin: 0 0 18px;
+  padding: 14px 16px;
+  border-radius: var(--r-md);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+.changelog__update-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.changelog__update-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.changelog__update-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-3);
+}

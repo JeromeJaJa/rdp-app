@@ -128,6 +128,7 @@ export async function initApp(): Promise<void> {
     backend.onUiCommand(onUiCommand);
     backend.onCompanionStatus(onCompanionStatus);
     startUiStateReporting();
+    void import("./updates").then((u) => u.initUpdates());
     // Switched to tabs only for active sessions: the others' tabs close.
     useStore.subscribe((s, prev) => {
       if (s.settings.topTabs !== prev.settings.topTabs && s.settings.topTabs !== "opened") closeInactiveTabs();

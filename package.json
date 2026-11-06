@@ -20,6 +20,8 @@
     "@fontsource-variable/jetbrains-mono": "^5.3.0",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2",
+    "@tauri-apps/plugin-process": "^2",
+    "@tauri-apps/plugin-updater": "^2",
     "border-beam": "^1.4.1",
     "lucide-react": "^1.59.0",
     "react": "^19.3.1",

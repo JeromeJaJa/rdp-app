@@ -2,6 +2,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { open, save } from "@tauri-apps/plugin-dialog";
+import { getVersion } from "@tauri-apps/api/app";
+import { check, type Update } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
+import type { UpdateInfo } from "../types";
 import type { Backend, Unsubscribe } from "./types";
 import {
   DEFAULT_SETTINGS,
@@ -388,6 +392,39 @@ export class TauriBackend implements Backend {
 
   openExternal(url: string): Promise<void> {
     return invoke("open_url", { url });
+  }
+
+  /** The update the last check found, downloaded or not. */
+  private update: Update | null = null;
+
+  appVersion(): Promise<string> {
+    return getVersion();
+  }
+
+  async checkForUpdate(): Promise<UpdateInfo | null> {
+    const update = await check();
+    this.update = update;
+    return update ? { version: update.version, notes: update.body ?? "", date: update.date ?? null } : null;
+  }
+
+  async downloadUpdate(onProgress: (done: number, total: number | null) => void): Promise<void> {
+    if (!this.update) throw new Error("there's no update to download");
+    let done = 0;
+    let total: number | null = null;
+    await this.update.download((event) => {
+      if (event.event === "Started") total = event.data.contentLength ?? null;
+      else if (event.event === "Progress") {
+        done += event.data.chunkLength;
+        onProgress(done, total);
+      }
+    });
+  }
+
+  async installUpdate(): Promise<void> {
+    if (!this.update) throw new Error("there's no update to install");
+    // The installer replaces the app (it closes it); relaunching covers the case it doesn't.
+    await this.update.install();
+    await relaunch();
   }
 
   reportUiState(state: UiState): void {

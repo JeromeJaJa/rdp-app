@@ -35,6 +35,8 @@ futures-util = "0.3"
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "query", "tokio"] }
 png = "0.17"
 rand = "0.8"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 
 [target.'cfg(windows)'.dependencies]
 rdp-clipboard = { path = "../crates/rdp-clipboard" }

@@ -154,6 +154,9 @@ export interface Settings {
   gridTileWidth: number;
   /** Groups folded in the grid view (their ids), apart from the sidebar's folding. */
   gridCollapsed: string[];
+  /** Check for updates every few hours and download them in the background (restarting is
+   *  always the user's call). */
+  autoUpdate: boolean;
   gridFilter: "all" | "connected";
   /** When true, selecting a tab of an idle connection connects it immediately. */
   connectOnSelect: boolean;
@@ -210,6 +213,7 @@ export const DEFAULT_SETTINGS: Settings = {
   sidebarWidth: 248,
   gridTileWidth: 320,
   gridCollapsed: [],
+  autoUpdate: true,
   gridFilter: "all",
   connectOnSelect: false,
   maxConcurrentConnects: 6,
@@ -479,6 +483,15 @@ export interface CompanionStatus {
   status: "installing" | "installed" | "needs-trust" | "winrm-unavailable" | "failed";
   /** The host, when the UI needs it (e.g. to add it to TrustedHosts). */
   host: string | null;
+}
+
+/** A newer version than this one, from the release feed. */
+export interface UpdateInfo {
+  version: string;
+  /** What changed (Markdown: the release's commit list). */
+  notes: string;
+  /** When it was published (RFC 3339), if the feed says. */
+  date: string | null;
 }
 
 /** What to do with a program on a remote host (see `REMOTE_APPS`). */

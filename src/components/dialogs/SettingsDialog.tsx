@@ -16,9 +16,12 @@ import {
   SlidersHorizontal,
   Speaker,
   Trash2,
+  Info,
 } from "lucide-react";
 import type { ApiInfo, TrustedCertificate } from "../../lib/types";
-import { be, errorText, toast, updateSettings } from "../../state/actions";
+import { useShallow } from "zustand/react/shallow";
+import { be, errorText, openDialog, toast, updateSettings } from "../../state/actions";
+import { checkForUpdates, restartToUpdate } from "../../state/updates";
 import { useStore, type SettingsSection } from "../../state/store";
 import { Button, Segmented, Select, Spinner, Switch, TextInput } from "../ui/ui";
 import { Dialog } from "./Dialog";
@@ -98,6 +101,67 @@ function ConfirmButton({ label, confirmLabel, onConfirm }: { label: string; conf
 }
 
 const NOTE_NEW = "Applies to new connections.";
+
+/** "5 minutes ago", for when updates were last checked. */
+function ago(at: number): string {
+  const s = Math.round((Date.now() - at) / 1000);
+  if (s < 60) return "just now";
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m} minute${m === 1 ? "" : "s"} ago`;
+  const h = Math.round(m / 60);
+  return `${h} hour${h === 1 ? "" : "s"} ago`;
+}
+
+function About() {
+  const version = useStore((st) => st.appVersion);
+  const auto = useStore((st) => st.settings.autoUpdate);
+  const update = useStore(useShallow((st) => st.update));
+  const status =
+    update.status === "checking"
+      ? "Checking…"
+      : update.status === "downloading"
+        ? `Downloading ${update.version}: ${Math.round((update.progress ?? 0) * 100)}%`
+        : update.status === "ready"
+          ? `${update.version} is downloaded: restart to update.`
+          : update.status === "available"
+            ? `${update.version} is available.`
+            : update.status === "error"
+              ? `Couldn't check: ${update.error}`
+              : update.status === "current"
+                ? `Up to date${update.checkedAt ? ` (checked ${ago(update.checkedAt)})` : ""}.`
+                : "Not checked yet.";
+  return (
+    <>
+      <h3 className="settings__heading">RDP App</h3>
+      <Row title="Version" desc={version || "…"}>
+        <Button size="sm" onClick={() => openDialog({ kind: "changelog" })}>
+          What's new
+        </Button>
+      </Row>
+      <Row title="Updates" desc={status}>
+        {update.status === "ready" ? (
+          <Button size="sm" variant="primary" onClick={restartToUpdate}>
+            Restart to update
+          </Button>
+        ) : (
+          <Button
+            size="sm"
+            disabled={update.status === "checking" || update.status === "downloading"}
+            onClick={() => void checkForUpdates({ manual: true })}
+          >
+            Check now
+          </Button>
+        )}
+      </Row>
+      <Row
+        title="Update automatically"
+        desc="Checks every few hours and downloads new versions in the background. Restarting into one is always up to you (it disconnects your sessions)."
+      >
+        <Switch checked={auto} onChange={(autoUpdate) => updateSettings({ autoUpdate })} />
+      </Row>
+    </>
+  );
+}
 
 // ── Sections ────────────────────────────────────────────────────────────────
 
@@ -552,6 +616,7 @@ const SECTIONS: { id: SettingsSection; label: string; icon: ReactNode; render: (
   { id: "devices", label: "Audio & devices", icon: <Speaker size={14} />, render: () => <Devices /> },
   { id: "security", label: "Security", icon: <ShieldCheck size={14} />, render: () => <Security /> },
   { id: "automation", label: "Automation", icon: <Bot size={14} />, render: () => <Automation /> },
+  { id: "about", label: "About", icon: <Info size={14} />, render: () => <About /> },
 ];
 
 export function SettingsDialog({ section: initial = "general" }: { section?: SettingsSection }) {

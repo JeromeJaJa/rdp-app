@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { Moon, PanelLeft, Search, Settings, Sun } from "lucide-react";
+import { ArrowUpCircle, Moon, PanelLeft, Search, Settings, Sun } from "lucide-react";
 import { openPalette } from "../palette/CommandPalette";
 import { cycleTheme, openDialog, toggleSidebar } from "../../state/actions";
 import { useStore } from "../../state/store";
@@ -8,6 +8,25 @@ import { WindowTabStrip } from "../tabs/WindowTabStrip";
 import { NewConnectionButton } from "../common/GlobalActions";
 import { WindowControls } from "./WindowControls";
 import "./titlebar.css";
+
+/** An update on its way or ready to apply (main window): opens What's new. */
+function UpdatePill() {
+  const status = useStore((s) => s.update.status);
+  const version = useStore((s) => s.update.version);
+  const progress = useStore((s) => s.update.progress ?? 0);
+  if (status !== "downloading" && status !== "ready") return null;
+  const ready = status === "ready";
+  return (
+    <button
+      className={`tb-update ${ready ? "is-ready" : ""}`}
+      data-tip={ready ? `Version ${version} is ready: restart to update` : `Downloading version ${version}`}
+      onClick={() => openDialog({ kind: "changelog" })}
+    >
+      <ArrowUpCircle size={13} />
+      <span>{ready ? "Update" : `${Math.round(progress * 100)}%`}</span>
+    </button>
+  );
+}
 
 export function BrandMark({ size = 18 }: { size?: number }) {
   return (
@@ -44,6 +63,7 @@ function TitlebarInner() {
       <div className="titlebar__spacer" data-tauri-drag-region />
 
       <div className="titlebar__actions">
+        <UpdatePill />
         <button className="tb-search" onClick={openPalette} aria-label="Search connections and commands (Ctrl+K)">
           <Search size={13} />
           <span className="tb-search__label">Search</span>

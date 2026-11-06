@@ -1,6 +1,8 @@
 // In-browser backend for UI development (`bun run dev` in a normal browser).
 // Persists to localStorage and simulates the connect lifecycle with a queue.
 
+import pkg from "../../../package.json";
+import type { UpdateInfo } from "../types";
 import type { Backend, Unsubscribe } from "./types";
 import type { AppAction, AppOutcome } from "../types";
 import {
@@ -989,6 +991,45 @@ export class MockBackend implements Backend {
 
   reportUiState(state: UiState): void {
     if (import.meta.env.DEV) (window as unknown as { __uiState: UiState }).__uiState = state;
+  }
+
+  async appVersion(): Promise<string> {
+    return pkg.version;
+  }
+
+  /** `localStorage["rdp-app:mock-update"] = "9.9.9"` offers that version (for UI work). */
+  async checkForUpdate(): Promise<UpdateInfo | null> {
+    await new Promise((r) => setTimeout(r, 500));
+    const version = localStorage.getItem("rdp-app:mock-update");
+    if (!version || version === pkg.version) return null;
+    return {
+      version,
+      date: new Date().toISOString(),
+      notes: [
+        "### Features",
+        "",
+        "- **grid:** fold groups, and full buttons for a group's controls (`fa08044`)",
+        "- **ui:** Ctrl+click skips confirmations (`bbe044c`)",
+        "",
+        "### Fixes",
+        "",
+        "- **clipboard:** many sessions no longer freeze the app (`97665d9`)",
+      ].join("\n"),
+    };
+  }
+
+  async downloadUpdate(onProgress: (done: number, total: number | null) => void): Promise<void> {
+    const total = 12_000_000;
+    for (let done = 0; done <= total; done += 1_200_000) {
+      onProgress(done, total);
+      await new Promise((r) => setTimeout(r, 150));
+    }
+  }
+
+  async installUpdate(): Promise<void> {
+    // "Restarts" into the new version.
+    localStorage.removeItem("rdp-app:mock-update");
+    location.reload();
   }
 
   async openExternal(url: string): Promise<void> {
