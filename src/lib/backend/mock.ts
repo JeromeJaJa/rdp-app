@@ -1010,12 +1010,12 @@ export class MockBackend implements Backend {
       notes: [
         "### Features",
         "",
-        "- **grid:** fold groups, and full buttons for a group's controls (`fa08044`)",
-        "- **ui:** Ctrl+click skips confirmations (`bbe044c`)",
+        "- **grid:** fold groups, and full buttons for a group's controls `fa08044`",
+        "- **ui:** Ctrl+click skips confirmations `bbe044c`",
         "",
         "### Fixes",
         "",
-        "- **clipboard:** many sessions no longer freeze the app (`97665d9`)",
+        "- **clipboard:** many sessions no longer freeze the app `97665d9`",
       ].join("\n"),
     };
   }

@@ -1,39 +1,14 @@
 import { memo } from "react";
-import { ArrowUpCircle, Moon, PanelLeft, Search, Settings, Sun } from "lucide-react";
+import { Moon, PanelLeft, Search, Settings, Sun } from "lucide-react";
 import { openPalette } from "../palette/CommandPalette";
 import { cycleTheme, openDialog, toggleSidebar } from "../../state/actions";
 import { useStore } from "../../state/store";
 import { IconButton } from "../ui/ui";
 import { WindowTabStrip } from "../tabs/WindowTabStrip";
 import { NewConnectionButton } from "../common/GlobalActions";
+import { UpdatePill } from "./UpdatePill";
 import { WindowControls } from "./WindowControls";
 import "./titlebar.css";
-
-/** A newer version is out, or being installed (main window): opens What's new. */
-function UpdatePill() {
-  const status = useStore((s) => s.update.status);
-  const version = useStore((s) => s.update.version);
-  const progress = useStore((s) => s.update.progress ?? 0);
-  if (status !== "available" && status !== "downloading" && status !== "installing") return null;
-  const label =
-    status === "available" ? "Update" : status === "downloading" ? `${Math.round(progress * 100)}%` : "Installing";
-  const tip =
-    status === "available"
-      ? `Version ${version} is available`
-      : status === "downloading"
-        ? `Downloading version ${version}`
-        : `Installing version ${version}`;
-  return (
-    <button
-      className={`tb-update ${status === "available" ? "is-ready" : ""}`}
-      data-tip={tip}
-      onClick={() => openDialog({ kind: "changelog" })}
-    >
-      <ArrowUpCircle size={13} />
-      <span>{label}</span>
-    </button>
-  );
-}
 
 export function BrandMark({ size = 18 }: { size?: number }) {
   return (

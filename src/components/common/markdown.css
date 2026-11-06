@@ -39,6 +39,7 @@
   color: var(--text);
 }
 .md code {
+  margin: 0 1px;
   font-family: var(--font-mono);
   font-size: 11px;
   padding: 1px 4px;

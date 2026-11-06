@@ -381,3 +381,72 @@
 .tb-update.is-ready:hover {
   background: color-mix(in srgb, var(--accent) 18%, transparent);
 }
+
+/* The update's notes, under the pill on hover (like a host's card: glass, never in the way). */
+.ucard {
+  position: fixed;
+  z-index: 1000;
+  pointer-events: none;
+  width: 400px;
+  padding: 13px 15px 11px;
+  border-radius: var(--r-lg);
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  --glass-blur: var(--glass-blur-sm);
+  animation:
+    ucard-in var(--t-med) var(--ease-out),
+    glass-shadow-in var(--t-med) var(--ease-out);
+}
+.ucard::before,
+.ucard > * {
+  animation: glass-fade-in var(--t-med) var(--ease-out);
+}
+@keyframes ucard-in {
+  from {
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+.ucard__head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.ucard__title {
+  font-size: 13px;
+  font-weight: 600;
+}
+.ucard__state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--accent);
+}
+.ucard__notes {
+  max-height: 260px;
+  overflow: hidden;
+}
+/* Long notes fade out rather than stop mid-line. */
+.ucard__notes.is-clipped {
+  mask-image: linear-gradient(to bottom, #000 78%, transparent);
+}
+.ucard__notes .md {
+  font-size: 12px;
+}
+/* At a glance the commits' hashes are noise: What's new shows them. */
+.ucard__notes .md a:has(> code:only-child) {
+  display: none;
+}
+.ucard__notes .md h4:first-child {
+  margin-top: 2px;
+}
+.ucard__foot {
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
