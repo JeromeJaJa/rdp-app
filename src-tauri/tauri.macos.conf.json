@@ -14,7 +14,7 @@
         "trafficLightPosition": { "x": 14, "y": 20 },
         "center": true,
         "visible": false,
-        "dragDropEnabled": false,
+        "dragDropEnabled": true,
         "backgroundColor": "#09090b"
       }
     ]

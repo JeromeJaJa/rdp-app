@@ -642,6 +642,8 @@ pub fn run() {
                     }
                 });
             }
+            #[cfg(target_os = "macos")]
+            tauri::WindowEvent::DragDrop(drop) => mac_file_drag(window, drop),
             _ => {}
         })
         .setup(|app| {
@@ -820,4 +822,25 @@ pub(crate) fn configure_webview(window: &tauri::WebviewWindow) {
             let _ = settings.SetAreDefaultContextMenusEnabled(false);
         }
     });
+}
+
+/// Files dragged in from other apps, on a Mac (Tauri's own handler has their paths): told to
+/// the window's page as `file-drag`, as `file_drop.rs` does on Windows.
+#[cfg(target_os = "macos")]
+fn mac_file_drag(window: &tauri::Window, drop: &tauri::DragDropEvent) {
+    use tauri::{DragDropEvent, Emitter as _};
+    let scale = window.scale_factor().unwrap_or(1.0);
+    let (phase, at, paths) = match drop {
+        DragDropEvent::Enter { paths, position } => ("enter", Some(position), Some(paths)),
+        DragDropEvent::Over { position } => ("over", Some(position), None),
+        DragDropEvent::Drop { paths, position } => ("drop", Some(position), Some(paths)),
+        DragDropEvent::Leave => ("leave", None, None),
+        _ => return,
+    };
+    let (x, y) = at.map_or((0.0, 0.0), |p| (p.x / scale, p.y / scale));
+    let mut drag = serde_json::json!({ "phase": phase, "x": x, "y": y });
+    if let Some(paths) = paths {
+        drag["paths"] = paths.iter().map(|p| p.display().to_string()).collect();
+    }
+    let _ = window.emit_to(tauri::EventTarget::webview_window(window.label()), "file-drag", drag);
 }

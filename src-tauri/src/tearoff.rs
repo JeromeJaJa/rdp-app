@@ -373,13 +373,17 @@ impl Tearoff {
             .title("RDP App")
             .inner_size(1280.0, 800.0)
             .min_inner_size(480.0, 320.0)
-            .disable_drag_drop_handler()
             .background_color(tauri::window::Color(9, 9, 11, 255))
             .visible(false);
         // Our own title bar: frameless and see-through (for the acrylic material) on Windows; on a
         // Mac, drawn under the traffic lights (as tauri.macos.conf.json does for the main window).
+        // Windows takes file drops with its own handler (file_drop.rs); a Mac uses Tauri's.
         #[cfg(not(target_os = "macos"))]
-        let builder = builder.decorations(false).shadow(true).transparent(true);
+        let builder = builder
+            .decorations(false)
+            .shadow(true)
+            .transparent(true)
+            .disable_drag_drop_handler();
         #[cfg(target_os = "macos")]
         let builder = builder
             .title_bar_style(tauri::TitleBarStyle::Overlay)
