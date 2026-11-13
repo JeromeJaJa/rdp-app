@@ -227,7 +227,14 @@ async fn host_guard(req: Request, next: Next, port: u16) -> Response {
 }
 
 async fn auth(State(core): State<AppState>, req: Request, next: Next) -> Response {
-    let expected = core.api_token();
+    // Dev builds take a token from the environment too, so a script can drive the app without
+    // reading the library (where the token is encrypted). Release builds ignore it.
+    let dev_token = if cfg!(debug_assertions) {
+        std::env::var("RDPAPP_DEV_API_TOKEN").ok().filter(|t| t.len() >= 16)
+    } else {
+        None
+    };
+    let expected = dev_token.unwrap_or_else(|| core.api_token());
     let bearer = req
         .headers()
         .get(header::AUTHORIZATION)
