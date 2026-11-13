@@ -2,6 +2,7 @@
 // they act on (and in the command palette).
 
 import type { ReactNode } from "react";
+import { keys } from "../../lib/env";
 import { Download, LayoutGrid, Monitor, Plus, Upload } from "lucide-react";
 import { connectAll, disconnectAll, openDialog, setView } from "../../state/actions";
 import { isBusy, isLive, useStore } from "../../state/store";
@@ -54,8 +55,8 @@ export function NewConnectionButton({ tipSide = "bottom" }: { tipSide?: TipSide 
     <button
       type="button"
       className="tb-btn tb-btn--accent"
-      aria-label="New connection (Ctrl+N)"
-      data-tip="New connection (Ctrl+N)"
+      aria-label={`New connection (${keys("Ctrl+N")})`}
+      data-tip={`New connection (${keys("Ctrl+N")})`}
       data-tip-side={tipSide}
       onClick={() => openDialog({ kind: "add", mode: "single" })}
     >
@@ -87,7 +88,7 @@ export function ViewToggle({ className, labeled }: { className?: string; labeled
       onChange={setView}
       options={[
         { value: "session", label: label(<Monitor size={14} />, "Session"), title: "Session view" },
-        { value: "grid", label: label(<LayoutGrid size={14} />, "Grid"), title: "Grid view (Ctrl+G)" },
+        { value: "grid", label: label(<LayoutGrid size={14} />, "Grid"), title: `Grid view (${keys("Ctrl+G")})` },
       ]}
     />
   );

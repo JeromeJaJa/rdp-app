@@ -37,6 +37,7 @@ import { displayName, getState, isLive, setState, useStore } from "../../state/s
 import { ConnectIcon, DisconnectIcon } from "../common/SessionIcons";
 import { StatusDot } from "../common/StatusDot";
 import { useGlassUnderlay } from "../ui/useGlassUnderlay";
+import { keys } from "../../lib/env";
 import "./palette.css";
 
 const OFFSET_KEY = "rdp-app:palette-offset";
@@ -158,17 +159,17 @@ function useActions(): Item[] {
       run,
     });
     return [
-      a("new", "New connection", <Plus size={15} />, () => openDialog({ kind: "add", mode: "single" }), "Ctrl N"),
-      a("bulk", "Add many connections", <ListPlus size={15} />, () => openDialog({ kind: "add", mode: "bulk" }), "Ctrl ⇧ N"),
+      a("new", "New connection", <Plus size={15} />, () => openDialog({ kind: "add", mode: "single" }), keys("Ctrl N")),
+      a("bulk", "Add many connections", <ListPlus size={15} />, () => openDialog({ kind: "add", mode: "bulk" }), keys("Ctrl ⇧ N")),
       a("connect-all", "Connect all", <ConnectIcon size={14} />, () => connectAll()),
       a("disconnect-all", "Disconnect all", <DisconnectIcon size={14} />, () => disconnectAll()),
-      a("grid", view === "grid" ? "Session view" : "Grid view", view === "grid" ? <SquareStack size={15} /> : <LayoutGrid size={15} />, toggleGrid, "Ctrl G"),
+      a("grid", view === "grid" ? "Session view" : "Grid view", view === "grid" ? <SquareStack size={15} /> : <LayoutGrid size={15} />, toggleGrid, keys("Ctrl G")),
       a("fullscreen", "Fullscreen", <Maximize2 size={15} />, () => setFullscreen(true)),
       a("theme", "Toggle light / dark", <Moon size={15} />, cycleTheme),
       a("sidebar", sidebarShown ? "Hide the sidebar" : "Show the sidebar", <PanelLeft size={15} />, toggleSidebar),
       a("import", "Import connections", <ArrowDownToLine size={15} />, () => openDialog({ kind: "import" })),
       a("export", "Export connections", <ArrowUpFromLine size={15} />, () => openDialog({ kind: "export" })),
-      a("settings", "Settings", <Settings size={15} />, () => openDialog({ kind: "settings" }), "Ctrl ,"),
+      a("settings", "Settings", <Settings size={15} />, () => openDialog({ kind: "settings" }), keys("Ctrl ,")),
     ];
   }, [view, sidebarShown]);
 }

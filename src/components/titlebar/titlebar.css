@@ -450,3 +450,8 @@
   color: var(--text-3);
 }
 
+
+/* A Mac keeps its traffic lights at the window's top left (titleBarStyle "Overlay"). */
+[data-platform="mac"] .titlebar__brand {
+  padding-left: 80px;
+}

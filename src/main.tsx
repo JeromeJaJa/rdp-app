@@ -7,7 +7,7 @@ import "./styles/base.css";
 import { App } from "./App";
 import { DetachedApp } from "./DetachedApp";
 import { initApp } from "./state/actions";
-import { isMainWindow, isTauri } from "./lib/env";
+import { isMac, isMainWindow, isTauri } from "./lib/env";
 
 // No browser context menu (Back, Reload, Inspect…) anywhere: the app has its own menus.
 // Text fields keep theirs for cut / copy / paste.
@@ -31,6 +31,7 @@ async function boot() {
   } catch (err) {
     console.error("Failed to initialise", err);
   }
+  if (isMac) document.documentElement.dataset.platform = "mac";
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>
       {isMainWindow() ? <App /> : <DetachedApp />}

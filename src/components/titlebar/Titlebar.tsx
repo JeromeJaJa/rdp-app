@@ -8,6 +8,7 @@ import { WindowTabStrip } from "../tabs/WindowTabStrip";
 import { NewConnectionButton } from "../common/GlobalActions";
 import { UpdatePill } from "./UpdatePill";
 import { WindowControls } from "./WindowControls";
+import { keys } from "../../lib/env";
 import "./titlebar.css";
 
 export function BrandMark({ size = 18 }: { size?: number }) {
@@ -46,10 +47,10 @@ function TitlebarInner() {
 
       <div className="titlebar__actions">
         <UpdatePill />
-        <button className="tb-search" onClick={openPalette} aria-label="Search connections and commands (Ctrl+K)">
+        <button className="tb-search" onClick={openPalette} aria-label={`Search connections and commands (${keys("Ctrl+K")})`}>
           <Search size={13} />
           <span className="tb-search__label">Search</span>
-          <kbd className="tb-search__kbd">Ctrl K</kbd>
+          <kbd className="tb-search__kbd">{keys("Ctrl K")}</kbd>
         </button>
         <NewConnectionButton />
         <span className="titlebar__divider" />
@@ -59,7 +60,7 @@ function TitlebarInner() {
         <IconButton label={isDark ? "Light theme" : "Dark theme"} onClick={cycleTheme}>
           {isDark ? <Sun size={15} /> : <Moon size={15} />}
         </IconButton>
-        <IconButton label="Settings (Ctrl+,)" onClick={() => openDialog({ kind: "settings" })}>
+        <IconButton label={`Settings (${keys("Ctrl+,")})`} onClick={() => openDialog({ kind: "settings" })}>
           <Settings size={16} />
         </IconButton>
       </div>

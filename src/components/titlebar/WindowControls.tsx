@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { isTauri } from "../../lib/env";
+import { isMac, isTauri } from "../../lib/env";
 
 type Win = Awaited<ReturnType<typeof loadWindow>>;
 async function loadWindow() {
@@ -12,7 +12,7 @@ export function WindowControls() {
   const [maximized, setMaximized] = useState(false);
 
   useEffect(() => {
-    if (!isTauri()) return;
+    if (!isTauri() || isMac) return;
     let unlisten: (() => void) | undefined;
     loadWindow().then(async (w) => {
       setWin(w);
@@ -22,7 +22,8 @@ export function WindowControls() {
     return () => unlisten?.();
   }, []);
 
-  if (!isTauri()) return null;
+  // A Mac keeps its own traffic lights (titleBarStyle "Overlay").
+  if (!isTauri() || isMac) return null;
 
   return (
     <div className="win-controls">

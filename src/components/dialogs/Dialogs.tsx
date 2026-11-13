@@ -1,3 +1,4 @@
+import { isMac } from "../../lib/env";
 import { closeDialog } from "../../state/actions";
 import { useStore } from "../../state/store";
 import { Button } from "../ui/ui";
@@ -48,7 +49,7 @@ export function Dialogs() {
           className="dialog--confirm"
           footer={
             <>
-              <span className="dialog__footer-note">Ctrl+click skips this</span>
+              <span className="dialog__footer-note">{isMac ? "⌘-click" : "Ctrl+click"} skips this</span>
               <div className="dialog__footer-spacer" />
               <Button variant="ghost" onClick={closeDialog}>
                 Cancel

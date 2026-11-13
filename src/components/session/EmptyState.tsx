@@ -1,4 +1,5 @@
 import { ListPlus, Plus } from "lucide-react";
+import { MOD } from "../../lib/env";
 import { openDialog } from "../../state/actions";
 import { Button, Kbd } from "../ui/ui";
 import { BrandMark } from "../titlebar/Titlebar";
@@ -25,16 +26,16 @@ export function EmptyState() {
         </div>
         <div className="empty__keys">
           <span>
-            <Kbd>Ctrl</Kbd>
+            <Kbd>{MOD}</Kbd>
             <Kbd>N</Kbd> new
           </span>
           <span>
-            <Kbd>Ctrl</Kbd>
+            <Kbd>{MOD}</Kbd>
             <Kbd>Shift</Kbd>
             <Kbd>N</Kbd> bulk
           </span>
           <span>
-            <Kbd>Ctrl</Kbd>
+            <Kbd>{MOD}</Kbd>
             <Kbd>G</Kbd> grid
           </span>
         </div>
