@@ -1,10 +1,12 @@
 //! Device redirection (RDPDR): drives / folders, the default printer, smart cards.
 
+#[cfg(windows)]
 use anyhow::Context as _;
 use ironrdp_rdpdr::Rdpdr;
 
 use crate::DeviceRedirection;
 
+#[cfg_attr(not(windows), allow(dead_code))] // drives are shared from Windows only, so far
 /// Name shown on the remote side ("C" for `C:\`, the folder name otherwise).
 fn display_name(path: &std::path::Path) -> String {
     let s = path.to_string_lossy();
@@ -18,6 +20,7 @@ fn display_name(path: &std::path::Path) -> String {
         .unwrap_or_else(|| "Drive".into())
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
 /// The form a configured path is shared in, or `None` (with a warning) if it can't be:
 /// volume roots as they are (`C:\`), folders resolved to their real location on a local
 /// volume (junctions followed), since the backend refuses to traverse reparse points.

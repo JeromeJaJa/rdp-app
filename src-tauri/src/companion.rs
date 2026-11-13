@@ -17,6 +17,7 @@ use anyhow::{Context as _, bail};
 
 /// A `powershell.exe` command that runs without flashing a console window.
 fn powershell() -> Command {
+    #[cfg_attr(not(windows), allow(unused_mut))]
     let mut command = Command::new("powershell.exe");
     #[cfg(windows)]
     {

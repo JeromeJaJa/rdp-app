@@ -64,6 +64,7 @@ pub struct WindowTabs {
 /// through the whole drag, so the tab stays under the pointer at that same spot in every
 /// window it passes through.
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(not(windows), allow(dead_code))] // the drag loop is Windows-only, so far
 pub struct Grab {
     pub x: f64,
     pub w: f64,
@@ -485,6 +486,7 @@ impl Tearoff {
     /// at `grab`. Released in the open, the window stays put and its sessions take its size.
     /// `held` is where the pointer holds the window (measured if not given); a `torn` window
     /// was placed by estimate and is trued up once it reports its tab. Blocks until release.
+    #[cfg_attr(not(windows), allow(unused_variables, unused_mut))]
     fn follow_pointer(
         &self,
         label: &str,
@@ -542,6 +544,7 @@ impl Tearoff {
 
     /// Where the pointer holds a torn-off window (window px): on its first tab at `grab.x`,
     /// from the tab's reported position. None until the window has reported it.
+    #[cfg_attr(not(windows), allow(dead_code))]
     fn torn_grab(&self, label: &str, window: &WebviewWindow, grab: Grab) -> Option<(i32, i32)> {
         let left = self.state.lock().tab_slots.get(label)?.first()?[0];
         Some(window_grab(window, left + grab.x))
@@ -571,11 +574,13 @@ impl Tearoff {
 
     /// Windows started moving or sizing `label` (its title bar or an edge is being dragged):
     /// size changes wait for the drag to end, so the remote isn't resized mid-drag.
+    #[cfg_attr(not(windows), allow(dead_code))]
     pub fn size_move_started(&self, label: &str) {
         self.state.lock().held.insert(label.to_owned());
     }
 
     /// The move or size drag ended: the window's sessions take its size now.
+    #[cfg_attr(not(windows), allow(dead_code))]
     pub fn size_move_ended(&self, label: &str) {
         self.release(label);
     }
@@ -606,6 +611,7 @@ impl Tearoff {
 
     /// The window (other than `dragged`) whose tab area is under the pointer, if it is
     /// the topmost window there.
+    #[cfg_attr(not(windows), allow(dead_code))]
     fn drop_target(&self, dragged: &str, window: &WebviewWindow, at: PhysicalPosition<f64>) -> Option<String> {
         #[cfg(windows)]
         let under = native::window_below(window, at)?;
@@ -624,6 +630,7 @@ impl Tearoff {
         })
     }
 
+    #[cfg_attr(not(windows), allow(dead_code))]
     fn in_tab_area(&self, label: &str, window: &WebviewWindow, at: PhysicalPosition<f64>) -> bool {
         let (Ok(origin), Ok(scale)) = (window.inner_position(), window.scale_factor()) else {
             return false;
@@ -648,6 +655,7 @@ impl Tearoff {
 
     /// Where a tab held at `grab`, with the pointer at `at` (screen px), lands among `label`'s
     /// tabs: by the dragged tab's own centre, as a drag within the strip would place it.
+    #[cfg_attr(not(windows), allow(dead_code))]
     fn dock_index(&self, label: &str, at: PhysicalPosition<f64>, grab: Grab) -> usize {
         let Some(window) = self.app.get_webview_window(label) else {
             return 0;

@@ -17,6 +17,7 @@ use tokio::sync::mpsc;
 use crate::Command;
 
 /// Forwards audio to the real backend only while `audible` is set.
+#[cfg_attr(not(windows), allow(dead_code))] // audio plays on Windows only, so far
 #[derive(Debug)]
 struct Gated {
     inner: Box<dyn RdpsndClientHandler>,

@@ -7,14 +7,15 @@ license = "MIT OR Apache-2.0"
 publish = false
 
 [dependencies]
-ironrdp-cliprdr.workspace = true
 ironrdp-core.workspace = true
 rdp-companion-proto = { path = "../rdp-companion-proto" }
-rdp-vfiles = { path = "../rdp-vfiles" }
 tracing = "0.1"
-windows-core = "0.62"
 
+# The crate is Windows-only (OLE clipboard); elsewhere it compiles to nothing.
 [target.'cfg(windows)'.dependencies]
+ironrdp-cliprdr.workspace = true
+rdp-vfiles = { path = "../rdp-vfiles" }
+windows-core = "0.62"
 windows = { version = "0.62", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",

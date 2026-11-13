@@ -10,11 +10,17 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak, mpsc};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(windows)]
+use std::time::Instant;
 
 use parking_lot::Mutex;
-use rdp_companion_proto::transfer::{self, CHUNK, DiskFiles, Inflow, Listing, Note, Outbox, Produced, Pump, Source};
-use rdp_companion_proto::{AppAction, ClipFormat, Entry, HostStats, Intent, Message};
+#[cfg(windows)]
+use rdp_companion_proto::ClipFormat;
+use rdp_companion_proto::transfer::{self, DiskFiles, Inflow, Listing, Note, Outbox, Pump, Source};
+#[cfg(windows)]
+use rdp_companion_proto::transfer::{CHUNK, Produced};
+use rdp_companion_proto::{AppAction, Entry, HostStats, Intent, Message};
 use rdp_direct::{DirectSlot, Peer, Prepared};
 use rdp_engine::{CompanionHandler, CompanionHost, CompanionLink, Engine, InputEvent};
 use serde::Serialize;
@@ -24,11 +30,14 @@ use tauri::{AppHandle, Emitter};
 const STATS_HISTORY: usize = 120;
 
 /// How long a paste waits for the companion to list what the remote copied.
+#[cfg(windows)]
 const LIST_WAIT: Duration = Duration::from_secs(30);
 /// A paste through the companion falls back to the clipboard channel if nothing of the
 /// remote's copy arrives this soon...
+#[cfg(windows)]
 const PASTE_FIRST_WAIT: Duration = Duration::from_secs(5);
 /// ...and fails if it then stalls this long.
+#[cfg(windows)]
 const PASTE_STALL: Duration = Duration::from_secs(30);
 /// How long a drag onto a session waits for the companion to get ready.
 const DRAG_READY_WAIT: Duration = Duration::from_secs(3);
@@ -931,6 +940,7 @@ struct Attached {
     preparing: Mutex<Option<Prepared>>,
     /// It announces what the remote copies (the clipboard channel's announcements are then
     /// ignored).
+    #[cfg_attr(not(windows), allow(dead_code))]
     watches_clipboard: bool,
 }
 

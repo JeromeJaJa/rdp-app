@@ -12,12 +12,13 @@ path = "src/main.rs"
 
 [dependencies]
 rdp-companion-proto = { path = "../rdp-companion-proto" }
-rdp-direct = { path = "../rdp-direct" }
 anyhow = "1"
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+# The companion runs on the Windows host.
 [target.'cfg(windows)'.dependencies]
+rdp-direct = { path = "../rdp-direct" }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 rdp-vfiles = { path = "../rdp-vfiles" }
 windows-core = "0.62"
 windows = { version = "0.62", features = [

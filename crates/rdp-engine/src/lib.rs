@@ -324,7 +324,8 @@ pub(crate) enum Command {
     Clipboard(ironrdp_cliprdr::backend::ClipboardMessage),
     /// New audio mode for this session (live when its connection has an audio channel).
     Audio(AudioMode),
-    /// Encoded DVC messages produced off-thread (microphone).
+    /// Encoded DVC messages produced off-thread (microphone, Windows only so far).
+    #[cfg_attr(not(windows), allow(dead_code))]
     SendDvc(Vec<ironrdp_svc::SvcMessage>),
     /// The companion channel's presence changed (from its DVC processor).
     Companion(crate::companion::Update),

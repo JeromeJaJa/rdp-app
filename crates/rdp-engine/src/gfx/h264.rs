@@ -36,7 +36,8 @@ pub(crate) enum Chroma<'a> {
         u_stride: usize,
         v_stride: usize,
     },
-    /// NV12: one plane of interleaved U, V pairs.
+    /// NV12: one plane of interleaved U, V pairs (Media Foundation's output, on Windows).
+    #[cfg_attr(not(windows), allow(dead_code))]
     Interleaved { uv: &'a [u8], stride: usize },
 }
 

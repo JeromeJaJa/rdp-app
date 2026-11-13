@@ -6,11 +6,10 @@ version.workspace = true
 license.workspace = true
 publish = false
 
-[dependencies]
+# The crate is Windows-only (OLE data objects); elsewhere it compiles to nothing.
+[target.'cfg(windows)'.dependencies]
 rdp-companion-proto = { path = "../rdp-companion-proto" }
 tracing = "0.1"
-
-[target.'cfg(windows)'.dependencies]
 windows-core = "0.62"
 windows = { version = "0.62", features = [
     "Win32_Foundation",
