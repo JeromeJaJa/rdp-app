@@ -113,12 +113,11 @@ pub(crate) fn rdpdr(devices: &DeviceRedirection) -> anyhow::Result<Option<Rdpdr>
     }
 }
 
-#[cfg(test)]
+// Windows paths.
+#[cfg(all(test, windows))]
 mod tests {
     use super::*;
 
-    // Windows paths.
-    #[cfg(windows)]
     #[test]
     fn shares_local_folders_by_their_real_path() {
         let dir = std::env::temp_dir().join("rdp-app-share-test");
@@ -135,7 +134,6 @@ mod tests {
         );
     }
 
-    #[cfg(windows)]
     #[test]
     fn names_drives_and_folders() {
         assert_eq!(display_name(std::path::Path::new("C:\\")), "C");
