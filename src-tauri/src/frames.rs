@@ -30,7 +30,7 @@ use webview2_com::Microsoft::Web::WebView2::Win32::{
 };
 use windows_core::{HSTRING, Interface as _};
 
-pub const MAIN_WINDOW: &str = "main";
+pub use crate::frames_host::MAIN_WINDOW;
 
 /// Live buffers, only touched on the UI thread (inside `with_webview`).
 /// Deliberately a never-dropped static: buffers must not be unmapped during
@@ -189,6 +189,16 @@ fn emit_later(app: AppHandle, window: Option<String>, released: SurfaceReleased)
 
 fn core_webview(pw: &tauri::webview::PlatformWebview) -> windows_core::Result<ICoreWebView2_17> {
     unsafe { pw.controller().CoreWebView2()?.cast::<ICoreWebView2_17>() }
+}
+
+impl crate::frames_host::FrameHost for WebviewSurfaces {
+    fn repost_all(&self, label: &str) -> anyhow::Result<()> {
+        WebviewSurfaces::repost_all(self, label)
+    }
+
+    fn set_host(&self, session: &str, label: &str) {
+        WebviewSurfaces::set_host(self, session, label);
+    }
 }
 
 impl SurfaceProvider for WebviewSurfaces {

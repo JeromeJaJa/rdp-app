@@ -11,6 +11,8 @@ mod dpapi;
 mod file_drop;
 #[cfg(windows)]
 mod frames;
+mod frames_host;
+mod frames_pull;
 mod keys;
 #[cfg(windows)]
 mod material;
@@ -35,8 +37,7 @@ use store::{
 
 struct AppState {
     core: Arc<Core>,
-    #[cfg(windows)]
-    surfaces: Arc<frames::WebviewSurfaces>,
+    surfaces: Arc<dyn frames_host::FrameHost>,
     tearoff: tearoff::Tearoff,
 }
 
@@ -514,10 +515,7 @@ fn engine_ctrl_alt_del(state: State<'_, AppState>, id: String) {
 
 #[tauri::command]
 fn engine_repost_surfaces(window: tauri::Window, state: State<'_, AppState>) -> CmdResult<()> {
-    #[cfg(windows)]
-    state.surfaces.repost_all(window.label()).map_err(err)?;
-    let _ = (state, window);
-    Ok(())
+    state.surfaces.repost_all(window.label()).map_err(err)
 }
 
 // ── Certificates, API, UI ───────────────────────────────────────────────────
@@ -610,13 +608,17 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_dialog::init())
+        // Frames for pages that pull them (see frames_pull.rs); unused where WebView2 shares them.
+        .register_asynchronous_uri_scheme_protocol(frames_pull::SCHEME, |_ctx, request, responder| {
+            tauri::async_runtime::spawn(async move { responder.respond(frames_pull::serve(request).await) });
+        })
         // Updates: checked, downloaded and installed from the UI (the release's latest.json on
         // GitHub, signed with the key whose public half is in tauri.conf.json).
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .on_window_event(|window, event| match event {
             // Closing the main window quits, taking any detached windows with it.
-            tauri::WindowEvent::CloseRequested { .. } if window.label() == frames::MAIN_WINDOW => {
+            tauri::WindowEvent::CloseRequested { .. } if window.label() == frames_host::MAIN_WINDOW => {
                 window.app_handle().exit(0);
             }
             // A detached window closed: its tabs go back to the main window. Done off the
@@ -655,12 +657,22 @@ pub fn run() {
                 }
             });
 
-            #[cfg(windows)]
-            let surfaces = frames::WebviewSurfaces::new(app.handle().clone());
-            #[cfg(windows)]
-            let provider: Arc<dyn rdp_engine::SurfaceProvider> = surfaces.clone();
-            #[cfg(not(windows))]
-            let provider: Arc<dyn rdp_engine::SurfaceProvider> = Arc::new(rdp_engine::surface::HeapProvider);
+            // WebView2 shares buffers with the page (Windows); elsewhere pages pull frames.
+            // RDP_FRAMES=pull makes Windows pull too, to test that path.
+            let pull = !cfg!(windows) || std::env::var("RDP_FRAMES").is_ok_and(|v| v == "pull");
+            let (surfaces, provider): (Arc<dyn frames_host::FrameHost>, Arc<dyn rdp_engine::SurfaceProvider>) = if pull
+            {
+                let pulled = frames_pull::PulledSurfaces::install(app.handle().clone());
+                (pulled.clone(), pulled)
+            } else {
+                #[cfg(windows)]
+                {
+                    let shared = frames::WebviewSurfaces::new(app.handle().clone());
+                    (shared.clone(), shared)
+                }
+                #[cfg(not(windows))]
+                unreachable!("pages always pull frames off Windows")
+            };
 
             let engine = Engine::new(provider, events, EngineSettings::default());
             engine.set_certificate_store(Some(certs.clone() as Arc<dyn rdp_engine::CertificateStore>));
@@ -671,21 +683,15 @@ pub fn run() {
             }));
             core.apply_settings();
 
-            let tearoff = tearoff::Tearoff::new(
-                app.handle().clone(),
-                core.engine.clone(),
-                #[cfg(windows)]
-                surfaces.clone(),
-            );
+            let tearoff = tearoff::Tearoff::new(app.handle().clone(), core.engine.clone(), surfaces.clone());
             app.manage(AppState {
                 core,
-                #[cfg(windows)]
                 surfaces,
                 tearoff,
             });
 
             #[cfg(windows)]
-            if let Some(window) = app.get_webview_window(frames::MAIN_WINDOW) {
+            if let Some(window) = app.get_webview_window(frames_host::MAIN_WINDOW) {
                 configure_webview(&window);
             }
 

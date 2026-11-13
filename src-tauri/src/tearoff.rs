@@ -26,7 +26,7 @@ use tauri::{
     WebviewWindowBuilder,
 };
 
-use crate::frames::MAIN_WINDOW;
+use crate::frames_host::{FrameHost, MAIN_WINDOW};
 
 /// Labels of detached windows start with this.
 pub const PREFIX: &str = "win-";
@@ -139,17 +139,15 @@ struct State {
 pub struct Tearoff {
     app: AppHandle,
     engine: Engine,
-    #[cfg(windows)]
-    surfaces: Arc<crate::frames::WebviewSurfaces>,
+    surfaces: Arc<dyn FrameHost>,
     state: Arc<Mutex<State>>,
 }
 
 impl Tearoff {
-    pub fn new(app: AppHandle, engine: Engine, #[cfg(windows)] surfaces: Arc<crate::frames::WebviewSurfaces>) -> Self {
+    pub fn new(app: AppHandle, engine: Engine, surfaces: Arc<dyn FrameHost>) -> Self {
         Self {
             app,
             engine,
-            #[cfg(windows)]
             surfaces,
             state: Arc::default(),
         }
@@ -764,7 +762,6 @@ impl Tearoff {
     /// view's size, or the detached window's (unless that one is held or hasn't
     /// reported a size yet: the session keeps its size).
     fn apply_host(&self, session: &str, label: &str) {
-        #[cfg(windows)]
         self.surfaces.set_host(session, label);
         let viewport = {
             let state = self.state.lock();
