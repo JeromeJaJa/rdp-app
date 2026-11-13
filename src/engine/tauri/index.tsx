@@ -5,7 +5,7 @@ import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } fr
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { Engine, EngineModule, RemoteSurfaceProps, RemoteThumbnailProps } from "../types";
-import { isTauri } from "../../lib/env";
+import { isMac, isTauri } from "../../lib/env";
 import { initBridge, type Surface } from "./bridge";
 import { Painter } from "./painter";
 import { SCANCODES } from "./scancodes";
@@ -112,6 +112,12 @@ type InputEvent =
   | { t: "sync"; caps: boolean; num: boolean; scroll: boolean };
 
 const LOCK_KEYS = new Set(["CapsLock", "NumLock", "ScrollLock"]);
+/** Keys that are only modifiers (pressing one with Cmd held still reports its release). */
+const MODIFIER_CODES = new Set([
+  "ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight", "AltLeft", "AltRight", "MetaLeft", "MetaRight",
+]);
+/** On a Mac, Cmd is sent as Ctrl. */
+const MAC_CMD: Record<string, number> = { MetaLeft: SCANCODES.ControlLeft, MetaRight: SCANCODES.ControlRight };
 
 /** Batches input per session: pointer motion once per frame, everything else ASAP. */
 class InputQueue {
@@ -350,8 +356,8 @@ function RemoteSurface({ id, className, onFocusChange, sendWinKey = false }: Rem
         return;
       }
       // The Windows key (and its combinations) stays local outside fullscreen: Windows acts
-      // on it here anyway, so sending it too would do both.
-      if (!sendWinKeyRef.current && (e.code === "MetaLeft" || e.code === "MetaRight" || e.metaKey)) return;
+      // on it here anyway, so sending it too would do both. (On a Mac, Cmd is Ctrl: below.)
+      if (!isMac && !sendWinKeyRef.current && (e.code === "MetaLeft" || e.code === "MetaRight" || e.metaKey)) return;
       e.preventDefault();
       e.stopPropagation();
       // Lock keys are mirrored as state (sync), never forwarded as presses: forwarding
@@ -362,7 +368,23 @@ function RemoteSurface({ id, className, onFocusChange, sendWinKey = false }: Rem
         return;
       }
       syncLocks(e);
-      const code = SCANCODES[e.code];
+      if (isMac && e.metaKey && !MODIFIER_CODES.has(e.code)) {
+        // A Mac never reports releasing a key pressed with Cmd held, so press and release it
+        // at once (repeats arrive as further presses); its late keyup, if any, is dropped.
+        if (!down) return;
+        const code = SCANCODES[e.code];
+        if (code !== undefined) {
+          q.push({ t: "key", code, down: true });
+          q.push({ t: "key", code, down: false });
+        } else if (e.key.length === 1) {
+          q.push({ t: "unicode", ch: e.key, down: true });
+          q.push({ t: "unicode", ch: e.key, down: false });
+        }
+        return;
+      }
+      // On a Mac, Cmd works as Ctrl in the session (Cmd+C copies there), as in other Mac
+      // remote desktop apps. The Windows key is on the toolbar's special keys.
+      const code = isMac && e.code in MAC_CMD ? MAC_CMD[e.code] : SCANCODES[e.code];
       if (code !== undefined) {
         q.push({ t: "key", code, down });
       } else if (e.key.length === 1) {
