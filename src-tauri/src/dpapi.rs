@@ -209,6 +209,11 @@ mod imp {
         if let Some(key) = KEY.get() {
             return Ok(key);
         }
+        // Tests (the store's among them) never touch the Keychain: it would be the real app's
+        // item, and a headless Mac (CI) waits forever for someone to unlock it.
+        if cfg!(test) {
+            return Ok(KEY.get_or_init(|| super::aead::key(&[0x5a; 32]).expect("a 32-byte key")));
+        }
         let bytes = match get_generic_password(service(), ACCOUNT) {
             Ok(bytes) if bytes.len() == 32 => bytes,
             Ok(_) => bail!("the Keychain item {}/{ACCOUNT} isn't a key", service()),
@@ -247,8 +252,8 @@ mod imp {
 
 #[cfg(test)]
 mod tests {
-    // The platform round trip (the macOS one uses the real Keychain, so it isn't run in tests).
-    #[cfg(windows)]
+    // The platform round trip (on a Mac, under the tests' own key: tests never use the Keychain).
+    #[cfg(any(windows, target_os = "macos"))]
     #[test]
     fn round_trip() {
         let sealed = super::protect("p@ss:w0rd:with:colons").unwrap();
