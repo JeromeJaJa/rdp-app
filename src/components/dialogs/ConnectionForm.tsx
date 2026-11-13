@@ -4,6 +4,7 @@ import { parseBulk } from "../../lib/bulkParse";
 import { FEATURES } from "../../lib/features";
 import { describeGateway } from "../../lib/gateway";
 import { DEFAULT_GROUP_ID, type Connection, type GatewayInput, type GroupId, type SettingOverrides } from "../../lib/types";
+import { revealPassword } from "../../state/actions";
 import { useStore } from "../../state/store";
 import { Button, Field, Segmented, TextInput } from "../ui/ui";
 import { OverridesEditor, overrideCount } from "./OverridesEditor";
@@ -74,6 +75,16 @@ export function ConnectionForm({
   const [passwordTouched, setPasswordTouched] = useState(false);
   const [clearPassword, setClearPassword] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  /** Shows or hides the password. Editing, the first show fetches the saved one into the field
+   *  (untouched: saving keeps it as it is). */
+  const togglePassword = async () => {
+    if (!showPassword && initial?.hasPassword && !passwordTouched && !clearPassword && !password) {
+      const saved = await revealPassword(initial.id);
+      if (saved === null) return;
+      setPassword(saved);
+    }
+    setShowPassword((v) => !v);
+  };
   const [group, setGroup] = useState<GroupId | typeof NEW_GROUP>(initial ? initial.groupId : defaultGroup);
   const initialMode: GatewayMode = !initial?.gateway ? "group" : initial.gateway.enabled ? "custom" : "direct";
   const [gwMode, setGwMode] = useState<GatewayMode>(initialMode);
@@ -260,7 +271,7 @@ export function ConnectionForm({
                 </span>
               )
             ) : (
-              `Encrypted with your ${isMac ? "Mac login (Keychain)" : "Windows account"}. Never shown again.`
+              `Encrypted with your ${isMac ? "Mac login (Keychain)" : "Windows account"}.`
             )
           }
         >
@@ -279,7 +290,7 @@ export function ConnectionForm({
               type="button"
               className="password-input__toggle"
               aria-label={showPassword ? "Hide password" : "Show password"}
-              onClick={() => setShowPassword((v) => !v)}
+              onClick={() => void togglePassword()}
               tabIndex={-1}
             >
               {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}

@@ -347,6 +347,10 @@ export class MockBackend implements Backend {
     return structuredClone(created);
   }
 
+  async revealPassword(id: ConnectionId): Promise<string | null> {
+    return this.passwords[id] || null;
+  }
+
   async updateConnection(id: ConnectionId, patch: ConnectionPatch): Promise<Connection> {
     const c = this.lib.connections.find((x) => x.id === id);
     if (!c) throw new Error("Connection not found");

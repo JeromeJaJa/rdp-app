@@ -62,6 +62,12 @@ fn add_connections(state: State<'_, AppState>, items: Vec<NewConnection>) -> Cmd
     state.core.add_connections(items, Origin::Ui).map_err(err)
 }
 
+/// A connection's saved password, shown on request in its edit form. Not on the REST API.
+#[tauri::command]
+fn reveal_password(state: State<'_, AppState>, id: String) -> CmdResult<Option<String>> {
+    state.core.reveal_password(&id).map_err(err)
+}
+
 #[tauri::command]
 fn update_connection(state: State<'_, AppState>, id: String, patch: ConnectionPatch) -> CmdResult<Connection> {
     state.core.update_connection(&id, patch, Origin::Ui).map_err(err)
@@ -723,6 +729,7 @@ pub fn run() {
             load_library,
             add_connections,
             update_connection,
+            reveal_password,
             set_connection_settings,
             set_group_settings,
             delete_connections,

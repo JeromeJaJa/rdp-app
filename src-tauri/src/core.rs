@@ -483,6 +483,13 @@ impl Core {
         self.store.lock().connection(id).context("connection not found")
     }
 
+    /// A connection's saved password, for the edit form's show-password button (None if it
+    /// has none). Only the app's own window asks; the REST API has no way to read passwords.
+    pub fn reveal_password(&self, id: &str) -> anyhow::Result<Option<String>> {
+        let password = self.store.lock().credentials(id)?.password;
+        Ok((!password.is_empty()).then_some(password))
+    }
+
     pub fn group(&self, id: &str) -> anyhow::Result<Group> {
         self.store.lock().group(id).context("group not found")
     }

@@ -102,6 +102,10 @@ export class TauriBackend implements Backend {
     return invoke("update_connection", { id, patch });
   }
 
+  revealPassword(id: ConnectionId): Promise<string | null> {
+    return invoke("reveal_password", { id });
+  }
+
   setConnectionSettings(id: ConnectionId, settings: SettingOverrides): Promise<boolean> {
     return invoke("set_connection_settings", { id, settings });
   }

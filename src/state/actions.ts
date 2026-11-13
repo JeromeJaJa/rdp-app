@@ -1002,6 +1002,16 @@ export function toggleConnectionMute(id: ConnectionId) {
   void setConnectionSettings(id, muted ? (inherited === "off" ? { ...rest, audio: "active" } : rest) : { ...rest, audio: "off" });
 }
 
+/** A connection's saved password, to show in its edit form (null if none, or it can't be read). */
+export async function revealPassword(id: ConnectionId): Promise<string | null> {
+  try {
+    return await be().revealPassword(id);
+  } catch (err) {
+    toast("error", "Could not show the password", errorText(err));
+    return null;
+  }
+}
+
 export async function updateConnection(id: ConnectionId, patch: ConnectionPatch): Promise<void> {
   const s = getState();
   const prev = s.connById[id];

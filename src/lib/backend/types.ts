@@ -51,6 +51,8 @@ export interface Backend {
   /** Adds one or many connections (bulk import). Returns them with ids assigned. */
   addConnections(items: NewConnection[]): Promise<Connection[]>;
   updateConnection(id: ConnectionId, patch: ConnectionPatch): Promise<Connection>;
+  /** A connection's saved password (null if it has none), for showing it in its edit form. */
+  revealPassword(id: ConnectionId): Promise<string | null>;
   /**
    * Replaces a connection's setting overrides and applies what can change live. Resolves
    * false when its session has to reconnect before it can be heard (it connected muted).
