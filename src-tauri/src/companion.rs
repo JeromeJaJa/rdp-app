@@ -51,6 +51,17 @@ pub enum Outcome {
 
 const DEPLOY_PS1: &str = include_str!("companion_deploy.ps1");
 
+/// Installing over WinRM runs Windows PowerShell remoting, so it needs this app on Windows. A
+/// companion already on the host still attaches from anywhere.
+fn ensure_windows() -> anyhow::Result<()> {
+    if cfg!(windows) {
+        return Ok(());
+    }
+    bail!(
+        "installing the companion needs this app on Windows (it uses PowerShell remoting); once it's on the host, it works from here too"
+    )
+}
+
 /// Finds the companion binary to deploy: an explicit override, then next to the app exe
 /// (bundled), then the dev build output.
 pub fn companion_exe() -> anyhow::Result<PathBuf> {
@@ -86,6 +97,7 @@ pub fn bundled_build() -> Option<String> {
 /// Installs the companion on `target` over WinRM. Blocking (runs PowerShell); call off
 /// the UI thread.
 pub fn install_over_winrm(target: &Target, exe: &Path) -> anyhow::Result<Outcome> {
+    ensure_windows()?;
     anyhow::ensure!(exe.exists(), "companion binary missing: {}", exe.display());
     let user = if target.domain.is_empty() || target.username.contains('\\') {
         target.username.clone()
@@ -178,6 +190,7 @@ const UNINSTALL_PS1: &str = include_str!("companion_uninstall.ps1");
 /// Removes the companion from a host over WinRM: stops it, drops its autostart entry,
 /// and deletes its files. Blocking.
 pub fn uninstall_over_winrm(target: &Target) -> anyhow::Result<()> {
+    ensure_windows()?;
     let user = if target.domain.is_empty() || target.username.contains('\\') {
         target.username.clone()
     } else {
