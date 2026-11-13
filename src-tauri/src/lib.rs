@@ -558,6 +558,11 @@ fn open_url(url: String) -> CmdResult<()> {
         .args(["url.dll,FileProtocolHandler", &url])
         .spawn()
         .map_err(|e| format!("open browser: {e}"))?;
+    #[cfg(not(windows))]
+    std::process::Command::new(if cfg!(target_os = "macos") { "open" } else { "xdg-open" })
+        .arg(&url)
+        .spawn()
+        .map_err(|e| format!("open browser: {e}"))?;
     Ok(())
 }
 
