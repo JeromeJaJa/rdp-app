@@ -1526,16 +1526,26 @@ mod tests {
 
     #[test]
     fn streaming_beats_a_round_trip_per_chunk() {
-        // A 20 ms round trip: asking for one 64 KiB chunk at a time would top out near
-        // 3.3 MB/s. Streaming against the window should do well over twice that (on data
-        // that doesn't compress, so it's the window being measured). A dev machine reaches
-        // 30+; a shared CI runner (macOS especially, whose sleeps overshoot) around 9.
+        // Asking for one chunk per 20 ms round trip tops out at CHUNK / 20 ms (3.3 MB/s),
+        // whatever the machine. Streaming against the window shouldn't be held to that: over the
+        // same round trip it should reach twice that, or half of what this machine manages with
+        // no delay at all, if that's less (a slow CI runner is CPU-bound well before the window
+        // matters). Data that doesn't compress, so it's the window being measured.
         let data = noise(16 * 1024 * 1024, 8);
-        let link = link_over(vec![file("f", &data)], vec![data.clone()], Duration::from_millis(10));
-        let started = Instant::now();
-        assert_eq!(read_all(&link.inflow, 0, 256 * 1024).unwrap(), data);
-        let mb_per_s = data.len() as f64 / 1e6 / started.elapsed().as_secs_f64();
-        assert!(mb_per_s > 8.0, "{mb_per_s:.1} MB/s");
+        let rate = |delay: Duration| {
+            let link = link_over(vec![file("f", &data)], vec![data.clone()], delay);
+            let started = Instant::now();
+            assert_eq!(read_all(&link.inflow, 0, 256 * 1024).unwrap(), data);
+            data.len() as f64 / 1e6 / started.elapsed().as_secs_f64()
+        };
+        let local = rate(Duration::ZERO);
+        let remote = rate(Duration::from_millis(10));
+        let per_chunk = CHUNK as f64 / 1e6 / 0.020;
+        let needed = (2.0 * per_chunk).min(0.5 * local).max(per_chunk);
+        assert!(
+            remote > needed,
+            "{remote:.1} MB/s over a 20 ms round trip (needed {needed:.1}; {local:.1} with none)"
+        );
     }
 
     #[test]
