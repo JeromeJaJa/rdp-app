@@ -18,7 +18,8 @@ function tileScreen(id: string): HTMLElement | null {
  */
 export function morphView(id: string | null, toGrid: boolean, update: () => void) {
   const doc = document as ViewTransitionDocument;
-  if (!doc.startViewTransition || matchMedia("(prefers-reduced-motion: reduce)").matches) {
+  // A hidden page can't animate (the transition would be skipped, and reject).
+  if (!doc.startViewTransition || document.hidden || matchMedia("(prefers-reduced-motion: reduce)").matches) {
     update();
     return;
   }
@@ -35,6 +36,8 @@ export function morphView(id: string | null, toGrid: boolean, update: () => void
       if (to) to.style.viewTransitionName = NAME;
     }
   });
+  // Skipped anyway (the page was hidden meanwhile): the view still changed.
+  transition.ready.catch(() => {});
   transition.finished.finally(() => {
     if (to) to.style.viewTransitionName = "";
   });
