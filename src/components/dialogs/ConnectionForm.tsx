@@ -9,6 +9,7 @@ import { Button, Field, Segmented, TextInput } from "../ui/ui";
 import { OverridesEditor, overrideCount } from "./OverridesEditor";
 import { GATEWAY_HOST_RE, GatewayFields, draftFromGateway, draftToInput, type GatewayDraft } from "./GatewayFields";
 import { GroupSelect, NEW_GROUP } from "./GroupSelect";
+import { isMac } from "../../lib/env";
 
 type GatewayMode = "group" | "direct" | "custom";
 
@@ -259,7 +260,7 @@ export function ConnectionForm({
                 </span>
               )
             ) : (
-              "Encrypted with your Windows account. Never shown again."
+              `Encrypted with your ${isMac ? "Mac login (Keychain)" : "Windows account"}. Never shown again.`
             )
           }
         >
