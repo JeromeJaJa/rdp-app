@@ -4,6 +4,9 @@
 //!   account and are useless anywhere else.
 //! - **macOS**: AES-256-GCM under a random key kept in the user's login Keychain (made on first
 //!   use). The library file holds only ciphertext; without that Keychain item it can't be read.
+//!   Like DPAPI, the key is readable by the user's own programs without asking: an item only
+//!   this app may read would prompt after every update (an ad-hoc signed app's signature
+//!   changes with each build).
 //!
 //! Either way, a sealed secret is base64 text in the library.
 
@@ -143,18 +146,60 @@ mod aead {
     }
 }
 
+/// Names the Keychain item after the app's identifier (so a dev build keeps a key of its own).
+/// Call before the first password is sealed or opened; other platforms ignore it.
+pub fn set_app_id(id: &str) {
+    #[cfg(target_os = "macos")]
+    let _ = imp::SERVICE.set(id.to_owned());
+    #[cfg(not(target_os = "macos"))]
+    let _ = id;
+}
+
 #[cfg(target_os = "macos")]
 mod imp {
+    use std::io::Write as _;
+    use std::process::{Command, Stdio};
     use std::sync::OnceLock;
 
-    use anyhow::{Context as _, bail};
+    use anyhow::{Context as _, bail, ensure};
     use ring::aead::LessSafeKey;
     use ring::rand::{SecureRandom, SystemRandom};
-    use security_framework::passwords::{get_generic_password, set_generic_password};
+    use security_framework::passwords::get_generic_password;
 
-    /// The Keychain item holding the key.
-    const SERVICE: &str = "com.jeromejaja.rdpapp";
+    /// The Keychain item holding the key: the app's identifier, and this account.
+    pub static SERVICE: OnceLock<String> = OnceLock::new();
     const ACCOUNT: &str = "library-key";
+
+    fn service() -> &'static str {
+        SERVICE.get().map_or("com.jeromejaja.rdpapp", String::as_str)
+    }
+
+    /// Adds the key to the login Keychain, readable by the user's programs without a prompt
+    /// (`-A`). Through `security`'s own prompt (stdin), so the key is never on a command line.
+    fn add_key(key: &[u8]) -> anyhow::Result<()> {
+        let hex: String = key.iter().map(|b| format!("{b:02x}")).collect();
+        let mut child = Command::new("/usr/bin/security")
+            .arg("-i")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .context("run security")?;
+        let mut stdin = child.stdin.take().context("security's input")?;
+        writeln!(stdin, "add-generic-password -s {} -a {ACCOUNT} -A -X {hex}", service())?;
+        drop(stdin);
+        let out = child.wait_with_output()?;
+        let error = String::from_utf8_lossy(&out.stderr);
+        ensure!(
+            out.status.success() && error.trim().is_empty(),
+            "security: {}",
+            error.trim()
+        );
+        // It's there and reads back as written.
+        let stored = get_generic_password(service(), ACCOUNT).context("read the new key back")?;
+        ensure!(stored == key, "the Keychain holds another key than the one added");
+        Ok(())
+    }
     /// errSecItemNotFound: there's no key yet.
     const NOT_FOUND: i32 = -25300;
 
@@ -164,13 +209,13 @@ mod imp {
         if let Some(key) = KEY.get() {
             return Ok(key);
         }
-        let bytes = match get_generic_password(SERVICE, ACCOUNT) {
+        let bytes = match get_generic_password(service(), ACCOUNT) {
             Ok(bytes) if bytes.len() == 32 => bytes,
-            Ok(_) => bail!("the Keychain item {SERVICE}/{ACCOUNT} isn't a key"),
+            Ok(_) => bail!("the Keychain item {}/{ACCOUNT} isn't a key", service()),
             Err(e) if e.code() == NOT_FOUND => {
                 let mut fresh = vec![0u8; 32];
                 SystemRandom::new().fill(&mut fresh).ok().context("no randomness")?;
-                set_generic_password(SERVICE, ACCOUNT, &fresh).context("save the key to the Keychain")?;
+                add_key(&fresh).context("save the key to the Keychain")?;
                 fresh
             }
             // Any other failure (access denied, Keychain locked): never make a new key, or every

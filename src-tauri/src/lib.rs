@@ -650,6 +650,7 @@ pub fn run() {
             init_logging(app.path().app_log_dir().ok());
             tracing::info!(version = env!("CARGO_PKG_VERSION"), "starting");
             let dir = app.path().app_data_dir()?;
+            dpapi::set_app_id(&app.config().identifier);
             let store = Store::open(&dir)?;
             let certs = Arc::new(certs::CertStore::open(&dir));
 
