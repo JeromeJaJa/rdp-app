@@ -3,6 +3,9 @@ mod bulk;
 mod certs;
 #[cfg(windows)]
 mod clipboard;
+#[cfg(target_os = "macos")]
+#[path = "clipboard_mac.rs"]
+mod clipboard;
 mod companion;
 mod companion_link;
 mod core;

@@ -766,7 +766,7 @@ impl Tearoff {
         };
         // Copies are offered at once to the sessions on screen, and to the others when they
         // come on screen.
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "macos"))]
         crate::clipboard::set_on_screen(&active);
         self.engine.set_visibility(active, thumbnails);
     }

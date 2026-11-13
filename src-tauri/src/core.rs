@@ -1005,13 +1005,13 @@ impl Core {
         }
 
         let clipboard = s.get("clipboardSync").and_then(Value::as_bool).unwrap_or(true);
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "macos"))]
         self.engine.set_clipboard_host(clipboard.then(|| {
             Arc::new(crate::clipboard::NativeClipboard::new(Arc::clone(&self.companions)))
                 as Arc<dyn rdp_engine::ClipboardHost>
         }));
         self.companions.refresh_intervals();
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "macos")))]
         let _ = clipboard;
 
         crate::api::ensure_running(self);
