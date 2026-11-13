@@ -38,6 +38,12 @@ rand = "0.8"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 
+# Passwords: AES-GCM under a Keychain key on macOS (dpapi.rs). Both are already in the tree.
+ring = "0.17"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "3"
+
 [target.'cfg(windows)'.dependencies]
 rdp-clipboard = { path = "../crates/rdp-clipboard" }
 rdp-vfiles = { path = "../crates/rdp-vfiles" }
