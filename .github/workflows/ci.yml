@@ -22,8 +22,9 @@ env:
   # No debug info: much less to compile, link and cache (Windows debug info is huge).
   CARGO_PROFILE_DEV_DEBUG: "0"
 
-# The app is Windows-only (WebView2, Win32 APIs), so it's checked where it runs. Lint and tests
-# run side by side, each with its own cache. A cold cache (first run, or a new Rust release)
+# Windows is the main platform (WebView2 shared buffers, the clipboard, the companion); the Mac
+# build is checked too, so a Windows-only API can't sneak into shared code. The jobs run side by
+# side, each with its own cache. A cold cache (first run, or a new Rust release)
 # rebuilds every dependency, which takes a long time on a hosted runner; warm runs only rebuild
 # the workspace crates.
 jobs:
@@ -82,6 +83,33 @@ jobs:
       # The app embeds the built UI, so it has to exist before the app crate compiles.
       - name: Build the UI
         run: bun install --frozen-lockfile && bun run build
+
+      - name: Tests
+        run: cargo test --workspace --locked
+
+  mac:
+    name: Lint and test (macOS)
+    runs-on: macos-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build the UI
+        run: bun install --frozen-lockfile && bun run build
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
       - name: Tests
         run: cargo test --workspace --locked
