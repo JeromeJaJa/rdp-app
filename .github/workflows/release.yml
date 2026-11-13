@@ -22,6 +22,8 @@ jobs:
     name: Checks
     uses: ./.github/workflows/ci.yml
 
+  # Each platform builds and uploads its files; `publish` writes the update feed for both and
+  # creates the release.
   windows:
     name: Build (Windows x64)
     needs: checks
@@ -92,35 +94,132 @@ jobs:
           # runs fine but can't install the companion, which looked like a broken feature.
           $installer = "RDP-App_${v}_x64-setup.exe"
           Copy-Item $setup.FullName "$out/$installer"
-
-          # What changed: the commits since the previous release, grouped by kind. The release's
-          # notes, and what installed apps show before updating.
-          (bun scripts/release-notes.mjs $env:GITHUB_REF_NAME) -join "`n" | Set-Content changes.md
-          if ($LASTEXITCODE -ne 0) { throw "couldn't list the changes" }
-
-          # The update feed installed apps read (releases/latest/download/latest.json): this
-          # version, its notes, and the installer with its signature.
+          # Its updater signature, for the feed (not published as a file of its own).
           $sig = Get-Item "$($setup.FullName).sig" -ErrorAction SilentlyContinue
           if (-not $sig) { throw "the installer isn't signed for the updater (no .sig)" }
-          $platform = @{
-            signature = (Get-Content $sig.FullName -Raw).Trim()
-            url = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/v$v/$installer"
-          }
-          [ordered]@{
-            version = $v
-            notes = (Get-Content changes.md -Raw).Trim()
-            pub_date = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-            platforms = [ordered]@{ "windows-x86_64-nsis" = $platform; "windows-x86_64" = $platform }
-          } | ConvertTo-Json -Depth 5 | Set-Content "$out/latest.json" -Encoding utf8NoBOM
-          $sums = Get-ChildItem $out | ForEach-Object {
-            "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)"
-          }
-          $sums | Set-Content "$out/SHA256SUMS.txt"
+          Copy-Item $sig.FullName "$out/$installer.sig"
           Get-ChildItem $out | Format-Table Name, Length
 
       - uses: actions/upload-artifact@v4
         with:
-          name: rdp-app-${{ steps.version.outputs.version }}-windows-x64
+          name: windows
+          path: release-assets/*
+          if-no-files-found: error
+
+  mac:
+    name: Build (macOS Apple silicon)
+    needs: checks
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version
+        id: version
+        run: |
+          version=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "Tag $GITHUB_REF_NAME doesn't match the app version $version" >&2; exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release
+
+      - name: Install UI dependencies
+        run: bun install --frozen-lockfile
+
+      # The app and its disk image, ad-hoc signed (tauri.macos.conf.json), plus the .app.tar.gz
+      # installed apps update from, signed for the updater. No companion: it's a Windows
+      # program, installed on hosts from Windows (the Mac app uses one that's there).
+      - name: Build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        run: |
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then echo "the TAURI_SIGNING_PRIVATE_KEY secret isn't set" >&2; exit 1; fi
+          bunx tauri build --config src-tauri/tauri.updater.conf.json
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          v="${{ steps.version.outputs.version }}"
+          mkdir -p release-assets
+          app=target/release/bundle/macos/"RDP App.app.tar.gz"
+          [ -f "$app" ] && [ -f "$app.sig" ] || { echo "the app archive or its updater signature is missing" >&2; exit 1; }
+          dmg=$(ls target/release/bundle/dmg/*_"${v}"_aarch64.dmg | head -1)
+          [ -n "$dmg" ] || { echo "disk image for $v not found" >&2; exit 1; }
+          cp "$dmg" "release-assets/RDP-App_${v}_aarch64.dmg"
+          cp "$app" "release-assets/RDP-App_${v}_aarch64.app.tar.gz"
+          cp "$app.sig" "release-assets/RDP-App_${v}_aarch64.app.tar.gz.sig"
+          ls -l release-assets
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac
+          path: release-assets/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish
+    needs: [windows, mac]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The whole history and its tags: the notes list the commits since the last release.
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      # What changed: the commits since the previous release, grouped by kind. The release's notes,
+      # and what installed apps show before updating. Then the update feed installed apps read
+      # (releases/latest/download/latest.json): this version, its notes, and each platform's
+      # update with its signature.
+      - name: Update feed
+        id: feed
+        run: |
+          set -euo pipefail
+          v=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          bun scripts/release-notes.mjs "$GITHUB_REF_NAME" > changes.md
+          V="$v" REPO="$GITHUB_REPOSITORY" node <<'JS'
+          const fs = require("fs");
+          const { V: v, REPO: repo } = process.env;
+          const dir = "release-assets";
+          const url = (name) => `https://github.com/${repo}/releases/download/v${v}/${name}`;
+          const entry = (name) => ({ signature: fs.readFileSync(`${dir}/${name}.sig`, "utf8").trim(), url: url(name) });
+          const windows = entry(`RDP-App_${v}_x64-setup.exe`);
+          const feed = {
+            version: v,
+            notes: fs.readFileSync("changes.md", "utf8").trim(),
+            pub_date: new Date().toISOString().replace(/\.\d+Z$/, "Z"),
+            platforms: {
+              "windows-x86_64-nsis": windows,
+              "windows-x86_64": windows,
+              "darwin-aarch64": entry(`RDP-App_${v}_aarch64.app.tar.gz`),
+            },
+          };
+          fs.writeFileSync(`${dir}/latest.json`, JSON.stringify(feed, null, 2) + "\n");
+          JS
+          # The signatures are in the feed.
+          rm release-assets/*.sig
+          (cd release-assets && sha256sum * > SHA256SUMS.txt)
+          ls -l release-assets
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rdp-app-${{ steps.feed.outputs.version }}
           path: release-assets/*
           if-no-files-found: error
 
@@ -129,13 +228,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $v = "${{ steps.version.outputs.version }}"
-          $changes = Get-Content changes.md -Raw
-          @"
-          Windows x64: download **RDP-App_${v}_x64-setup.exe** and run it. It installs per user (no admin needed) and installs WebView2 if it's missing. Installed apps update themselves from here (Settings → About).
-
-          $changes
-
-          The builds aren't code-signed yet, so Windows SmartScreen may warn on first run: choose **More info → Run anyway**. ``SHA256SUMS.txt`` lists the installer's checksum.
-          "@ | Set-Content notes.md
-          gh release create $env:GITHUB_REF_NAME release-assets/* --title "RDP App $env:GITHUB_REF_NAME" --notes-file notes.md
+          set -euo pipefail
+          v="${{ steps.feed.outputs.version }}"
+          {
+            echo "**Windows x64**: download **RDP-App_${v}_x64-setup.exe** and run it. It installs per user (no admin needed) and installs WebView2 if it's missing."
+            echo
+            echo "**macOS (Apple silicon)**: download **RDP-App_${v}_aarch64.dmg** and drag the app to Applications."
+            echo
+            echo "Installed apps update themselves from here (Settings → About)."
+            echo
+            cat changes.md
+            echo
+            echo "The builds aren't code-signed yet. On Windows, SmartScreen may warn on first run: choose **More info → Run anyway**. On a Mac, the first open is blocked: open **System Settings → Privacy & Security** and choose **Open Anyway** (updates after that open normally). \`SHA256SUMS.txt\` lists each file's checksum."
+          } > notes.md
+          gh release create "$GITHUB_REF_NAME" release-assets/* --title "RDP App $GITHUB_REF_NAME" --notes-file notes.md
