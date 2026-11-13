@@ -18,7 +18,9 @@ tauri-build = { version = "2", features = [] }
 rdp-engine = { path = "../crates/rdp-engine" }
 rdp-companion-proto = { path = "../crates/rdp-companion-proto" }
 rdp-direct = { path = "../crates/rdp-direct" }
-tauri = { version = "2", features = [] }
+# macos-private-api: transparent windows on a Mac, for its window material (matches
+# app.macOSPrivateApi in tauri.conf.json; nothing changes on Windows).
+tauri = { version = "2", features = ["macos-private-api"] }
 tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -43,6 +45,7 @@ ring = "0.17"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = "3"
+window-vibrancy = "0.8"
 # The clipboard (clipboard_mac.rs). All already in the tree through tauri.
 ironrdp-cliprdr.workspace = true
 ironrdp-core.workspace = true
@@ -51,11 +54,11 @@ objc2-app-kit = { version = "0.3", default-features = false, features = ["std", 
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSArray"] }
 
 [target.'cfg(windows)'.dependencies]
+window-vibrancy = "0.8"
 rdp-clipboard = { path = "../crates/rdp-clipboard" }
 rdp-vfiles = { path = "../crates/rdp-vfiles" }
 ironrdp-cliprdr.workspace = true
 webview2-com = "0.39"
-window-vibrancy = "0.8"
 windows = { version = "0.62", features = [
     "Win32_Foundation",
     "Win32_Security_Cryptography",

@@ -17,7 +17,7 @@ mod frames;
 mod frames_host;
 mod frames_pull;
 mod keys;
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 mod material;
 mod profile;
 #[cfg(windows)]
@@ -279,7 +279,7 @@ async fn window_detach_tab(app: tauri::AppHandle, window: tauri::Window, id: Str
 /// The calling window's material: solid, or the acrylic backdrop (experimental).
 #[tauri::command]
 fn window_set_material(window: tauri::WebviewWindow, acrylic: bool, dark: bool) {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     material::apply(&window, acrylic, dark);
     let _ = (window, acrylic, dark);
 }

@@ -375,8 +375,9 @@ impl Tearoff {
             .min_inner_size(480.0, 320.0)
             .background_color(tauri::window::Color(9, 9, 11, 255))
             .visible(false);
-        // Our own title bar: frameless and see-through (for the acrylic material) on Windows; on a
-        // Mac, drawn under the traffic lights (as tauri.macos.conf.json does for the main window).
+        // Our own title bar: frameless on Windows; on a Mac, drawn under the traffic lights (as
+        // tauri.macos.conf.json does for the main window). See-through either way, for the window
+        // material (material.rs).
         // Windows takes file drops with its own handler (file_drop.rs); a Mac uses Tauri's.
         #[cfg(not(target_os = "macos"))]
         let builder = builder
@@ -388,6 +389,7 @@ impl Tearoff {
         let builder = builder
             .title_bar_style(tauri::TitleBarStyle::Overlay)
             .hidden_title(true)
+            .transparent(true)
             .traffic_light_position(tauri::LogicalPosition::new(14.0, 20.0));
         let window = builder.build().context("open window")?;
         #[cfg(windows)]

@@ -15,6 +15,7 @@
         "center": true,
         "visible": false,
         "dragDropEnabled": true,
+        "transparent": true,
         "backgroundColor": "#09090b"
       }
     ]
