@@ -306,4 +306,9 @@ at the moment.
 - **The companion** has been used against live hosts (its install, copies over the direct link, sends, drags and
   stats), but on few setups so far: the direct link's NAT traversal between unrelated networks in particular. Hosts
   without WinRM can't get the companion yet.
-- **Unsigned builds**: SmartScreen warns on first run until the builds are code-signed.
+- **Unsigned builds**: SmartScreen warns on first run until the builds are code-signed, and macOS blocks the first
+  open until it's allowed in Privacy & Security (the Mac app is ad-hoc signed, not notarized).
+- **The Mac app** pulls frames from Rust (`frames_pull.rs`) instead of sharing buffers, since WKWebView has none:
+  each change is one copy more than on Windows. Its clipboard is plain text (`clipboard_mac.rs`). Audio, the
+  microphone, drive sharing, file and image clipboard, the tab-drag loop and the companion's WinRM install are
+  Windows-only so far.

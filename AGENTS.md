@@ -1,6 +1,6 @@
 # Working on RDP App
 
-A high-performance, minimal Windows RDP manager built to run 50–100+ sessions at once.
+A high-performance, minimal RDP manager for Windows (and macOS) built to run 50–100+ sessions at once.
 This file is for anyone (human or agent) changing the code. The [README](README.md) covers
 what the app does, the file layout, and how to build and run; read it first. This file is the
 part that isn't obvious from the code: the invariants, the performance rules, the Windows
@@ -289,6 +289,32 @@ pattern-matching against it.
   keep it brief, tell them, and don't touch their apps.
 - **UI direction: dark glass.** New floating UI (menus, popovers, palette, toasts, toolbars) uses
   the dark-glass tokens (`--glass-*`, `.glass`). Mica was rejected; acrylic is an opt-in experiment.
+
+## macOS
+
+The Mac app (Apple silicon) shares everything above the OS layer. Where they differ:
+
+- **Frames are pulled, not shared.** WKWebView has no shared buffers, so the page fetches each surface's changed
+  rectangles from the `rdpframe://` scheme (`frames_pull.rs`, the pull half of `bridge.ts`), long-polled, into a local
+  buffer with the same layout. `FrameHost` (`frames_host.rs`) is what tear-off and repost use on both platforms.
+  `RDP_FRAMES=pull` makes Windows pull too, to test that path there.
+- **Passwords**: AES-256-GCM under a key in the login Keychain (`dpapi.rs`), one item per app identifier, readable by
+  the user's programs without a prompt (as DPAPI is). An item only the app may read would prompt after every update,
+  since an ad-hoc signed app's signature changes with each build. Never make a new key when reading one fails.
+- **Window chrome**: the native traffic lights over our title bar (`tauri.macos.conf.json`, `titleBarStyle: Overlay`;
+  the tear-off builder matches it). `WindowControls` hides on a Mac, and `[data-platform="mac"]` makes room.
+- **Keys**: `isMac`/`keys()` in `src/lib/env.ts` show ⌘ for Ctrl. In a session, Cmd is sent as Ctrl, and a key
+  pressed with Cmd held is released at once: WebKit never reports its keyup.
+- **Clipboard** (`clipboard_mac.rs`): plain text. It watches the pasteboard's change count and reads the text only
+  when a remote pastes (reading on a timer would trip macOS's paste warnings). Only sessions on screen may set it.
+- **File drops** come from Tauri's own handler (`dragDropEnabled` on a Mac), forwarded as the same `file-drag` event.
+- **Testing on a Mac**: WKWebView has no DevTools protocol, so drive a dev build through the REST API: dev builds
+  accept the token in `RDPAPP_DEV_API_TOKEN`. Window screenshots (`screencapture -l`) need Screen Recording
+  permission for whatever runs them. Dev builds keep their webview data in `~/Library/WebKit/rdp-app` and
+  `~/Library/Caches/rdp-app`; delete those with the rest of the dev data.
+- Windows-only code compiles to nothing elsewhere (`#![cfg(windows)]` crates, their dependencies under
+  `[target.'cfg(windows)'.dependencies]`); helpers only Windows uses carry
+  `#[cfg_attr(not(windows), allow(dead_code))]`. CI lints and tests the Mac build too.
 
 ## What still needs a real Windows host to verify
 

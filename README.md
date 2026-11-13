@@ -4,12 +4,13 @@
 
 # RDP App
 
-**A fast, minimal Remote Desktop client for Windows, built to run 50–100+ sessions at once.**
+**A fast, minimal Remote Desktop client for Windows and macOS, built to run 50–100+ sessions at once.**
 
 [![CI](https://github.com/JeromeJaJa/rdp-app/actions/workflows/ci.yml/badge.svg)](https://github.com/JeromeJaJa/rdp-app/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/JeromeJaJa/rdp-app?color=7b6bff)](https://github.com/JeromeJaJa/rdp-app/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 ![Windows 10 | 11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6)
+![macOS 11+ (Apple silicon)](https://img.shields.io/badge/macOS-11%2B%20(Apple%20silicon)-555555)
 
 [Download](#download) · [Features](#features) · [Getting started](#getting-started) · [How it works](docs/ARCHITECTURE.md)
 
@@ -72,17 +73,21 @@ can't do. [More below](#the-companion).
 
 ## Download
 
-Grab `RDP-App_<version>_x64-setup.exe` from the latest [**Release**](https://github.com/JeromeJaJa/rdp-app/releases/latest)
-and run it. It runs on Windows 10 and 11 (x64), installs per user (no admin needed) to
-`%LOCALAPPDATA%\RDP App`, and installs WebView2 if it's missing.
+From the latest [**Release**](https://github.com/JeromeJaJa/rdp-app/releases/latest):
+
+- **Windows 10 and 11 (x64)**: run `RDP-App_<version>_x64-setup.exe`. It installs per user (no admin needed) to
+  `%LOCALAPPDATA%\RDP App`, and installs WebView2 if it's missing.
+- **macOS 11 or later (Apple silicon)**: open `RDP-App_<version>_aarch64.dmg` and drag the app to Applications. The
+  Mac app is newer: see [Status](#status) for what's still Windows-only.
 
 After that it **updates itself**: it checks for new versions every few hours, and an **Update** button appears in the
 title bar when one is out. Updating is always your call, since it restarts the app and disconnects your sessions:
 it then downloads the newest version, installs it, and restarts. **Settings → About** shows your version and what's
 new, and lets you check by hand or turn the automatic checks off.
 
-The builds aren't code-signed yet, so SmartScreen may warn the first time: choose **More info → Run anyway**.
-`SHA256SUMS.txt` on each release lists the installer's checksum.
+The builds aren't code-signed yet. On Windows, SmartScreen may warn the first time: choose **More info → Run
+anyway**. On a Mac, the first open is blocked: open **System Settings → Privacy & Security** and choose **Open
+Anyway** (updates after that open normally). `SHA256SUMS.txt` on each release lists each file's checksum.
 
 ## Getting started
 
@@ -112,6 +117,9 @@ The builds aren't code-signed yet, so SmartScreen may warn the first time: choos
 
 While a session has focus, every key goes to it, and the app's shortcuts come back when it loses focus. Windows keeps
 a few combinations for itself (Win, Alt+Tab, Ctrl+Alt+Del): send those from the session toolbar.
+
+On a Mac, the shortcuts above use `Cmd` in place of `Ctrl`, and in a session `Cmd` works as `Ctrl` (`Cmd+C` copies
+on the remote).
 
 </details>
 
@@ -156,7 +164,8 @@ of status changes.
 
 ## Privacy and security
 
-- **Passwords are encrypted with Windows DPAPI**, tied to your Windows account, and never reach the interface.
+- **Passwords are encrypted** and never reach the interface: with Windows DPAPI, tied to your Windows account, or
+  on a Mac with a key kept in your login Keychain.
 - **No accounts, no cloud, no telemetry.** The app talks to your hosts, and when the companion sets up a direct
   link, to a public STUN server to learn its own address.
 - **The REST API is loopback-only** and needs a token.
@@ -170,6 +179,9 @@ of status changes.
 You'll need Rust (MSVC toolchain), [Bun](https://bun.sh), the Visual Studio C++ build tools, and
 [NASM](https://www.nasm.us) on your `PATH` (without it the H.264 decoder quietly builds without its assembly and
 decodes much slower).
+
+On a Mac: Rust, [Bun](https://bun.sh) and the Xcode command line tools (`xcode-select --install`); no NASM needed.
+`bun run tauri build` puts the app and a disk image in `target/release/bundle/`.
 
 ```sh
 bun install
@@ -196,6 +208,11 @@ RDP App is young (0.x), and its core (sessions, graphics, clipboard, tabs and wi
 Windows hosts. A few parts are built but not yet tested against real hardware: audio, microphone, drive / printer /
 smart card redirection, RD Gateway, and AVC444 from a Windows server. The companion works on the hosts it has met,
 but those are few so far. See [current limitations](docs/ARCHITECTURE.md#current-limitations).
+
+**The Mac app** connects, shows sessions, and shares text through the clipboard and files dropped from Finder. Still
+Windows-only for now: audio and the microphone, sharing drives and folders, copying files and images through the
+clipboard, a torn-off tab's window following the pointer as you drag, and installing the companion (one already on a
+host works from a Mac too).
 
 Issues and pull requests are welcome. Please read [AGENTS.md](AGENTS.md) first: performance is treated as a
 correctness requirement here.
