@@ -4,6 +4,43 @@ What changed in each release, newest first. From 0.3.1 on, each release's list i
 commits (`bun scripts/release-notes.mjs`); versions follow [Semantic Versioning](https://semver.org/)
 (pre-1.0, so a minor version can change behavior).
 
+## [0.5.0] - 2026-11-14
+
+### Features
+
+- **frames:** pages pull frames where there are no shared buffers [`c23ce4c`](https://github.com/JeromeJaJa/rdp-app/commit/c23ce4c)
+- **mac:** saved passwords are encrypted with a key in the login Keychain [`96aad9e`](https://github.com/JeromeJaJa/rdp-app/commit/96aad9e)
+- **mac:** Mac windows keep their traffic lights, and shortcuts show ⌘ [`c48a2dc`](https://github.com/JeromeJaJa/rdp-app/commit/c48a2dc)
+- **mac:** Cmd works as Ctrl in a session, without stuck keys [`aedb7eb`](https://github.com/JeromeJaJa/rdp-app/commit/aedb7eb)
+- **mac:** copy and paste text between the Mac and sessions [`e5126cc`](https://github.com/JeromeJaJa/rdp-app/commit/e5126cc)
+- **mac:** drop files from Finder onto a session [`b3c6a6a`](https://github.com/JeromeJaJa/rdp-app/commit/b3c6a6a)
+- **mac:** the acrylic window material works on a Mac [`1a71e97`](https://github.com/JeromeJaJa/rdp-app/commit/1a71e97)
+
+### Fixes
+
+- **mac:** links open in the browser [`546412c`](https://github.com/JeromeJaJa/rdp-app/commit/546412c)
+- **mac:** installing the companion says it needs Windows, instead of a missing file [`69c3b7c`](https://github.com/JeromeJaJa/rdp-app/commit/69c3b7c)
+- **mac:** the password field says it's kept in the Keychain [`32f734e`](https://github.com/JeromeJaJa/rdp-app/commit/32f734e)
+- **mac:** no Keychain prompt at startup or after updates [`ab84a43`](https://github.com/JeromeJaJa/rdp-app/commit/ab84a43)
+- **ui:** switching views while the window is hidden no longer throws [`995ec79`](https://github.com/JeromeJaJa/rdp-app/commit/995ec79)
+- **ui:** the eye button shows a connection's saved password [`d8cd939`](https://github.com/JeromeJaJa/rdp-app/commit/d8cd939)
+
+### Other changes
+
+- **mac:** no warnings outside Windows [`72e8193`](https://github.com/JeromeJaJa/rdp-app/commit/72e8193)
+- check the Mac build too [`988d457`](https://github.com/JeromeJaJa/rdp-app/commit/988d457)
+- **api:** dev builds accept a token from RDPAPP_DEV_API_TOKEN [`62ff8c2`](https://github.com/JeromeJaJa/rdp-app/commit/62ff8c2)
+- **mac:** bundle the app and a disk image, ad-hoc signed [`0359630`](https://github.com/JeromeJaJa/rdp-app/commit/0359630)
+- **release:** build for Mac too, and update Mac apps from the same feed [`7a01ba5`](https://github.com/JeromeJaJa/rdp-app/commit/7a01ba5)
+- **engine:** the drive-sharing tests run on Windows only [`10a5109`](https://github.com/JeromeJaJa/rdp-app/commit/10a5109)
+- **mac:** the Windows-only crates take no dependencies elsewhere [`557d63f`](https://github.com/JeromeJaJa/rdp-app/commit/557d63f)
+- **engine:** the drive-sharing tests build on Windows only [`38092a3`](https://github.com/JeromeJaJa/rdp-app/commit/38092a3)
+- the Mac app, what it does, and how it differs [`c17157c`](https://github.com/JeromeJaJa/rdp-app/commit/c17157c)
+- **mac:** tests never touch the Keychain [`7ac58fa`](https://github.com/JeromeJaJa/rdp-app/commit/7ac58fa)
+- **companion:** the streaming speed test passes on slower CI runners [`ab05fa2`](https://github.com/JeromeJaJa/rdp-app/commit/ab05fa2)
+- **companion:** the streaming speed test measures against the machine's own speed [`db036cc`](https://github.com/JeromeJaJa/rdp-app/commit/db036cc)
+- releases build and check the Mac app too [`b768266`](https://github.com/JeromeJaJa/rdp-app/commit/b768266)
+
 ## [0.4.0] - 2026-11-06
 
 ### Features
@@ -89,6 +126,7 @@ The first release.
 - A local REST API for scripts and agents.
 - Passwords encrypted with Windows DPAPI.
 
+[0.5.0]: https://github.com/JeromeJaJa/rdp-app/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/JeromeJaJa/rdp-app/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/JeromeJaJa/rdp-app/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/JeromeJaJa/rdp-app/compare/v0.1.0...v0.2.0
