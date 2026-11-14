@@ -257,7 +257,7 @@ first).
 ## CI and releases
 
 Work lands on `main` without CI; the checks (`.github/workflows/ci.yml`: the UI typecheck and build, `cargo fmt`,
-clippy with warnings as errors, and the tests, on Windows) run where they gate something: as the first job of every
+clippy with warnings as errors, and the tests, on Windows and on macOS) run where they gate something: as the first job of every
 release, on pull requests, and by hand (Actions → CI → Run workflow).
 
 Releases are cut on purpose, batching whatever landed since the last one:
@@ -268,17 +268,19 @@ Releases are cut on purpose, batching whatever landed since the last one:
    the previous tag, grouped by conventional-commit type. (Without arguments it just prints them.)
 3. Commit (`chore(release): x.y.z`), tag `vx.y.z`, and push both.
 
-The tag runs the release workflow: the checks, then the build (nothing is built if they fail). It builds the
-installer, checks it carries the companion, and publishes it with a checksum, its notes being the same commit list.
-Only the installer is published: it puts `rdp-companion.exe` next to the app, which a bare exe can't. Running the
-workflow by hand builds the same files as an artifact without publishing.
+The tag runs the release workflow: the checks, then the builds (nothing is built if they fail). Windows builds the
+installer and checks it carries the companion; a Mac runner builds the app (ad-hoc signed, not notarized) as a disk
+image and as the archive Mac apps update from. A last job writes the update feed for both and publishes everything
+with checksums, its notes being the same commit list. On Windows only the installer is published: it puts
+`rdp-companion.exe` next to the app, which a bare exe can't. Running the workflow by hand builds the same files as an
+artifact without publishing.
 
 **Updates.** Installed apps update themselves with Tauri's updater (`src/state/updates.ts`): every few hours they
 read `latest.json` from the latest release (`releases/latest/download/latest.json`) and offer a newer version.
 Nothing downloads until the user updates: then the feed is read again (releases may have come out since), and the
 newest installer is downloaded, installed and restarted into. That's never automatic: a restart drops every session. The release
-workflow writes `latest.json` (the version, the commit list as notes, and the installer's URL and signature) and
-signs the installer, building with `src-tauri/tauri.updater.conf.json` on top of the release config. An app only
+workflow writes `latest.json` (the version, the commit list as notes, and each platform's update: the Windows
+installer, the Mac `.app.tar.gz`, with their URLs and signatures) and signs them, building with `src-tauri/tauri.updater.conf.json` on top of the release config. An app only
 installs an update signed by the private key whose public half is in `tauri.conf.json` (`plugins.updater.pubkey`).
 That key is the `TAURI_SIGNING_PRIVATE_KEY` repository secret (no password); its owner keeps a copy outside the repo.
 **If it's lost, installed apps can't be updated any more** (they'd need a manual reinstall of a build with a new
